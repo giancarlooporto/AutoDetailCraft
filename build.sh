@@ -7,5 +7,4 @@ flutter --version
 flutter config --no-analytics
 flutter pub get
 flutter build web --release --base-href /
-cp web/_redirects build/web/ || true
 echo "Build complete!"
