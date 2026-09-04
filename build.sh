@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
-echo "Downloading Flutter..."
-curl -s -O https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.24.5-stable.tar.xz
-tar xf flutter_linux_3.24.5-stable.tar.xz
+echo "Cloning Flutter stable SDK..."
+git clone -b stable --depth 1 https://github.com/flutter/flutter.git
 export PATH="$PATH:`pwd`/flutter/bin"
+flutter --version
 flutter config --no-analytics
 flutter pub get
 flutter build web --release --base-href /
