@@ -144,76 +144,88 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   void _showAccountMenu(BuildContext context) {
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      backgroundColor: AppTheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        side: BorderSide(color: AppTheme.border),
-      ),
-      builder: (ctx) {
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 36,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: AppTheme.textMuted.withAlpha(80),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: AppTheme.border),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.settings_outlined, color: AppTheme.primary, size: 22),
+            SizedBox(width: 10),
+            Text('Account Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: AppTheme.primary.withAlpha(25), shape: BoxShape.circle),
+                  child: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 18),
                 ),
-                ListTile(
-                  leading: const Icon(Icons.edit_outlined, color: AppTheme.primary),
-                  title: const Text('Edit Profile & Location', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                  subtitle: const Text('Change display name, avatar, bio, location', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    EditProfileDialog.show(context, repository: widget.repository);
-                  },
+                title: const Text('Edit Profile & Location', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
+                subtitle: const Text('Change name, photo, bio, address', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  EditProfileDialog.show(context, repository: widget.repository);
+                },
+              ),
+              const Divider(color: AppTheme.border, height: 1),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.orangeAccent.withAlpha(25), shape: BoxShape.circle),
+                  child: const Icon(Icons.logout_rounded, color: Colors.orangeAccent, size: 18),
                 ),
-                const Divider(color: AppTheme.border, height: 1),
-                ListTile(
-                  leading: const Icon(Icons.logout_rounded, color: Colors.orangeAccent),
-                  title: const Text('Log Out', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                  subtitle: const Text('Return to guest browsing mode', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
-                  onTap: () async {
-                    Navigator.of(ctx).pop();
-                    await widget.repository.logoutUser();
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('You have been logged out.'),
-                          backgroundColor: AppTheme.surface,
-                        ),
-                      );
-                    }
-                  },
+                title: const Text('Log Out', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
+                subtitle: const Text('Return to guest mode', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  await widget.repository.logoutUser();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('You have been logged out.'),
+                        backgroundColor: AppTheme.surface,
+                      ),
+                    );
+                  }
+                },
+              ),
+              const Divider(color: AppTheme.border, height: 1),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.redAccent.withAlpha(25), shape: BoxShape.circle),
+                  child: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent, size: 18),
                 ),
-                const Divider(color: AppTheme.border, height: 1),
-                ListTile(
-                  leading: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent),
-                  title: const Text('Delete Account', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                  subtitle: const Text('Permanently remove your garage and studio data', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    _confirmDeleteAccount(context);
-                  },
-                ),
-              ],
-            ),
+                title: const Text('Delete Account', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 14)),
+                subtitle: const Text('Permanently remove garage and studio', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _confirmDeleteAccount(context);
+                },
+              ),
+            ],
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+        ],
       ),
-    );
-  },
     );
   }
 
@@ -354,7 +366,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               return [
                 SliverAppBar(
                   expandedHeight: 220,
-                  pinned: true,
+                  pinned: false,
                   backgroundColor: AppTheme.background,
                   actions: [
                     IconButton(
