@@ -556,17 +556,19 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
                 ],
               ),
               const SizedBox(height: 6),
-              Container(
-                height: 160,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: _uploadedImageBytes != null ? AppTheme.primary : AppTheme.border, width: _uploadedImageBytes != null ? 2 : 1),
-                  image: _uploadedImageBytes != null
-                      ? DecorationImage(image: MemoryImage(_uploadedImageBytes!), fit: BoxFit.cover)
-                      : DecorationImage(image: NetworkImage(_imageUrl), fit: BoxFit.cover),
-                ),
-                child: Align(
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _uploadedImageBytes != null ? AppTheme.primary : AppTheme.border, width: _uploadedImageBytes != null ? 2 : 1),
+                    image: _uploadedImageBytes != null
+                        ? DecorationImage(image: MemoryImage(_uploadedImageBytes!), fit: BoxFit.cover, alignment: Alignment.center)
+                        : DecorationImage(image: NetworkImage(_imageUrl), fit: BoxFit.cover, alignment: Alignment.center),
+                  ),
+                  child: Align(
                   alignment: Alignment.bottomRight,
                   child: Container(
                     margin: const EdgeInsets.all(8),

@@ -930,138 +930,198 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     ],
                   )
                 // REGULAR USER VIEW: My Garage & Registered Vehicles with Edit & Upload Options
-                : ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: AppTheme.primary),
-                          foregroundColor: AppTheme.primary,
-                          minimumSize: const Size(double.infinity, 44),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        icon: const Icon(Icons.add, size: 18),
-                        label: const Text('Add Vehicle to My Garage', style: TextStyle(fontWeight: FontWeight.bold)),
-                        onPressed: () => _openVehicleEditor(context),
-                      ),
-                      const SizedBox(height: 14),
-                      if (garage.isEmpty)
-                        const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(24),
-                            child: Text(
-                              'No vehicles added yet.\nAdd your car to store your paint color and track digital detail warranty passports!',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.4),
-                            ),
-                          ),
-                        )
-                      else
-                        ...garage.map((veh) {
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 14),
-                            decoration: BoxDecoration(
-                              color: AppTheme.surface,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: AppTheme.border),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                ClipRRect(
-                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                                  child: veh.localImageBytes != null
-                                      ? Image.memory(
-                                          veh.localImageBytes!,
-                                          height: 180,
-                                          width: double.infinity,
-                                          fit: BoxFit.cover,
-                                        )
-                                      : Image.network(
-                                          veh.imageUrl,
-                                          height: 180,
-                                          width: double.infinity,
-                                          fit: BoxFit.cover,
-                                        ),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.all(14),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              veh.fullName,
-                                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          // Edit Button
-                                          IconButton(
-                                            visualDensity: VisualDensity.compact,
-                                            icon: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 18),
-                                            tooltip: 'Edit Vehicle & Photo',
-                                            onPressed: () => _openVehicleEditor(context, veh),
-                                          ),
-                                          // Delete Button
-                                          IconButton(
-                                            visualDensity: VisualDensity.compact,
-                                            icon: const Icon(Icons.delete_outline_rounded, color: AppTheme.textMuted, size: 18),
-                                            tooltip: 'Remove from Garage',
-                                            onPressed: () => widget.repository.removeVehicleFromGarage(veh.id),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Row(
-                                        children: [
-                                          const Icon(Icons.palette_outlined, size: 14, color: AppTheme.primary),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            'Paint Color: ${veh.colorName}',
-                                            style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary, fontWeight: FontWeight.w600),
-                                          ),
-                                        ],
-                                      ),
-                                      if (veh.lastDetailService != null) ...[
-                                        const SizedBox(height: 8),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                          decoration: BoxDecoration(
-                                            color: AppTheme.surfaceLight,
-                                            borderRadius: BorderRadius.circular(8),
-                                            border: Border.all(color: AppTheme.primary.withAlpha(50)),
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              const Icon(Icons.verified_user_rounded, size: 14, color: AppTheme.primary),
-                                              const SizedBox(width: 6),
-                                              Expanded(
-                                                child: Text(
-                                                  'Active Care: ${veh.lastDetailService}',
-                                                  style: const TextStyle(fontSize: 11, color: AppTheme.textPrimary),
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ],
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isDesktop = constraints.maxWidth >= 720;
+                      final isWide = constraints.maxWidth >= 1024;
+                      final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
+
+                      return Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1100),
+                          child: ListView(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                            children: [
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: SizedBox(
+                                  width: isDesktop ? 300 : double.infinity,
+                                  child: OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      side: const BorderSide(color: AppTheme.primary),
+                                      foregroundColor: AppTheme.primary,
+                                      minimumSize: const Size(double.infinity, 44),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                    icon: const Icon(Icons.add, size: 18),
+                                    label: const Text('Add Vehicle to My Garage', style: TextStyle(fontWeight: FontWeight.bold)),
+                                    onPressed: () => _openVehicleEditor(context),
                                   ),
                                 ),
-                              ],
-                            ),
-                          );
-                        }),
-                    ],
+                              ),
+                              const SizedBox(height: 16),
+                              if (garage.isEmpty)
+                                const Center(
+                                  child: Padding(
+                                    padding: EdgeInsets.all(32),
+                                    child: Text(
+                                      'No vehicles added yet.\nAdd your car to store your paint color and track digital detail warranty passports!',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.5),
+                                    ),
+                                  ),
+                                )
+                              else if (!isDesktop)
+                                // Single column for mobile with uniform 16:9 photo framing
+                                ...garage.map((veh) => _buildGarageVehicleCard(veh))
+                              else
+                                // Multi-column grid for desktop/tablet so cards remain balanced and uniform
+                                GridView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: crossAxisCount,
+                                    crossAxisSpacing: 16,
+                                    mainAxisSpacing: 16,
+                                    childAspectRatio: 0.88,
+                                  ),
+                                  itemCount: garage.length,
+                                  itemBuilder: (context, index) {
+                                    return _buildGarageVehicleCard(garage[index], isGrid: true);
+                                  },
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildGarageVehicleCard(VehicleItem veh, {bool isGrid = false}) {
+    return Container(
+      margin: EdgeInsets.only(bottom: isGrid ? 0 : 16),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Vehicle Image Container with strict 16:9 Aspect Ratio
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Container(
+                color: AppTheme.surfaceLight,
+                child: veh.localImageBytes != null
+                    ? Image.memory(
+                        veh.localImageBytes!,
+                        fit: BoxFit.cover,
+                        alignment: Alignment.center,
+                      )
+                    : Image.network(
+                        veh.imageUrl,
+                        fit: BoxFit.cover,
+                        alignment: Alignment.center,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          color: AppTheme.surfaceLight,
+                          child: const Center(
+                            child: Icon(Icons.directions_car_filled_rounded, size: 48, color: AppTheme.textMuted),
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        veh.fullName,
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    // Edit Button
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 18),
+                      tooltip: 'Edit Vehicle & Photo',
+                      onPressed: () => _openVehicleEditor(context, veh),
+                    ),
+                    const SizedBox(width: 8),
+                    // Delete Button
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(Icons.delete_outline_rounded, color: AppTheme.textMuted, size: 18),
+                      tooltip: 'Remove from Garage',
+                      onPressed: () => widget.repository.removeVehicleFromGarage(veh.id),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(Icons.palette_outlined, size: 14, color: AppTheme.primary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Paint Color: ${veh.colorName}',
+                        style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary, fontWeight: FontWeight.w600),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                if (veh.lastDetailService != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceLight,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.primary.withAlpha(50)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.verified_user_rounded, size: 13, color: AppTheme.primary),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Active Care: ${veh.lastDetailService}',
+                            style: const TextStyle(fontSize: 11, color: AppTheme.textPrimary),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
