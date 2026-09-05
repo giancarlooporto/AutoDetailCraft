@@ -79,9 +79,11 @@ class _UpdatePasswordDialogState extends State<UpdatePasswordDialog> {
           Text('Reset Your Password', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         ],
       ),
-      content: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -139,6 +141,7 @@ class _UpdatePasswordDialogState extends State<UpdatePasswordDialog> {
           ),
         ),
       ),
+    ),
       actions: [
         TextButton(
           onPressed: _isLoading ? null : () => Navigator.of(context).pop(),

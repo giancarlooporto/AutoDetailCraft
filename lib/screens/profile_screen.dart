@@ -78,34 +78,37 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             side: const BorderSide(color: AppTheme.border),
           ),
           title: const Text('Add Team Specialist', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Full Name',
-                    prefixIcon: Icon(Icons.person_outline_rounded),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Full Name',
+                      prefixIcon: Icon(Icons.person_outline_rounded),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: roleCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Specialty / Role Title',
-                    prefixIcon: Icon(Icons.work_outline_rounded),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: roleCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Specialty / Role Title',
+                      prefixIcon: Icon(Icons.work_outline_rounded),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: avatarCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Photo URL',
-                    prefixIcon: Icon(Icons.photo_outlined),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: avatarCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Photo URL',
+                      prefixIcon: Icon(Icons.photo_outlined),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           actions: [
@@ -149,11 +152,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         side: BorderSide(color: AppTheme.border),
       ),
       builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
                   width: 36,
@@ -204,8 +210,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               ],
             ),
           ),
-        );
-      },
+        ),
+      ),
+    );
+  },
     );
   }
 

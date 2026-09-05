@@ -196,13 +196,15 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
           Text('Edit Profile & Location', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         ],
       ),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               // Photos section (Avatar & Cover)
               Center(
                 child: Stack(
@@ -333,6 +335,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
           ),
         ),
       ),
+    ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),

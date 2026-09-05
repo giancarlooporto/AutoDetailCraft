@@ -143,13 +143,15 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
           Text('Add Hired Staff Member', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         ],
       ),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               // Photo Preview & Picker Section
               Center(
                 child: Stack(
@@ -242,6 +244,7 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
           ),
         ),
       ),
+    ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),

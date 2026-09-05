@@ -23,10 +23,13 @@ class BookingsListScreen extends StatelessWidget {
         maxChildSize: 0.95,
         minChildSize: 0.5,
         expand: false,
-        builder: (_, scrollCtrl) => SingleChildScrollView(
-          controller: scrollCtrl,
-          padding: const EdgeInsets.all(20),
-          child: Column(
+        builder: (_, scrollCtrl) => Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: SingleChildScrollView(
+              controller: scrollCtrl,
+              padding: const EdgeInsets.all(20),
+              child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Center(
@@ -139,7 +142,9 @@ class BookingsListScreen extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ),
+  ),
+);
   }
 
   Widget _sectionHeader(String title, IconData icon) {

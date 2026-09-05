@@ -323,11 +323,13 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
           ),
         ],
       ),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // NHTSA Database verification badge
@@ -556,17 +558,19 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
                 ],
               ),
               const SizedBox(height: 6),
-              Container(
-                height: 160,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: _uploadedImageBytes != null ? AppTheme.primary : AppTheme.border, width: _uploadedImageBytes != null ? 2 : 1),
-                  image: _uploadedImageBytes != null
-                      ? DecorationImage(image: MemoryImage(_uploadedImageBytes!), fit: BoxFit.cover)
-                      : DecorationImage(image: NetworkImage(_imageUrl), fit: BoxFit.cover),
-                ),
-                child: Align(
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _uploadedImageBytes != null ? AppTheme.primary : AppTheme.border, width: _uploadedImageBytes != null ? 2 : 1),
+                    image: _uploadedImageBytes != null
+                        ? DecorationImage(image: MemoryImage(_uploadedImageBytes!), fit: BoxFit.cover, alignment: Alignment.center)
+                        : DecorationImage(image: NetworkImage(_imageUrl), fit: BoxFit.cover, alignment: Alignment.center),
+                  ),
+                  child: Align(
                   alignment: Alignment.bottomRight,
                   child: Container(
                     margin: const EdgeInsets.all(8),
@@ -628,12 +632,14 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
                   ),
                 ),
               ),
+            ),
               const SizedBox(height: 4),
               const Text('📸 Upload your own high-resolution car photo or choose a studio preset', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
             ],
           ),
         ),
       ),
+    ),
       actions: [
         TextButton(
           onPressed: _isUploadingToCloud ? null : () => Navigator.of(context).pop(),

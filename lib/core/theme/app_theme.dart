@@ -111,6 +111,22 @@ class AppTheme {
           return const IconThemeData(color: textSecondary, size: 24);
         }),
       ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: surface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: border),
+        ),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: surface,
+        modalBackgroundColor: surface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+      ),
       dividerTheme: const DividerThemeData(
         color: border,
         thickness: 1,
