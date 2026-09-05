@@ -1002,7 +1002,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildGarageVehicleCard(VehicleItem veh, {bool isGrid = false}) {
+  Widget _buildGarageVehicleCard(UserVehicle veh, {bool isGrid = false}) {
     return Container(
       margin: EdgeInsets.only(bottom: isGrid ? 0 : 16),
       decoration: BoxDecoration(
