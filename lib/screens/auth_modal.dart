@@ -403,6 +403,7 @@ class _AuthModalState extends State<AuthModal> {
         ),
       ),
     ),
-  );
+  ),
+);
 }
 }
