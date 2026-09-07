@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../core/constants/app_constants.dart';
@@ -73,6 +75,8 @@ class ZoneDraft {
   String defectBadge;
   String? beforeImageUrl;
   String? afterImageUrl;
+  Uint8List? beforeBytes;
+  Uint8List? afterBytes;
   bool isUploadingBefore;
   bool isUploadingAfter;
   double? initialMicrons;
@@ -85,6 +89,8 @@ class ZoneDraft {
     required this.defectBadge,
     this.beforeImageUrl,
     this.afterImageUrl,
+    this.beforeBytes,
+    this.afterBytes,
     this.isUploadingBefore = false,
     this.isUploadingAfter = false,
     this.initialMicrons = 112.0,
@@ -178,6 +184,16 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
         return;
       }
 
+      // 1. Immediately store local bytes for instant preview so image loads immediately!
+      setState(() {
+        if (isBefore) {
+          zone.beforeBytes = picked.bytes;
+        } else {
+          zone.afterBytes = picked.bytes;
+        }
+      });
+
+      // 2. Upload to Cloudflare R2
       final fileName = 'job_${isBefore ? "before" : "after"}_${zone.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final cdnUrl = await R2StorageService.uploadImage(
         userId: user.id,
@@ -187,28 +203,47 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
 
       setState(() {
         if (isBefore) {
-          zone.beforeImageUrl = cdnUrl;
+          if (cdnUrl != null && cdnUrl.isNotEmpty) {
+            zone.beforeImageUrl = cdnUrl;
+          } else {
+            // Fallback: encode as data URI so it remains valid and visible
+            zone.beforeImageUrl = 'data:image/jpeg;base64,${base64Encode(picked.bytes!)}';
+          }
           zone.isUploadingBefore = false;
         } else {
-          zone.afterImageUrl = cdnUrl;
+          if (cdnUrl != null && cdnUrl.isNotEmpty) {
+            zone.afterImageUrl = cdnUrl;
+          } else {
+            zone.afterImageUrl = 'data:image/jpeg;base64,${base64Encode(picked.bytes!)}';
+          }
           zone.isUploadingAfter = false;
         }
       });
 
-      if (cdnUrl != null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.cloud_done_rounded, color: AppTheme.primary, size: 18),
-                const SizedBox(width: 8),
-                Text('${isBefore ? "Before" : "After"} photo uploaded directly to Cloudflare R2!'),
-              ],
+      if (mounted) {
+        if (cdnUrl != null && cdnUrl.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.cloud_done_rounded, color: AppTheme.primary, size: 18),
+                  const SizedBox(width: 8),
+                  Text('${isBefore ? "Before" : "After"} photo uploaded to Cloudflare R2!'),
+                ],
+              ),
+              backgroundColor: AppTheme.surface,
+              duration: const Duration(seconds: 2),
             ),
-            backgroundColor: AppTheme.surface,
-            duration: const Duration(seconds: 2),
-          ),
-        );
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${isBefore ? "Before" : "After"} photo loaded locally (R2 direct upload in progress).'),
+              backgroundColor: AppTheme.surface,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
       }
     } catch (e) {
       setState(() {
@@ -221,7 +256,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error uploading photo: $e'),
+            content: Text('Error loading photo: $e'),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -795,6 +830,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                 child: _buildPhotoUploadSlot(
                   title: 'BEFORE (Defects)',
                   imageUrl: zone.beforeImageUrl,
+                  imageBytes: zone.beforeBytes,
                   isUploading: zone.isUploadingBefore,
                   accentColor: AppTheme.hardnessSoft,
                   onTap: () => _pickAndUploadImage(zone, true),
@@ -806,6 +842,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                 child: _buildPhotoUploadSlot(
                   title: 'AFTER (Corrected)',
                   imageUrl: zone.afterImageUrl,
+                  imageBytes: zone.afterBytes,
                   isUploading: zone.isUploadingAfter,
                   accentColor: AppTheme.primary,
                   onTap: () => _pickAndUploadImage(zone, false),
@@ -869,11 +906,30 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
   Widget _buildPhotoUploadSlot({
     required String title,
     required String? imageUrl,
+    Uint8List? imageBytes,
     required bool isUploading,
     required Color accentColor,
     required VoidCallback onTap,
   }) {
-    final hasImage = imageUrl != null && imageUrl.isNotEmpty;
+    final hasBytes = imageBytes != null && imageBytes.isNotEmpty;
+    final hasUrl = imageUrl != null && imageUrl.isNotEmpty;
+    final hasImage = hasBytes || hasUrl;
+
+    ImageProvider? imageProvider;
+    if (hasBytes) {
+      imageProvider = MemoryImage(imageBytes);
+    } else if (hasUrl) {
+      if (imageUrl.startsWith('data:image')) {
+        try {
+          final base64String = imageUrl.split(',').last;
+          imageProvider = MemoryImage(base64Decode(base64String));
+        } catch (_) {
+          imageProvider = NetworkImage(imageUrl);
+        }
+      } else {
+        imageProvider = NetworkImage(imageUrl);
+      }
+    }
 
     return InkWell(
       onTap: isUploading ? null : onTap,
@@ -887,25 +943,28 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
             color: hasImage ? accentColor.withAlpha(150) : AppTheme.border,
             width: hasImage ? 1.5 : 1,
           ),
-          image: hasImage
+          image: imageProvider != null
               ? DecorationImage(
-                  image: NetworkImage(imageUrl),
+                  image: imageProvider,
                   fit: BoxFit.cover,
                 )
               : null,
         ),
         child: isUploading
-            ? const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
-                    SizedBox(height: 8),
-                    Text(
-                      'Uploading to R2...',
-                      style: TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.bold),
-                    ),
-                  ],
+            ? Container(
+                color: Colors.black.withAlpha(140),
+                child: const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
+                      SizedBox(height: 8),
+                      Text(
+                        'Uploading to R2...',
+                        style: TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
                 ),
               )
             : Stack(

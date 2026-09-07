@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../models/detail_job.dart';
@@ -55,6 +56,19 @@ class _SplitSliderWidgetState extends State<SplitSliderWidget> {
       : widget.defectBadge;
 
   Widget _buildImage(String url, bool isBefore) {
+    if (url.startsWith('data:image')) {
+      try {
+        final base64String = url.split(',').last;
+        final bytes = base64Decode(base64String);
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: widget.height,
+        );
+      } catch (_) {}
+    }
+
     return Image.network(
       url,
       fit: BoxFit.cover,
