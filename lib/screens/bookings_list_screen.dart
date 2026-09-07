@@ -233,116 +233,148 @@ class BookingsListScreen extends StatelessWidget {
       builder: (context, _) {
         final isLoggedIn = repository.isLoggedIn;
 
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Appointments & Bookings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          ),
-          body: !isLoggedIn
-              ? _buildGuestBookingsView(context)
-              : repository.bookings.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.event_note_rounded, size: 48, color: AppTheme.textMuted.withAlpha(120)),
-                            const SizedBox(height: 14),
-                            const Text(
-                              'No Bookings Yet',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                            ),
-                            const SizedBox(height: 6),
-                            const Text(
-                              'Explore verified detailers on the Explore tab and book your first paint correction or coating service.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 12, color: AppTheme.textMuted, height: 1.4),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: repository.bookings.length,
-                      itemBuilder: (ctx, idx) {
-                        final booking = repository.bookings[idx];
-                        return GestureDetector(
-                          onTap: () => _showBookingDetailsModal(context, booking),
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 14),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: AppTheme.surface,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: AppTheme.border),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        CircleAvatar(
-                                          radius: 16,
-                                          backgroundImage: NetworkImage(booking.detailerAvatar),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(booking.detailerBusinessName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                            Text(booking.locationType.label, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: booking.status.statusColor.withAlpha(25),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(color: booking.status.statusColor.withAlpha(90)),
-                                      ),
-                                      child: Text(
-                                        booking.status.label,
-                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: booking.status.statusColor),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const Divider(color: AppTheme.border, height: 20),
-                                Text(booking.package.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                const SizedBox(height: 4),
-                                Text(booking.vehicleYearMakeModel, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    const Icon(Icons.calendar_month_rounded, size: 14, color: AppTheme.primary),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      DateFormat('EEE, MMM d').format(booking.scheduledDate),
-                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                                    ),
-                                    const SizedBox(width: 14),
-                                    const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.textMuted),
-                                    const SizedBox(width: 6),
-                                    Text(booking.scheduledTimeSlot, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
-                                    const Spacer(),
-                                    Text(
-                                      '\$${booking.totalPrice.toStringAsFixed(0)}',
-                                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppTheme.textPrimary),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isDesktop = constraints.maxWidth >= 768;
+
+            return Scaffold(
+              appBar: isDesktop
+                  ? null
+                  : AppBar(
+                      title: const Text('Appointments & Bookings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     ),
+              body: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 860),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: !isLoggedIn
+                        ? _buildGuestBookingsView(context)
+                        : repository.bookings.isEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(32),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.event_note_rounded, size: 48, color: AppTheme.textMuted.withAlpha(120)),
+                                      const SizedBox(height: 14),
+                                      const Text(
+                                        'No Bookings Yet',
+                                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      const Text(
+                                        'Explore verified detailers on the Explore tab and book your first paint correction or coating service.',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(fontSize: 12, color: AppTheme.textMuted, height: 1.4),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (isDesktop) ...[
+                                    const Padding(
+                                      padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
+                                      child: Text(
+                                        'Appointments & Bookings',
+                                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ],
+                                  Expanded(
+                                    child: ListView.builder(
+                                      padding: const EdgeInsets.all(16),
+                                      itemCount: repository.bookings.length,
+                                      itemBuilder: (ctx, idx) {
+                                        final booking = repository.bookings[idx];
+                                        return GestureDetector(
+                                          onTap: () => _showBookingDetailsModal(context, booking),
+                                          child: Container(
+                                            margin: const EdgeInsets.only(bottom: 14),
+                                            padding: const EdgeInsets.all(16),
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.surface,
+                                              borderRadius: BorderRadius.circular(16),
+                                              border: Border.all(color: AppTheme.border),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                  children: [
+                                                    Row(
+                                                      children: [
+                                                        CircleAvatar(
+                                                          radius: 16,
+                                                          backgroundImage: NetworkImage(booking.detailerAvatar),
+                                                        ),
+                                                        const SizedBox(width: 10),
+                                                        Column(
+                                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                                          children: [
+                                                            Text(booking.detailerBusinessName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                                            Text(booking.locationType.label, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                                                          ],
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                      decoration: BoxDecoration(
+                                                        color: booking.status.statusColor.withAlpha(25),
+                                                        borderRadius: BorderRadius.circular(6),
+                                                        border: Border.all(color: booking.status.statusColor.withAlpha(90)),
+                                                      ),
+                                                      child: Text(
+                                                        booking.status.label,
+                                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: booking.status.statusColor),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const Divider(color: AppTheme.border, height: 20),
+                                                Text(booking.package.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                                const SizedBox(height: 4),
+                                                Text(booking.vehicleYearMakeModel, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                                                const SizedBox(height: 12),
+                                                Row(
+                                                  children: [
+                                                    const Icon(Icons.calendar_month_rounded, size: 14, color: AppTheme.primary),
+                                                    const SizedBox(width: 6),
+                                                    Text(
+                                                      DateFormat('EEE, MMM d').format(booking.scheduledDate),
+                                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                                    ),
+                                                    const SizedBox(width: 14),
+                                                    const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.textMuted),
+                                                    const SizedBox(width: 6),
+                                                    Text(booking.scheduledTimeSlot, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                                                    const Spacer(),
+                                                    Text(
+                                                      '\$${booking.totalPrice.toStringAsFixed(0)}',
+                                                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppTheme.textPrimary),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                  ),
+                ),
+              ),
+            );
+          },
         );
       },
     );

@@ -772,7 +772,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                                     crossAxisCount: crossAxisCount,
                                                     crossAxisSpacing: 16,
                                                     mainAxisSpacing: 16,
-                                                    childAspectRatio: 0.65,
+                                                    childAspectRatio: 0.54,
                                                   ),
                                                   itemCount: myJobs.length,
                                                   itemBuilder: (context, index) {

@@ -221,7 +221,7 @@ class JobRecipeCard extends StatelessWidget {
     final canManage = showDetailerManagement || isAuthor;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 18),
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: AppTheme.surface,
         borderRadius: BorderRadius.circular(16),
@@ -324,13 +324,16 @@ class JobRecipeCard extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           const Icon(Icons.history_rounded, size: 14, color: AppTheme.hardnessSoft),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Before Photos (${beforeList.length})',
-                            style: const TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.hardnessSoft,
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              'Before (${beforeList.length})',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.hardnessSoft,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -349,7 +352,7 @@ class JobRecipeCard extends StatelessWidget {
                     ),
                     borderRadius: BorderRadius.circular(8),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                       decoration: BoxDecoration(
                         color: AppTheme.surfaceLight,
                         borderRadius: BorderRadius.circular(8),
@@ -359,13 +362,16 @@ class JobRecipeCard extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           const Icon(Icons.auto_awesome_rounded, size: 14, color: AppTheme.primary),
-                          const SizedBox(width: 6),
-                          Text(
-                            'After Photos (${afterList.length})',
-                            style: const TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.primary,
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              'After (${afterList.length})',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.primary,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -420,6 +426,7 @@ class JobRecipeCard extends StatelessWidget {
                     runSpacing: 6,
                     children: [
                       Container(
+                        constraints: const BoxConstraints(maxWidth: 180),
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: AppTheme.primary.withAlpha(20),
@@ -430,27 +437,43 @@ class JobRecipeCard extends StatelessWidget {
                           children: [
                             const Icon(Icons.auto_fix_high_rounded, size: 12, color: AppTheme.primary),
                             const SizedBox(width: 4),
-                            Text(cutStage.chemical, style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.bold)),
+                            Flexible(
+                              child: Text(
+                                cutStage.chemical,
+                                style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.bold),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                           ],
                         ),
                       ),
                       if (cutStage.pad.isNotEmpty)
                         Container(
+                          constraints: const BoxConstraints(maxWidth: 140),
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: AppTheme.surfaceLight,
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: Text(cutStage.pad, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                          child: Text(
+                            cutStage.pad,
+                            style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       if (finishStage != null)
                         Container(
+                          constraints: const BoxConstraints(maxWidth: 160),
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: AppTheme.surfaceLight,
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: Text(finishStage.chemical, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                          child: Text(
+                            finishStage.chemical,
+                            style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                     ],
                   ),
@@ -464,19 +487,27 @@ class JobRecipeCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.all(2),
+                          constraints: const BoxConstraints(),
                           icon: Icon(
                             job.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                             color: job.isLiked ? Colors.redAccent : AppTheme.textSecondary,
-                            size: 20,
+                            size: 18,
                           ),
                           onPressed: onLike,
                         ),
-                        Text('${job.likesCount}', style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 2),
+                        Text('${job.likesCount}', style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                        const SizedBox(width: 6),
                         IconButton(
-                          icon: const Icon(Icons.chat_bubble_outline_rounded, size: 19, color: AppTheme.textSecondary),
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.all(2),
+                          constraints: const BoxConstraints(),
+                          icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16, color: AppTheme.textSecondary),
                           onPressed: () {
                             Navigator.of(context).push(
                               MaterialPageRoute(
@@ -485,22 +516,29 @@ class JobRecipeCard extends StatelessWidget {
                             );
                           },
                         ),
-                        Text('${job.comments.length}', style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 2),
+                        Text('${job.comments.length}', style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                        const SizedBox(width: 6),
                         IconButton(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.all(2),
+                          constraints: const BoxConstraints(),
                           icon: Icon(
                             job.isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
                             color: job.isSaved ? AppTheme.primary : AppTheme.textSecondary,
-                            size: 20,
+                            size: 18,
                           ),
                           onPressed: onSave,
                         ),
                       ],
                     ),
-                    TextButton.icon(
-                      style: TextButton.styleFrom(foregroundColor: AppTheme.primary),
-                      icon: const Text('View Recipe', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                      label: const Icon(Icons.arrow_forward_rounded, size: 14),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppTheme.primary,
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        minimumSize: const Size(0, 28),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                       onPressed: () {
                         Navigator.of(context).push(
                           MaterialPageRoute(
@@ -508,6 +546,14 @@ class JobRecipeCard extends StatelessWidget {
                           ),
                         );
                       },
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('Recipe', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                          SizedBox(width: 2),
+                          Icon(Icons.arrow_forward_rounded, size: 13),
+                        ],
+                      ),
                     ),
                   ],
                 ),

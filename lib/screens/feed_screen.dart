@@ -58,57 +58,112 @@ class _FeedScreenState extends State<FeedScreen> {
         final activeCities = widget.repository.activeCitiesWithDetailers;
         final selectedCity = widget.repository.selectedLocationCity;
 
-        return Scaffold(
-          appBar: AppBar(
-            title: _isSearching
-                ? TextField(
-                    controller: _searchCtrl,
-                    autofocus: true,
-                    decoration: const InputDecoration(
-                      hintText: 'Search city, detailer name, ceramic...',
-                      border: InputBorder.none,
-                    ),
-                    onChanged: (v) => widget.repository.setSearchQuery(v),
-                  )
-                : Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primary.withAlpha(30),
-                          borderRadius: BorderRadius.circular(8),
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isDesktop = constraints.maxWidth >= 768;
+
+            return Scaffold(
+              appBar: isDesktop
+                  ? null
+                  : AppBar(
+                      title: _isSearching
+                          ? TextField(
+                              controller: _searchCtrl,
+                              autofocus: true,
+                              decoration: const InputDecoration(
+                                hintText: 'Search city, detailer name, ceramic...',
+                                border: InputBorder.none,
+                              ),
+                              onChanged: (v) => widget.repository.setSearchQuery(v),
+                            )
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primary.withAlpha(30),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(Icons.auto_awesome_rounded, color: AppTheme.primary, size: 20),
+                                ),
+                                const SizedBox(width: 8),
+                                const Flexible(
+                                  child: Text(
+                                    'AutoDetailCraft',
+                                    style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: -0.5),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                      actions: [
+                        IconButton(
+                          icon: Icon(_isSearching ? Icons.close : Icons.search_rounded),
+                          onPressed: () {
+                            setState(() {
+                              _isSearching = !_isSearching;
+                              if (!_isSearching) {
+                                _searchCtrl.clear();
+                                widget.repository.setSearchQuery('');
+                              }
+                            });
+                          },
                         ),
-                        child: const Icon(Icons.auto_awesome_rounded, color: AppTheme.primary, size: 20),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'AutoDetailCraft',
-                        style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: -0.5),
-                      ),
-                    ],
-                  ),
-            actions: [
-              IconButton(
-                icon: Icon(_isSearching ? Icons.close : Icons.search_rounded),
-                onPressed: () {
-                  setState(() {
-                    _isSearching = !_isSearching;
-                    if (!_isSearching) {
-                      _searchCtrl.clear();
-                      widget.repository.setSearchQuery('');
-                    }
-                  });
-                },
-              ),
-            ],
-          ),
-          body: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1200),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 1. Dynamic Active Cities Filter (Includes your registered location!)
+                      ],
+                    ),
+              body: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1280),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Desktop Turo-style Search & Filter Pill
+                        if (isDesktop) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                            child: Container(
+                              height: 48,
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              decoration: BoxDecoration(
+                                color: AppTheme.surface,
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(color: AppTheme.border),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.search_rounded, color: AppTheme.primary, size: 20),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _searchCtrl,
+                                      decoration: const InputDecoration(
+                                        hintText: 'Search detailing transformations, studios, cities (e.g. ceramic, Porsche, Los Angeles)...',
+                                        border: InputBorder.none,
+                                        isDense: true,
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                      onChanged: (v) => widget.repository.setSearchQuery(v),
+                                    ),
+                                  ),
+                                  if (_searchCtrl.text.isNotEmpty)
+                                    IconButton(
+                                      icon: const Icon(Icons.clear_rounded, size: 18, color: AppTheme.textMuted),
+                                      onPressed: () {
+                                        _searchCtrl.clear();
+                                        widget.repository.setSearchQuery('');
+                                        setState(() {});
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+
+                        // 1. Dynamic Active Cities Filter (Includes your registered location!)
                   Container(
                     height: 46,
                     padding: const EdgeInsets.symmetric(vertical: 4),
@@ -162,12 +217,16 @@ class _FeedScreenState extends State<FeedScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            selectedCity == 'All Locations'
-                                ? 'Featured Detailers & Studios'
-                                : 'Verified Detailers in $selectedCity',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                          Flexible(
+                            child: Text(
+                              selectedCity == 'All Locations'
+                                  ? 'Featured Detailers & Studios'
+                                  : 'Verified Detailers in $selectedCity',
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
+                          const SizedBox(width: 8),
                           Text(
                             '${detailers.length} Studios',
                             style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.bold),
@@ -176,7 +235,7 @@ class _FeedScreenState extends State<FeedScreen> {
                       ),
                     ),
                     SizedBox(
-                      height: 104,
+                      height: 126,
                       child: ListView.builder(
                         scrollDirection: Axis.horizontal,
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -382,7 +441,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                           crossAxisCount: crossAxisCount,
                                           crossAxisSpacing: 16,
                                           mainAxisSpacing: 16,
-                                          childAspectRatio: 0.65,
+                                          childAspectRatio: 0.54,
                                         ),
                                         itemCount: jobs.length,
                                         itemBuilder: (context, idx) {
@@ -403,7 +462,10 @@ class _FeedScreenState extends State<FeedScreen> {
               ),
             ),
           ),
-        );
+        ),
+      );
+    },
+  );
       },
     );
   }
