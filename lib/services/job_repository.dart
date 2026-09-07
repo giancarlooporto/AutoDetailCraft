@@ -28,6 +28,7 @@ class JobRepository extends ChangeNotifier {
 
   bool get isInitialized => _isInitialized;
   bool get isLoggedIn => _isLoggedIn;
+  bool get isGuestMode => !_isLoggedIn;
   int get activeTabIndex => _activeTabIndex;
 
   Future<void> init() async {
@@ -282,6 +283,13 @@ class JobRepository extends ChangeNotifier {
       role: isNowHost ? UserRole.detailer : UserRole.client,
       isVerifiedHost: isNowHost,
     );
+    _persistUser();
+    notifyListeners();
+  }
+
+  // Update subscription tier (free, pro, enterprise)
+  void updateSubscriptionTier(SubscriptionTier tier) {
+    _currentUser = _currentUser.copyWith(subscriptionTier: tier);
     _persistUser();
     notifyListeners();
   }

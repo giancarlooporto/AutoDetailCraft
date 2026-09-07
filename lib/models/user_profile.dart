@@ -12,6 +12,16 @@ enum UserRole {
   const UserRole(this.label);
 }
 
+enum SubscriptionTier {
+  free('Free Starter', 3), // 3 before + 3 after photos (3 zones)
+  pro('Pro Studio', 15),   // 30 photos total (15 zones)
+  enterprise('Enterprise / Shop', 9999); // Unlimited
+
+  final String label;
+  final int maxZones;
+  const SubscriptionTier(this.label, this.maxZones);
+}
+
 class UserCertification {
   final String title;
   final String issuer;
@@ -67,6 +77,7 @@ class UserProfile {
   final int followersCount;
   final int followingCount;
   final double startingPrice;
+  final SubscriptionTier subscriptionTier;
 
   const UserProfile({
     required this.id,
@@ -95,6 +106,7 @@ class UserProfile {
     this.followersCount = 0,
     this.followingCount = 0,
     this.startingPrice = 150.0,
+    this.subscriptionTier = SubscriptionTier.free,
   });
 
   UserProfile copyWith({
@@ -124,6 +136,7 @@ class UserProfile {
     int? followersCount,
     int? followingCount,
     double? startingPrice,
+    SubscriptionTier? subscriptionTier,
   }) {
     return UserProfile(
       id: id ?? this.id,
@@ -152,6 +165,7 @@ class UserProfile {
       followersCount: followersCount ?? this.followersCount,
       followingCount: followingCount ?? this.followingCount,
       startingPrice: startingPrice ?? this.startingPrice,
+      subscriptionTier: subscriptionTier ?? this.subscriptionTier,
     );
   }
 
@@ -183,6 +197,7 @@ class UserProfile {
       'followersCount': followersCount,
       'followingCount': followingCount,
       'startingPrice': startingPrice,
+      'subscriptionTier': subscriptionTier.name,
     };
   }
 
@@ -226,6 +241,10 @@ class UserProfile {
       followersCount: json['followersCount'] as int? ?? 0,
       followingCount: json['followingCount'] as int? ?? 0,
       startingPrice: (json['startingPrice'] as num?)?.toDouble() ?? 150.0,
+      subscriptionTier: SubscriptionTier.values.firstWhere(
+        (t) => t.name == (json['subscriptionTier'] as String?),
+        orElse: () => SubscriptionTier.free,
+      ),
     );
   }
 }

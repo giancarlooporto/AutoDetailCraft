@@ -5,6 +5,7 @@ import '../models/user_profile.dart';
 import '../services/job_repository.dart';
 import '../widgets/job_recipe_card.dart';
 import 'booking_flow_screen.dart';
+import 'public_studio_screen.dart';
 
 class FeedScreen extends StatefulWidget {
   final JobRepository repository;
@@ -29,6 +30,17 @@ class _FeedScreenState extends State<FeedScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => BookingFlowScreen(
+          detailer: detailer,
+          repository: widget.repository,
+        ),
+      ),
+    );
+  }
+
+  void _openPublicStudio(BuildContext context, UserProfile detailer) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PublicStudioScreen(
           detailer: detailer,
           repository: widget.repository,
         ),
@@ -171,31 +183,34 @@ class _FeedScreenState extends State<FeedScreen> {
                       final d = detailers[idx];
                       final isYou = d.id == widget.repository.currentUser.id;
 
-                      return Container(
-                        width: 280,
-                        margin: const EdgeInsets.only(right: 12),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppTheme.surface,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: isYou ? AppTheme.primary : AppTheme.border,
-                            width: isYou ? 1.5 : 1,
+                      return InkWell(
+                        onTap: () => _openPublicStudio(context, d),
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          width: 280,
+                          margin: const EdgeInsets.only(right: 12),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isYou ? AppTheme.primary : AppTheme.border,
+                              width: isYou ? 1.5 : 1,
+                            ),
+                            boxShadow: isYou
+                                ? [
+                                    BoxShadow(
+                                      color: AppTheme.primary.withAlpha(20),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 3),
+                                    ),
+                                  ]
+                                : null,
                           ),
-                          boxShadow: isYou
-                              ? [
-                                  BoxShadow(
-                                    color: AppTheme.primary.withAlpha(20),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 3),
-                                  ),
-                                ]
-                              : null,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
                             Row(
                               children: [
                                 CircleAvatar(
@@ -274,8 +289,9 @@ class _FeedScreenState extends State<FeedScreen> {
                             ),
                           ],
                         ),
-                      );
-                    },
+                      ),
+                    );
+                  },
                   ),
                 ),
                 const Divider(color: AppTheme.border, height: 16),

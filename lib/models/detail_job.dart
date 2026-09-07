@@ -1,10 +1,13 @@
 import 'user_profile.dart';
 
 enum PaintHardness {
-  soft,        // e.g. Tesla Solid Black, Subaru, Mazda (very sticky, micro-mars easily)
-  medium,      // e.g. Ford, Chevrolet, Toyota
-  hard,        // e.g. BMW, Mercedes CeramiClear, Audi, Porsche
-  singleStage, // Vintage / classic non-clear coated enamel or lacquer
+  soft('Soft (Tesla, Subaru, Mazda)'),
+  medium('Medium (Ford, Chevy, Toyota)'),
+  hard('Hard (Porsche, BMW, Audi, Mercedes)'),
+  singleStage('Single Stage Vintage Enamel');
+
+  final String label;
+  const PaintHardness(this.label);
 }
 
 class RecipeStage {
@@ -45,6 +48,46 @@ class JobComment {
   });
 }
 
+class JobMediaZone {
+  final String id;
+  final String zoneName; // e.g. 'Front / Hood', 'Driver Side / Doors', 'Rear / Bumper', 'Wheels & Calipers', 'Interior / Leather'
+  final String beforeImageUrl;
+  final String afterImageUrl;
+  final String? defectBadge;
+  final double? initialMicrons;
+  final double? finalMicrons;
+
+  const JobMediaZone({
+    required this.id,
+    required this.zoneName,
+    required this.beforeImageUrl,
+    required this.afterImageUrl,
+    this.defectBadge,
+    this.initialMicrons,
+    this.finalMicrons,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'zoneName': zoneName,
+    'beforeImageUrl': beforeImageUrl,
+    'afterImageUrl': afterImageUrl,
+    'defectBadge': defectBadge,
+    'initialMicrons': initialMicrons,
+    'finalMicrons': finalMicrons,
+  };
+
+  factory JobMediaZone.fromJson(Map<String, dynamic> json) => JobMediaZone(
+    id: json['id'] as String? ?? 'zone_1',
+    zoneName: json['zoneName'] as String? ?? 'Front / Hood',
+    beforeImageUrl: json['beforeImageUrl'] as String? ?? '',
+    afterImageUrl: json['afterImageUrl'] as String? ?? '',
+    defectBadge: json['defectBadge'] as String?,
+    initialMicrons: (json['initialMicrons'] as num?)?.toDouble(),
+    finalMicrons: (json['finalMicrons'] as num?)?.toDouble(),
+  );
+}
+
 class DetailJob {
   final String id;
   final UserProfile author;
@@ -69,10 +112,13 @@ class DetailJob {
   // Recipe
   final List<RecipeStage> recipeStages;
   
-  // Media for 50/50 Slider
+  // Media for 50/50 Slider (Primary / Hero)
   final String beforeImageUrl;
   final String afterImageUrl;
   final String defectBadge; // e.g. 'Heavy Swirls & Bird Etchings', '800-Grit Wet Sand Scratches'
+
+  // Multi-Zone Guided Before & After Media
+  final List<JobMediaZone> mediaZones;
   
   // Business metrics
   final double durationHours;
@@ -105,6 +151,7 @@ class DetailJob {
     required this.beforeImageUrl,
     required this.afterImageUrl,
     this.defectBadge = 'Swirl Marks & Micro-Marring',
+    this.mediaZones = const [],
     this.durationHours = 8.0,
     this.quotedPrice,
     this.likesCount = 0,
@@ -117,6 +164,25 @@ class DetailJob {
   double get micronsRemoved => (initialPaintThicknessMicrons - finalPaintThicknessMicrons).clamp(0.0, 99.0);
 
   String get vehicleFullName => '$vehicleYear $vehicleMake $vehicleModel';
+
+  /// Returns media zones, falling back to a default zone from before/after URLs if mediaZones is empty.
+  List<JobMediaZone> get effectiveMediaZones {
+    if (mediaZones.isNotEmpty) return mediaZones;
+    if (beforeImageUrl.isNotEmpty || afterImageUrl.isNotEmpty) {
+      return [
+        JobMediaZone(
+          id: 'hero_zone',
+          zoneName: 'Front / Hood',
+          beforeImageUrl: beforeImageUrl,
+          afterImageUrl: afterImageUrl,
+          defectBadge: defectBadge,
+          initialMicrons: initialPaintThicknessMicrons,
+          finalMicrons: finalPaintThicknessMicrons,
+        ),
+      ];
+    }
+    return const [];
+  }
 
   DetailJob copyWith({
     String? id,
@@ -138,6 +204,7 @@ class DetailJob {
     String? beforeImageUrl,
     String? afterImageUrl,
     String? defectBadge,
+    List<JobMediaZone>? mediaZones,
     double? durationHours,
     double? quotedPrice,
     int? likesCount,
@@ -166,6 +233,7 @@ class DetailJob {
       beforeImageUrl: beforeImageUrl ?? this.beforeImageUrl,
       afterImageUrl: afterImageUrl ?? this.afterImageUrl,
       defectBadge: defectBadge ?? this.defectBadge,
+      mediaZones: mediaZones ?? this.mediaZones,
       durationHours: durationHours ?? this.durationHours,
       quotedPrice: quotedPrice ?? this.quotedPrice,
       likesCount: likesCount ?? this.likesCount,

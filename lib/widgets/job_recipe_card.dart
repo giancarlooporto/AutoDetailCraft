@@ -3,6 +3,7 @@ import '../core/theme/app_theme.dart';
 import '../models/detail_job.dart';
 import '../screens/job_detail_screen.dart';
 import '../screens/booking_flow_screen.dart';
+import '../screens/public_studio_screen.dart';
 import '../services/job_repository.dart';
 import 'split_slider_widget.dart';
 
@@ -38,13 +39,24 @@ class JobRecipeCard extends StatelessWidget {
     );
   }
 
+  void _openPublicStudio(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PublicStudioScreen(
+          detailer: job.author,
+          repository: repository,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cutStage = job.recipeStages.isNotEmpty ? job.recipeStages.first : null;
     final finishStage = job.recipeStages.length > 1 ? job.recipeStages.last : null;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 18),
       decoration: BoxDecoration(
         color: AppTheme.surface,
         borderRadius: BorderRadius.circular(16),
@@ -53,40 +65,47 @@ class JobRecipeCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header: Detailer profile & verified tag
+          // Header: Detailer profile & verified tag (Tappable to view Studio)
           Padding(
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
-                CircleAvatar(
-                  radius: 20,
-                  backgroundImage: NetworkImage(job.author.avatarUrl),
+                InkWell(
+                  onTap: () => _openPublicStudio(context),
+                  borderRadius: BorderRadius.circular(20),
+                  child: CircleAvatar(
+                    radius: 20,
+                    backgroundImage: NetworkImage(job.author.avatarUrl),
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              job.author.businessName,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                              overflow: TextOverflow.ellipsis,
+                  child: InkWell(
+                    onTap: () => _openPublicStudio(context),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                job.author.businessName,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                          if (job.author.isVerifiedHost) ...[
-                            const SizedBox(width: 4),
-                            const Icon(Icons.verified_rounded, size: 15, color: AppTheme.primary),
+                            if (job.author.isVerifiedHost) ...[
+                              const SizedBox(width: 4),
+                              const Icon(Icons.verified_rounded, size: 15, color: AppTheme.primary),
+                            ],
                           ],
-                        ],
-                      ),
-                      Text(
-                        '${job.author.location} • ${_formatTimeAgo(job.createdAt)}',
-                        style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
-                      ),
-                    ],
+                        ),
+                        Text(
+                          '${job.author.location} • ${_formatTimeAgo(job.createdAt)}',
+                          style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 IconButton(
@@ -103,6 +122,7 @@ class JobRecipeCard extends StatelessWidget {
             beforeImageUrl: job.beforeImageUrl,
             afterImageUrl: job.afterImageUrl,
             defectBadge: job.defectBadge,
+            zones: job.effectiveMediaZones,
             height: 250,
           ),
 

@@ -152,6 +152,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                 beforeImageUrl: _currentJob.beforeImageUrl,
                 afterImageUrl: _currentJob.afterImageUrl,
                 defectBadge: _currentJob.defectBadge,
+                zones: _currentJob.effectiveMediaZones,
                 height: 320,
               ),
             ),

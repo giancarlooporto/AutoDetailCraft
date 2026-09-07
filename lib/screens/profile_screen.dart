@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
-import '../models/detail_job.dart';
-import '../models/booking_models.dart';
 import '../models/team_member.dart';
 import '../models/user_vehicle.dart';
 import '../services/job_repository.dart';
-import 'job_detail_screen.dart';
-import 'booking_flow_screen.dart';
 import 'vehicle_editor_dialog.dart';
 import 'auth_modal.dart';
 import 'edit_profile_dialog.dart';
 import 'add_team_member_dialog.dart';
+import 'public_studio_screen.dart';
+import 'create_job_screen.dart';
 import '../widgets/job_recipe_card.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -41,6 +39,29 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     super.dispose();
   }
 
+  void _openCreateTransformation(BuildContext context) {
+    if (!widget.repository.isLoggedIn) {
+      AuthModal.show(
+        context,
+        repository: widget.repository,
+        initialIsSignUp: false,
+        onSuccess: () => _openCreateTransformation(context),
+      );
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CreateJobScreen(
+          repository: widget.repository,
+          onJobCreated: () {
+            setState(() {});
+          },
+        ),
+      ),
+    );
+  }
+
   void _openVehicleEditor(BuildContext context, [UserVehicle? vehicle]) {
     if (!widget.repository.isLoggedIn) {
       AuthModal.show(
@@ -58,88 +79,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         repository: widget.repository,
         vehicleToEdit: vehicle,
       ),
-    );
-  }
-
-  void _showAddTeamMemberDialog(BuildContext context) {
-    final nameCtrl = TextEditingController();
-    final roleCtrl = TextEditingController(text: 'Lead Paint Correction Specialist');
-    final avatarCtrl = TextEditingController(
-      text: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
-    );
-
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: AppTheme.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: AppTheme.border),
-          ),
-          title: const Text('Add Team Specialist', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Full Name',
-                      prefixIcon: Icon(Icons.person_outline_rounded),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: roleCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Specialty / Role Title',
-                      prefixIcon: Icon(Icons.work_outline_rounded),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: avatarCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Photo URL',
-                      prefixIcon: Icon(Icons.photo_outlined),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.black,
-              ),
-              onPressed: () {
-                if (nameCtrl.text.trim().isNotEmpty) {
-                  final newMember = TeamMember(
-                    id: 'team_${DateTime.now().millisecondsSinceEpoch}',
-                    name: nameCtrl.text.trim(),
-                    roleTitle: roleCtrl.text.trim(),
-                    avatarUrl: avatarCtrl.text.trim(),
-                    completedJobsCount: 0,
-                    rating: 5.0,
-                  );
-                  widget.repository.addTeamMember(newMember);
-                  Navigator.of(ctx).pop();
-                }
-              },
-              child: const Text('Add to Company', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ],
-        );
-      },
     );
   }
 
@@ -527,54 +466,57 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Detailer / Regular User Mode Switch Banner
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: AppTheme.surface,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: AppTheme.border),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                isDetailer ? Icons.storefront_rounded : Icons.person_rounded,
-                                color: AppTheme.primary,
-                                size: 22,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      isDetailer ? 'Detailer Mode Active' : 'Regular User Mode Active',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                                    ),
-                                    Text(
-                                      isDetailer
-                                          ? 'Showing Storefront, Services & Pricing, and Portfolio'
-                                          : 'Showing Garage, My Vehicles, and Care History',
-                                      style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
-                                    ),
-                                  ],
+                        // Clean Mode Switch & Public Storefront Actions (No enclosing box)
+                        Row(
+                          children: [
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: isDetailer ? AppTheme.primary : Colors.white,
+                                side: BorderSide(
+                                  color: isDetailer ? AppTheme.primary.withAlpha(140) : AppTheme.border,
                                 ),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                backgroundColor: AppTheme.surface.withAlpha(160),
                               ),
-                              ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: isDetailer ? AppTheme.surfaceLight : AppTheme.primary,
-                                  foregroundColor: isDetailer ? AppTheme.primary : Colors.black,
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              onPressed: () => widget.repository.toggleHostMode(),
+                              icon: Icon(
+                                isDetailer ? Icons.directions_car_rounded : Icons.storefront_rounded,
+                                size: 16,
+                              ),
+                              label: Text(
+                                isDetailer ? 'Switch to Client Mode' : 'Switch to Detailer Mode',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            if (isDetailer) ...[
+                              const SizedBox(width: 8),
+                              OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white70,
+                                  side: const BorderSide(color: AppTheme.border),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  backgroundColor: AppTheme.surface.withAlpha(160),
                                 ),
-                                onPressed: () => widget.repository.toggleHostMode(),
-                                child: Text(
-                                  isDetailer ? 'Switch to Client' : 'Switch to Detailer',
-                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                onPressed: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => PublicStudioScreen(
+                                        detailer: user,
+                                        repository: widget.repository,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.visibility_outlined, size: 15),
+                                label: const Text(
+                                  'Public Storefront',
+                                  style: TextStyle(fontSize: 12),
                                 ),
                               ),
                             ],
-                          ),
+                          ],
                         ),
                         const SizedBox(height: 12),
 
@@ -670,42 +612,146 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     controller: _tabController,
                     children: [
                       // TAB 1: Detailer Portfolio
-                      myJobs.isEmpty
-                          ? Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(32),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(Icons.photo_library_outlined, size: 48, color: AppTheme.textMuted),
-                                    const SizedBox(height: 12),
-                                    const Text(
-                                      'No Portfolio Recipes Yet',
-                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    const Text(
-                                      'Use the Post (+) tab in the bottom bar to publish your 50/50 paint correction recipes.',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
-                                    ),
-                                  ],
+                      Column(
+                        children: [
+                          // Studio Portfolio Header Bar with Upload CTA & Tier Indicator
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Text(
+                                            'Transformations',
+                                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: user.subscriptionTier == SubscriptionTier.free
+                                                  ? Colors.grey.withAlpha(40)
+                                                  : (user.subscriptionTier == SubscriptionTier.pro
+                                                      ? AppTheme.primary.withAlpha(30)
+                                                      : Colors.purpleAccent.withAlpha(30)),
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: user.subscriptionTier == SubscriptionTier.free
+                                                    ? AppTheme.border
+                                                    : (user.subscriptionTier == SubscriptionTier.pro
+                                                        ? AppTheme.primary
+                                                        : Colors.purpleAccent),
+                                                width: 0.8,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              user.subscriptionTier.label,
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: user.subscriptionTier == SubscriptionTier.free
+                                                    ? AppTheme.textSecondary
+                                                    : (user.subscriptionTier == SubscriptionTier.pro
+                                                        ? AppTheme.primary
+                                                        : Colors.purpleAccent),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '${myJobs.length} published • Tier allows ${user.subscriptionTier == SubscriptionTier.enterprise ? "unlimited" : "${user.subscriptionTier.maxZones} zones (${user.subscriptionTier.maxZones * 2} photos)"} per post',
+                                        style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            )
-                          : ListView.builder(
-                              padding: const EdgeInsets.all(16),
-                              itemCount: myJobs.length,
-                              itemBuilder: (context, index) {
-                                final job = myJobs[index];
-                                return JobRecipeCard(
-                                  job: job,
-                                  repository: widget.repository,
-                                  onLike: () => widget.repository.toggleLike(job.id),
-                                  onSave: () => widget.repository.toggleSave(job.id),
-                                );
-                              },
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.primary,
+                                    foregroundColor: Colors.black,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  onPressed: () => _openCreateTransformation(context),
+                                  icon: const Icon(Icons.add_photo_alternate_rounded, size: 16),
+                                  label: const Text(
+                                    'Upload',
+                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
                             ),
+                          ),
+                          const Divider(height: 1, color: AppTheme.border),
+                          Expanded(
+                            child: myJobs.isEmpty
+                                ? Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(32),
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(16),
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.surface,
+                                              shape: BoxShape.circle,
+                                              border: Border.all(color: AppTheme.border),
+                                            ),
+                                            child: const Icon(Icons.compare_arrows_rounded, size: 36, color: AppTheme.primary),
+                                          ),
+                                          const SizedBox(height: 14),
+                                          const Text(
+                                            'No Portfolio Transformations Yet',
+                                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          const Text(
+                                            'Showcase your 50/50 paint correction results with guided angle multi-zone photos.',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                                          ),
+                                          const SizedBox(height: 18),
+                                          ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: AppTheme.primary,
+                                              foregroundColor: Colors.black,
+                                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                            ),
+                                            onPressed: () => _openCreateTransformation(context),
+                                            icon: const Icon(Icons.add_photo_alternate_rounded, size: 18),
+                                            label: const Text(
+                                              'Upload First Transformation',
+                                              style: TextStyle(fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                : ListView.builder(
+                                    padding: const EdgeInsets.all(16),
+                                    itemCount: myJobs.length,
+                                    itemBuilder: (context, index) {
+                                      final job = myJobs[index];
+                                      return JobRecipeCard(
+                                        job: job,
+                                        repository: widget.repository,
+                                        onLike: () => widget.repository.toggleLike(job.id),
+                                        onSave: () => widget.repository.toggleSave(job.id),
+                                      );
+                                    },
+                                  ),
+                          ),
+                        ],
+                      ),
 
                       // TAB 2: Services & Pricing
                       ListView.builder(
