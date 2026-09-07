@@ -50,10 +50,141 @@ class JobRecipeCard extends StatelessWidget {
     );
   }
 
+  void _showImageGalleryModal(BuildContext context, String title, List<String> imageUrls, Color accentColor) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.75,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (_, scrollController) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: AppTheme.border,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: accentColor.withAlpha(30),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(Icons.photo_library_rounded, color: accentColor, size: 18),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            title,
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: accentColor.withAlpha(20),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: accentColor.withAlpha(60)),
+                            ),
+                            child: Text(
+                              '${imageUrls.length} photos',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: accentColor),
+                            ),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Expanded(
+                    child: GridView.builder(
+                      controller: scrollController,
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                        childAspectRatio: 1.2,
+                      ),
+                      itemCount: imageUrls.length,
+                      itemBuilder: (context, idx) {
+                        final url = imageUrls[idx];
+                        return ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Image.network(
+                                url,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) => Container(
+                                  color: AppTheme.surfaceLight,
+                                  child: const Center(
+                                    child: Icon(Icons.broken_image_rounded, color: AppTheme.textMuted),
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                left: 6,
+                                bottom: 6,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withAlpha(180),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    '#${idx + 1}',
+                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cutStage = job.recipeStages.isNotEmpty ? job.recipeStages.first : null;
     final finishStage = job.recipeStages.length > 1 ? job.recipeStages.last : null;
+
+    final beforeList = job.allBeforePhotos;
+    final afterList = job.allAfterPhotos;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 18),
@@ -117,13 +248,90 @@ class JobRecipeCard extends StatelessWidget {
             ),
           ),
 
-          // Interactive Transformation Image Slider
+          // Strictly ONE single 50/50 hero comparison slider
           SplitSliderWidget(
             beforeImageUrl: job.beforeImageUrl,
             afterImageUrl: job.afterImageUrl,
             defectBadge: job.defectBadge,
-            zones: job.effectiveMediaZones,
-            height: 250,
+            height: 260,
+          ),
+
+          // Container Bar: View all Before & After inspection photos
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _showImageGalleryModal(
+                      context,
+                      'Before Inspection Photos',
+                      beforeList,
+                      AppTheme.hardnessSoft,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceLight,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.hardnessSoft.withAlpha(80)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.history_rounded, size: 14, color: AppTheme.hardnessSoft),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Before Photos (${beforeList.length})',
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.hardnessSoft,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _showImageGalleryModal(
+                      context,
+                      'After Transformation Photos',
+                      afterList,
+                      AppTheme.primary,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceLight,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.primary.withAlpha(80)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.auto_awesome_rounded, size: 14, color: AppTheme.primary),
+                          const SizedBox(width: 6),
+                          Text(
+                            'After Photos (${afterList.length})',
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
 
           // Vehicle & Recipe Info

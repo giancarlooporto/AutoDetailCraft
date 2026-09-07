@@ -3,7 +3,6 @@ import '../core/theme/app_theme.dart';
 import '../models/detail_job.dart';
 import '../widgets/paint_hardness_badge.dart';
 import '../widgets/split_slider_widget.dart';
-
 import '../services/job_repository.dart';
 
 class JobDetailScreen extends StatefulWidget {
@@ -61,6 +60,55 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     );
   }
 
+  void _showImageZoomModal(BuildContext context, String imageUrl, String label) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(12),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            InteractiveViewer(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  imageUrl,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    color: AppTheme.surfaceLight,
+                    height: 250,
+                    child: const Center(child: Icon(Icons.broken_image_rounded, color: AppTheme.textMuted)),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                icon: const Icon(Icons.close_rounded, color: Colors.white),
+                style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ),
+            Positioned(
+              bottom: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showExportSuccess() {
     showDialog(
       context: context,
@@ -100,7 +148,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
             ),
             const SizedBox(height: 10),
             const Text(
-              'Clients can view before/after 50/50 slider, paint thickness measurements, and coating warranty info without logging in.',
+              'Clients can view before/after 50/50 slider, all inspection container photos, and coating warranty info without logging in.',
               style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
             ),
           ],
@@ -128,8 +176,151 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     );
   }
 
+  Widget _buildPhotoContainerSection({
+    required String title,
+    required List<String> photos,
+    required Color accentColor,
+    required IconData icon,
+    required String emptyMsg,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: accentColor.withAlpha(30),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(icon, color: accentColor, size: 18),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    title,
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: accentColor.withAlpha(20),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: accentColor.withAlpha(80)),
+                ),
+                child: Text(
+                  '${photos.length} photos',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: accentColor),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (photos.isEmpty)
+            Text(emptyMsg, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted))
+          else
+            SizedBox(
+              height: 110,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: photos.length,
+                itemBuilder: (context, idx) {
+                  final url = photos[idx];
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: InkWell(
+                      onTap: () => _showImageZoomModal(context, url, '$title #${idx + 1}'),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.network(
+                              url,
+                              width: 130,
+                              height: 110,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Container(
+                                width: 130,
+                                height: 110,
+                                color: AppTheme.surfaceLight,
+                                child: const Center(
+                                  child: Icon(Icons.broken_image_rounded, color: AppTheme.textMuted),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 6,
+                            bottom: 6,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withAlpha(180),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '#${idx + 1}',
+                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGaugeMetric(String label, String value, IconData icon, Color color) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(height: 4),
+        Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 2),
+        Text(label, style: const TextStyle(fontSize: 10.5, color: AppTheme.textSecondary)),
+      ],
+    );
+  }
+
+  Widget _buildRecipeField(String label, String value, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 14, color: AppTheme.primary),
+          const SizedBox(width: 6),
+          Text('$label: ', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+          Expanded(child: Text(value, style: const TextStyle(fontSize: 12, color: Colors.white))),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final beforeList = _currentJob.allBeforePhotos;
+    final afterList = _currentJob.allAfterPhotos;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Job Recipe & Inspection'),
@@ -145,19 +336,44 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. Full Bleed 50/50 Comparative Slider
+            // 1. Strictly ONE Single 50/50 Comparative Hero Slider
             Padding(
               padding: const EdgeInsets.all(16),
               child: SplitSliderWidget(
                 beforeImageUrl: _currentJob.beforeImageUrl,
                 afterImageUrl: _currentJob.afterImageUrl,
                 defectBadge: _currentJob.defectBadge,
-                zones: _currentJob.effectiveMediaZones,
                 height: 320,
               ),
             ),
 
-            // 2. Vehicle & Author Card
+            // 2. Inspection Photo Containers (View All Before & After)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  _buildPhotoContainerSection(
+                    title: 'Before Inspection Photos',
+                    photos: beforeList,
+                    accentColor: AppTheme.hardnessSoft,
+                    icon: Icons.history_rounded,
+                    emptyMsg: 'No additional before inspection photos.',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildPhotoContainerSection(
+                    title: 'After Transformation Photos',
+                    photos: afterList,
+                    accentColor: AppTheme.primary,
+                    icon: Icons.auto_awesome_rounded,
+                    emptyMsg: 'No additional after transformation photos.',
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // 3. Vehicle & Author Card
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
@@ -226,7 +442,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
             const SizedBox(height: 16),
 
-            // 3. Technical Inspection & Gauge Metrics
+            // 4. Technical Inspection & Gauge Metrics
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
@@ -305,7 +521,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
             const SizedBox(height: 16),
 
-            // 4. Step-by-Step Detailing Recipe (The Core Innovation)
+            // 5. Step-by-Step Detailing Recipe
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
@@ -416,7 +632,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
             const SizedBox(height: 16),
 
-            // 5. Verified Pro Comments & Community Discussion
+            // 6. Verified Pro Comments & Community Discussion
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
@@ -481,8 +697,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                               radius: 16,
                               backgroundColor: AppTheme.surfaceLight,
                               backgroundImage: NetworkImage(c.authorAvatar),
-                              onBackgroundImageError: (_, _) {},
-                              child: Text(c.authorName[0], style: const TextStyle(fontSize: 12)),
+                              onBackgroundImageError: (context, error) {},
+                              child: Text(c.authorName[0], style: const TextStyle(fontSize: 11)),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
@@ -493,18 +709,18 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                                     children: [
                                       Text(
                                         c.authorName,
-                                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppTheme.textPrimary),
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                                       ),
                                       if (c.isVerifiedPro) ...[
                                         const SizedBox(width: 4),
-                                        const Icon(Icons.verified_rounded, color: AppTheme.primary, size: 12),
+                                        const Icon(Icons.verified_rounded, size: 13, color: AppTheme.primary),
                                       ],
                                     ],
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 3),
                                   Text(
                                     c.text,
-                                    style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                                    style: const TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
                                   ),
                                 ],
                               ),
@@ -518,38 +734,9 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               ),
             ),
 
-            const SizedBox(height: 40),
+            const SizedBox(height: 30),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildGaugeMetric(String label, String value, IconData icon, Color color) {
-    return Column(
-      children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(fontSize: 10, color: AppTheme.textMuted)),
-        const SizedBox(height: 2),
-        Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
-      ],
-    );
-  }
-
-  Widget _buildRecipeField(String title, String content, IconData icon) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 13, color: AppTheme.textMuted),
-          const SizedBox(width: 6),
-          Text('$title: ', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textMuted)),
-          Expanded(
-            child: Text(content, style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary)),
-          ),
-        ],
       ),
     );
   }

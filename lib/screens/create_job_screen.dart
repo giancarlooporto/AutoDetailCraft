@@ -54,7 +54,10 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
 
   final List<PhotoItem> _beforePhotos = [];
   final List<PhotoItem> _afterPhotos = [];
-  int _selectedHeroIndex = 0;
+
+  // Independent single pair selection for the 50/50 hero cover
+  int _selectedHeroBeforeIndex = 0;
+  int _selectedHeroAfterIndex = 0;
 
   bool _isBulkUploadingBefore = false;
   bool _isBulkUploadingAfter = false;
@@ -86,7 +89,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
   }
 
   SubscriptionTier get _tier => widget.repository.currentUser.subscriptionTier;
-  int get _maxPairs => _tier.maxZones;
+  int get _maxPhotosPerContainer => _tier.maxZones;
 
   Future<void> _pickAndUploadBulk({required bool isBefore}) async {
     setState(() {
@@ -104,7 +107,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       final currentList = isBefore ? _beforePhotos : _afterPhotos;
       final remainingSlots = _tier == SubscriptionTier.enterprise
           ? pickedFiles.length
-          : (_maxPairs - currentList.length).clamp(0, pickedFiles.length);
+          : (_maxPhotosPerContainer - currentList.length).clamp(0, pickedFiles.length);
 
       if (remainingSlots <= 0) {
         _showUpgradeDialog();
@@ -127,7 +130,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
           currentList.add(photoItem);
         });
 
-        // Background upload to R2
+        // Background upload directly to R2 CDN
         _uploadPhotoItem(photoItem, file.bytes, user.id, isBefore);
       }
 
@@ -191,18 +194,21 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
   void _removePhoto(int index, bool isBefore) {
     setState(() {
       if (isBefore) {
-        if (index < _beforePhotos.length) _beforePhotos.removeAt(index);
+        if (index < _beforePhotos.length) {
+          _beforePhotos.removeAt(index);
+          if (_selectedHeroBeforeIndex >= _beforePhotos.length && _beforePhotos.isNotEmpty) {
+            _selectedHeroBeforeIndex = _beforePhotos.length - 1;
+          }
+        }
       } else {
-        if (index < _afterPhotos.length) _afterPhotos.removeAt(index);
-      }
-      if (_selectedHeroIndex >= _pairedCount && _pairedCount > 0) {
-        _selectedHeroIndex = _pairedCount - 1;
+        if (index < _afterPhotos.length) {
+          _afterPhotos.removeAt(index);
+          if (_selectedHeroAfterIndex >= _afterPhotos.length && _afterPhotos.isNotEmpty) {
+            _selectedHeroAfterIndex = _afterPhotos.length - 1;
+          }
+        }
       }
     });
-  }
-
-  int get _pairedCount {
-    return _beforePhotos.length < _afterPhotos.length ? _beforePhotos.length : _afterPhotos.length;
   }
 
   void _showUpgradeDialog() {
@@ -230,19 +236,19 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'You have reached the ${_tier.label} tier limit of $_maxPairs photo pairs (${_maxPairs * 2} photos).',
+              'You have reached the ${_tier.label} tier limit of $_maxPhotosPerContainer photos per container.',
               style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
             ),
             const SizedBox(height: 14),
             _buildUpgradeTierCard(
               title: 'Pro Studio (\$29/mo)',
-              desc: 'Up to 15 angles (30 photos) per transformation recipe, verified badge & priority placement.',
+              desc: 'Up to 15 Before & 15 After photos per transformation, verified badge & priority placement.',
               onSelect: () {
                 widget.repository.updateSubscriptionTier(SubscriptionTier.pro);
                 Navigator.of(ctx).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Upgraded to Pro Studio Tier! You can now post up to 15 angles.'),
+                    content: Text('Upgraded to Pro Studio Tier! You can now post up to 15 photos per container.'),
                     backgroundColor: AppTheme.surface,
                   ),
                 );
@@ -251,13 +257,13 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
             const SizedBox(height: 10),
             _buildUpgradeTierCard(
               title: 'Enterprise / Shop (\$79/mo)',
-              desc: 'Unlimited photo zones, multi-tech team management & white-label PDF audit reports.',
+              desc: 'Unlimited photos in both containers, multi-tech team management & white-label PDF audit reports.',
               onSelect: () {
                 widget.repository.updateSubscriptionTier(SubscriptionTier.enterprise);
                 Navigator.of(ctx).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Upgraded to Enterprise Tier! Unlimited transformation zones enabled.'),
+                    content: Text('Upgraded to Enterprise Tier! Unlimited transformation photos enabled.'),
                     backgroundColor: AppTheme.surface,
                   ),
                 );
@@ -339,35 +345,25 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       return;
     }
 
-    // Construct mediaZones from paired before and after photos
-    final pairs = _pairedCount;
-    final List<JobMediaZone> mediaZones = [];
-    final angleNames = [
-      'Front Hood & Headlights',
-      'Driver Side Doors',
-      'Passenger Side Profile',
-      'Rear Trunk & Bumper',
-      'Wheels & Calipers',
-      'Interior Cockpit & Leather',
-      'Defect Macro / Sun Spot',
-    ];
+    final safeBeforeIndex = _selectedHeroBeforeIndex.clamp(0, _beforePhotos.length - 1);
+    final safeAfterIndex = _selectedHeroAfterIndex.clamp(0, _afterPhotos.length - 1);
 
-    for (var i = 0; i < pairs; i++) {
-      final name = i < angleNames.length ? angleNames[i] : 'Angle ${i + 1}';
-      mediaZones.add(JobMediaZone(
-        id: 'zone_${DateTime.now().millisecondsSinceEpoch}_$i',
-        zoneName: name,
-        beforeImageUrl: _beforePhotos[i].url,
-        afterImageUrl: _afterPhotos[i].url,
-        defectBadge: '50/50 Transformation',
-        initialMicrons: 112.0,
-        finalMicrons: 109.5,
-      ));
-    }
+    final heroBeforeUrl = _beforePhotos[safeBeforeIndex].url;
+    final heroAfterUrl = _afterPhotos[safeAfterIndex].url;
 
-    final safeHeroIndex = _selectedHeroIndex.clamp(0, pairs > 0 ? pairs - 1 : 0);
-    final heroBeforeUrl = _beforePhotos[safeHeroIndex].url;
-    final heroAfterUrl = _afterPhotos[safeHeroIndex].url;
+    final allBeforeUrls = _beforePhotos.map((p) => p.url).where((u) => u.isNotEmpty).toList();
+    final allAfterUrls = _afterPhotos.map((p) => p.url).where((u) => u.isNotEmpty).toList();
+
+    // Only one single 50/50 hero zone is created
+    final singleHeroZone = JobMediaZone(
+      id: 'hero_pair_${DateTime.now().millisecondsSinceEpoch}',
+      zoneName: 'Hero 50/50 Transformation',
+      beforeImageUrl: heroBeforeUrl,
+      afterImageUrl: heroAfterUrl,
+      defectBadge: '50/50 Transformation',
+      initialMicrons: 112.0,
+      finalMicrons: 109.5,
+    );
 
     final newJob = DetailJob(
       id: 'job_${DateTime.now().millisecondsSinceEpoch}',
@@ -386,10 +382,12 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       defectSeverity: 7,
       serviceType: _selectedService,
       recipeStages: const [],
-      mediaZones: mediaZones,
       beforeImageUrl: heroBeforeUrl,
       afterImageUrl: heroAfterUrl,
       defectBadge: '50/50 Transformation',
+      beforePhotos: allBeforeUrls,
+      afterPhotos: allAfterUrls,
+      mediaZones: [singleHeroZone],
       durationHours: 6.0,
       quotedPrice: double.tryParse(_priceCtrl.text.trim()),
       likesCount: 0,
@@ -407,7 +405,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
           children: [
             Icon(Icons.check_circle_rounded, color: AppTheme.primary),
             SizedBox(width: 8),
-            Text('Transformation recipe published to your portfolio!'),
+            Text('Transformation recipe published to Explore & Portfolio!'),
           ],
         ),
         backgroundColor: AppTheme.surface,
@@ -419,6 +417,10 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
   }
 
   Widget _buildPhotoThumbnail(PhotoItem photo, int index, bool isBefore) {
+    final isSelectedAsHero = isBefore
+        ? _selectedHeroBeforeIndex == index
+        : _selectedHeroAfterIndex == index;
+
     ImageProvider? provider;
     if (photo.bytes != null && photo.bytes!.isNotEmpty) {
       provider = MemoryImage(photo.bytes!);
@@ -435,49 +437,79 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       }
     }
 
+    final accentColor = isBefore ? AppTheme.hardnessSoft : AppTheme.primary;
+
     return Stack(
       children: [
-        Container(
-          width: 90,
-          height: 90,
-          margin: const EdgeInsets.only(right: 10),
-          decoration: BoxDecoration(
-            color: AppTheme.surfaceLight,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: isBefore ? AppTheme.hardnessSoft.withAlpha(120) : AppTheme.primary.withAlpha(120)),
-            image: provider != null
-                ? DecorationImage(
-                    image: provider,
-                    fit: BoxFit.cover,
+        GestureDetector(
+          onTap: () {
+            setState(() {
+              if (isBefore) {
+                _selectedHeroBeforeIndex = index;
+              } else {
+                _selectedHeroAfterIndex = index;
+              }
+            });
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 90,
+            height: 90,
+            margin: const EdgeInsets.only(right: 10),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceLight,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isSelectedAsHero ? accentColor : AppTheme.border,
+                width: isSelectedAsHero ? 2.5 : 1.0,
+              ),
+              boxShadow: isSelectedAsHero
+                  ? [
+                      BoxShadow(
+                        color: accentColor.withAlpha(80),
+                        blurRadius: 8,
+                        spreadRadius: 1,
+                      )
+                    ]
+                  : null,
+              image: provider != null
+                  ? DecorationImage(
+                      image: provider,
+                      fit: BoxFit.cover,
+                    )
+                  : null,
+            ),
+            child: photo.isUploading
+                ? Container(
+                    color: Colors.black.withAlpha(160),
+                    child: const Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
+                      ),
+                    ),
                   )
                 : null,
           ),
-          child: photo.isUploading
-              ? Container(
-                  color: Colors.black.withAlpha(160),
-                  child: const Center(
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
-                    ),
-                  ),
-                )
-              : null,
         ),
-        // Index badge
+        // Selected Hero Badge or Index
         Positioned(
           left: 4,
           bottom: 4,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
             decoration: BoxDecoration(
-              color: Colors.black.withAlpha(180),
+              color: isSelectedAsHero ? accentColor : Colors.black.withAlpha(180),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
-              '#${index + 1}',
-              style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.white),
+              isSelectedAsHero ? '★ HERO' : '#${index + 1}',
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+                color: isSelectedAsHero ? Colors.black : Colors.white,
+              ),
             ),
           ),
         ),
@@ -595,12 +627,34 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
   }
 
   Widget _buildHeroSelectorCard() {
-    final pairs = _pairedCount;
-    if (pairs == 0) return const SizedBox.shrink();
+    if (_beforePhotos.isEmpty || _afterPhotos.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppTheme.border),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.info_outline_rounded, color: AppTheme.textMuted, size: 20),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Upload at least one Before photo and one After photo above to select your single 50/50 hero pair.',
+                style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
-    final safeIndex = _selectedHeroIndex.clamp(0, pairs - 1);
-    final currentBeforeUrl = _beforePhotos[safeIndex].url;
-    final currentAfterUrl = _afterPhotos[safeIndex].url;
+    final safeBeforeIdx = _selectedHeroBeforeIndex.clamp(0, _beforePhotos.length - 1);
+    final safeAfterIdx = _selectedHeroAfterIndex.clamp(0, _afterPhotos.length - 1);
+
+    final currentBeforeUrl = _beforePhotos[safeBeforeIdx].url;
+    final currentAfterUrl = _afterPhotos[safeAfterIdx].url;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -626,7 +680,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                     child: const Icon(Icons.compare_rounded, color: AppTheme.primary, size: 18),
                   ),
                   const SizedBox(width: 8),
-                  const Text('Select Hero 50/50 Cover', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  const Text('Selected 50/50 Hero Pair', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 ],
               ),
               Container(
@@ -637,7 +691,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                   border: Border.all(color: AppTheme.primary.withAlpha(80)),
                 ),
                 child: Text(
-                  'Pair ${safeIndex + 1} of $pairs Selected',
+                  'Before #${safeBeforeIdx + 1} ↔ After #${safeAfterIdx + 1}',
                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary),
                 ),
               ),
@@ -645,51 +699,62 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Choose which photo pair will be showcased as the main 50/50 slider in Explore and your profile.',
+            'Only this single pair will be showcased as the interactive 50/50 slider in Explore. Tap thumbnails above to change your hero pair.',
             style: TextStyle(fontSize: 11.5, color: AppTheme.textSecondary),
           ),
           const SizedBox(height: 14),
 
-          // Angle pair selection chips
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: List.generate(pairs, (index) {
-                final isSelected = _selectedHeroIndex == index;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    selected: isSelected,
-                    label: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          isSelected ? Icons.star_rounded : Icons.star_border_rounded,
-                          size: 14,
-                          color: isSelected ? Colors.black : AppTheme.textMuted,
-                        ),
-                        const SizedBox(width: 4),
-                        Text('Pair #${index + 1}'),
-                      ],
-                    ),
-                    labelStyle: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                      color: isSelected ? Colors.black : Colors.white,
-                    ),
-                    selectedColor: AppTheme.primary,
-                    backgroundColor: AppTheme.surfaceLight,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedHeroIndex = index;
-                        });
-                      }
-                    },
+          // Side-by-side Selection Chips for quick switching
+          Row(
+            children: [
+              // Before Photo Selector Dropdown / Chips
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.hardnessSoft.withAlpha(100)),
                   ),
-                );
-              }),
-            ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.history_rounded, color: AppTheme.hardnessSoft, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Before Photo #${safeBeforeIdx + 1}',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // After Photo Selector Dropdown / Chips
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.primary.withAlpha(100)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.auto_awesome_rounded, color: AppTheme.primary, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'After Photo #${safeAfterIdx + 1}',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
 
@@ -700,7 +765,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
               beforeImageUrl: currentBeforeUrl,
               afterImageUrl: currentAfterUrl,
               height: 240,
-              defectBadge: '50/50 Live Preview',
+              defectBadge: '50/50 Cover Preview',
             ),
           ),
         ],
@@ -710,6 +775,8 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final totalUploaded = _beforePhotos.length + _afterPhotos.length;
+
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -769,7 +836,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              '($_pairedCount of ${_tier == SubscriptionTier.enterprise ? "Unlimited" : _maxPairs} pairs)',
+                              '($totalUploaded photos loaded)',
                               style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                             ),
                           ],
@@ -777,10 +844,10 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                         const SizedBox(height: 2),
                         Text(
                           _tier == SubscriptionTier.free
-                              ? 'Free tier: 3 pairs (6 photos max) hosted on Cloudflare R2.'
+                              ? 'Free tier: up to 3 Before & 3 After photos. Hosted on Cloudflare R2.'
                               : (_tier == SubscriptionTier.pro
-                                  ? 'Pro tier: 15 pairs (30 photos max) on Cloudflare R2.'
-                                  : 'Enterprise tier: Unlimited photos & pairs on Cloudflare R2.'),
+                                  ? 'Pro tier: up to 15 Before & 15 After photos on Cloudflare R2.'
+                                  : 'Enterprise tier: Unlimited inspection photos on Cloudflare R2.'),
                           style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
                         ),
                       ],
@@ -801,10 +868,10 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
 
             const SizedBox(height: 18),
 
-            // Step 1: Bulk Before Photos
+            // Step 1: Bulk Before Photos Container
             _buildUploadBox(
-              title: 'Before Photos',
-              subtitle: 'Select inspection photos (swirls, scratches, oxidation)',
+              title: 'Before Photos Container',
+              subtitle: 'Inspection photos showing swirls, scratches, oxidation',
               photos: _beforePhotos,
               isBefore: true,
               isLoading: _isBulkUploadingBefore,
@@ -814,10 +881,10 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
 
             const SizedBox(height: 14),
 
-            // Step 2: Bulk After Photos
+            // Step 2: Bulk After Photos Container
             _buildUploadBox(
-              title: 'After Photos',
-              subtitle: 'Select transformation results (gloss, depth, reflections)',
+              title: 'After Photos Container',
+              subtitle: 'Transformation photos showing gloss, clarity, reflection',
               photos: _afterPhotos,
               isBefore: false,
               isLoading: _isBulkUploadingAfter,
@@ -827,7 +894,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
 
             const SizedBox(height: 14),
 
-            // Step 3: Hero 50/50 Comparison Selector
+            // Step 3: Single Hero 50/50 Cover Selector
             _buildHeroSelectorCard(),
 
             const SizedBox(height: 22),

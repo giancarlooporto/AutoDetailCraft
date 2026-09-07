@@ -150,12 +150,16 @@ class DetailJob {
   // Recipe
   final List<RecipeStage> recipeStages;
   
-  // Media for 50/50 Slider (Primary / Hero)
+  // Media for 50/50 Slider (Primary Hero Pair)
   final String beforeImageUrl;
   final String afterImageUrl;
   final String defectBadge; // e.g. 'Heavy Swirls & Bird Etchings', '800-Grit Wet Sand Scratches'
 
-  // Multi-Zone Guided Before & After Media
+  // Full Inspection Photo Containers
+  final List<String> beforePhotos;
+  final List<String> afterPhotos;
+
+  // Multi-Zone Guided Before & After Media (Backward compatibility)
   final List<JobMediaZone> mediaZones;
   
   // Business metrics
@@ -189,6 +193,8 @@ class DetailJob {
     required this.beforeImageUrl,
     required this.afterImageUrl,
     this.defectBadge = 'Swirl Marks & Micro-Marring',
+    this.beforePhotos = const [],
+    this.afterPhotos = const [],
     this.mediaZones = const [],
     this.durationHours = 8.0,
     this.quotedPrice,
@@ -203,6 +209,20 @@ class DetailJob {
 
   String get vehicleFullName => '$vehicleYear $vehicleMake $vehicleModel';
 
+  /// All before photos, guaranteeing at least the hero before image is included.
+  List<String> get allBeforePhotos {
+    if (beforePhotos.isNotEmpty) return beforePhotos;
+    if (beforeImageUrl.isNotEmpty) return [beforeImageUrl];
+    return const [];
+  }
+
+  /// All after photos, guaranteeing at least the hero after image is included.
+  List<String> get allAfterPhotos {
+    if (afterPhotos.isNotEmpty) return afterPhotos;
+    if (afterImageUrl.isNotEmpty) return [afterImageUrl];
+    return const [];
+  }
+
   /// Returns media zones, falling back to a default zone from before/after URLs if mediaZones is empty.
   List<JobMediaZone> get effectiveMediaZones {
     if (mediaZones.isNotEmpty) return mediaZones;
@@ -210,7 +230,7 @@ class DetailJob {
       return [
         JobMediaZone(
           id: 'hero_zone',
-          zoneName: 'Front / Hood',
+          zoneName: 'Main',
           beforeImageUrl: beforeImageUrl,
           afterImageUrl: afterImageUrl,
           defectBadge: defectBadge,
@@ -242,6 +262,8 @@ class DetailJob {
     String? beforeImageUrl,
     String? afterImageUrl,
     String? defectBadge,
+    List<String>? beforePhotos,
+    List<String>? afterPhotos,
     List<JobMediaZone>? mediaZones,
     double? durationHours,
     double? quotedPrice,
@@ -271,6 +293,8 @@ class DetailJob {
       beforeImageUrl: beforeImageUrl ?? this.beforeImageUrl,
       afterImageUrl: afterImageUrl ?? this.afterImageUrl,
       defectBadge: defectBadge ?? this.defectBadge,
+      beforePhotos: beforePhotos ?? this.beforePhotos,
+      afterPhotos: afterPhotos ?? this.afterPhotos,
       mediaZones: mediaZones ?? this.mediaZones,
       durationHours: durationHours ?? this.durationHours,
       quotedPrice: quotedPrice ?? this.quotedPrice,
@@ -302,6 +326,8 @@ class DetailJob {
     'beforeImageUrl': beforeImageUrl,
     'afterImageUrl': afterImageUrl,
     'defectBadge': defectBadge,
+    'beforePhotos': beforePhotos,
+    'afterPhotos': afterPhotos,
     'mediaZones': mediaZones.map((z) => z.toJson()).toList(),
     'durationHours': durationHours,
     'quotedPrice': quotedPrice,
@@ -346,6 +372,8 @@ class DetailJob {
       beforeImageUrl: json['beforeImageUrl'] as String? ?? '',
       afterImageUrl: json['afterImageUrl'] as String? ?? '',
       defectBadge: json['defectBadge'] as String? ?? 'Swirl Marks & Micro-Marring',
+      beforePhotos: (json['beforePhotos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      afterPhotos: (json['afterPhotos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       mediaZones: (json['mediaZones'] as List<dynamic>?)
           ?.map((z) => JobMediaZone.fromJson(z as Map<String, dynamic>))
           .toList() ?? [],
