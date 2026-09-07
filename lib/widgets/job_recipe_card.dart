@@ -4,6 +4,7 @@ import '../models/detail_job.dart';
 import '../screens/job_detail_screen.dart';
 import '../screens/booking_flow_screen.dart';
 import '../screens/public_studio_screen.dart';
+import '../screens/create_job_screen.dart';
 import '../services/job_repository.dart';
 import 'split_slider_widget.dart';
 
@@ -12,6 +13,8 @@ class JobRecipeCard extends StatelessWidget {
   final JobRepository repository;
   final VoidCallback? onLike;
   final VoidCallback? onSave;
+  final bool showDetailerManagement;
+  final VoidCallback? onJobChanged;
 
   const JobRecipeCard({
     super.key,
@@ -19,6 +22,8 @@ class JobRecipeCard extends StatelessWidget {
     required this.repository,
     this.onLike,
     this.onSave,
+    this.showDetailerManagement = false,
+    this.onJobChanged,
   });
 
   String _formatTimeAgo(DateTime dt) {
@@ -46,6 +51,68 @@ class JobRecipeCard extends StatelessWidget {
           detailer: job.author,
           repository: repository,
         ),
+      ),
+    );
+  }
+
+  void _editJob(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CreateJobScreen(
+          repository: repository,
+          jobToEdit: job,
+          onJobCreated: () {
+            if (onJobChanged != null) onJobChanged!();
+          },
+        ),
+      ),
+    );
+  }
+
+  void _confirmDeleteJob(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Colors.redAccent),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+            SizedBox(width: 8),
+            Text('Delete Transformation?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to delete "${job.title}"? This will permanently remove this transformation from your portfolio and Explore.',
+          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              repository.deleteJob(job.id);
+              if (onJobChanged != null) onJobChanged!();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Transformation removed from portfolio.'),
+                  backgroundColor: AppTheme.surface,
+                ),
+              );
+            },
+            child: const Text('Delete'),
+          ),
+        ],
       ),
     );
   }
@@ -185,6 +252,8 @@ class JobRecipeCard extends StatelessWidget {
 
     final beforeList = job.allBeforePhotos;
     final afterList = job.allAfterPhotos;
+    final isAuthor = repository.currentUser.id == job.author.id;
+    final canManage = showDetailerManagement || isAuthor;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 18),
@@ -239,11 +308,25 @@ class JobRecipeCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.calendar_month_rounded, color: AppTheme.primary),
-                  tooltip: 'Book with this detailer',
-                  onPressed: () => _openBookingFlow(context),
-                ),
+
+                // Management or Booking actions
+                if (canManage) ...[
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 19),
+                    tooltip: 'Edit Transformation',
+                    onPressed: () => _editJob(context),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 19),
+                    tooltip: 'Delete Transformation',
+                    onPressed: () => _confirmDeleteJob(context),
+                  ),
+                ] else
+                  IconButton(
+                    icon: const Icon(Icons.calendar_month_rounded, color: AppTheme.primary),
+                    tooltip: 'Book with this detailer',
+                    onPressed: () => _openBookingFlow(context),
+                  ),
               ],
             ),
           ),

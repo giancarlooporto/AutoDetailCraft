@@ -529,6 +529,34 @@ class JobRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  void updateJob(DetailJob updatedJob) {
+    final idx = _jobs.indexWhere((j) => j.id == updatedJob.id);
+    if (idx != -1) {
+      _jobs[idx] = updatedJob;
+      _persistCustomJobs();
+      if (_isLoggedIn) {
+        SupabaseDbService.saveJob(updatedJob);
+      }
+      notifyListeners();
+    }
+  }
+
+  void deleteJob(String jobId) {
+    final job = _jobs.firstWhere((j) => j.id == jobId, orElse: () => _jobs.first);
+    _jobs.removeWhere((j) => j.id == jobId);
+    _persistCustomJobs();
+    if (_isLoggedIn) {
+      SupabaseDbService.deleteJob(jobId);
+    }
+    if (_currentUser.id == job.author.id && _currentUser.totalJobsCount > 0) {
+      _currentUser = _currentUser.copyWith(
+        totalJobsCount: _currentUser.totalJobsCount - 1,
+      );
+      _persistUser();
+    }
+    notifyListeners();
+  }
+
   void addBooking(BookingAppointment booking) {
     _bookings.insert(0, booking);
     _persistBookings();

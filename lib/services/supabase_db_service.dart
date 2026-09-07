@@ -100,9 +100,8 @@ class SupabaseDbService {
         'total_jobs_count': user.totalJobsCount,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
-      if (kDebugMode) print('[SupabaseDbService] Profile synced to Supabase for ${user.id}');
     } catch (e) {
-      if (kDebugMode) print('[SupabaseDbService] Error saving profile to Supabase: $e');
+      if (kDebugMode) print('[SupabaseDbService] Error saving profile: $e');
     }
   }
 
@@ -122,7 +121,6 @@ class SupabaseDbService {
         'paint_code': v.paintCode,
         'image_url': v.imageUrl,
       });
-      if (kDebugMode) print('[SupabaseDbService] Vehicle synced to Supabase: ${v.fullName}');
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error saving vehicle: $e');
     }
@@ -197,6 +195,19 @@ class SupabaseDbService {
       if (kDebugMode) print('[SupabaseDbService] Job saved to Supabase: ${job.id}');
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error saving job to Supabase: $e');
+    }
+  }
+
+  /// Delete a transformation job from Supabase
+  static Future<void> deleteJob(String jobId) async {
+    final client = _client;
+    if (client == null) return;
+
+    try {
+      await client.from('jobs').delete().eq('id', jobId);
+      if (kDebugMode) print('[SupabaseDbService] Job deleted from Supabase: $jobId');
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error deleting job from Supabase: $e');
     }
   }
 

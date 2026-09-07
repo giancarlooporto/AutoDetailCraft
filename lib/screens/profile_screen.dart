@@ -326,7 +326,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                             : Image.network(
                                 user.coverUrl,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Container(color: AppTheme.surfaceLight),
+                                errorBuilder: (context, error, stackTrace) => Container(color: AppTheme.surfaceLight),
                               ),
                         Container(
                           decoration: BoxDecoration(
@@ -736,18 +736,25 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                       ),
                                     ),
                                   )
-                                : ListView.builder(
-                                    padding: const EdgeInsets.all(16),
-                                    itemCount: myJobs.length,
-                                    itemBuilder: (context, index) {
-                                      final job = myJobs[index];
-                                      return JobRecipeCard(
-                                        job: job,
-                                        repository: widget.repository,
-                                        onLike: () => widget.repository.toggleLike(job.id),
-                                        onSave: () => widget.repository.toggleSave(job.id),
-                                      );
-                                    },
+                                : Center(
+                                    child: ConstrainedBox(
+                                      constraints: const BoxConstraints(maxWidth: 720),
+                                      child: ListView.builder(
+                                        padding: const EdgeInsets.all(16),
+                                        itemCount: myJobs.length,
+                                        itemBuilder: (context, index) {
+                                          final job = myJobs[index];
+                                          return JobRecipeCard(
+                                            job: job,
+                                            repository: widget.repository,
+                                            showDetailerManagement: true,
+                                            onJobChanged: () => setState(() {}),
+                                            onLike: () => widget.repository.toggleLike(job.id),
+                                            onSave: () => widget.repository.toggleSave(job.id),
+                                          );
+                                        },
+                                      ),
+                                    ),
                                   ),
                           ),
                         ],

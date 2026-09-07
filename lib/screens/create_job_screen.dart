@@ -27,11 +27,13 @@ class PhotoItem {
 class CreateJobScreen extends StatefulWidget {
   final JobRepository repository;
   final VoidCallback onJobCreated;
+  final DetailJob? jobToEdit;
 
   const CreateJobScreen({
     super.key,
     required this.repository,
     required this.onJobCreated,
+    this.jobToEdit,
   });
 
   @override
@@ -62,18 +64,51 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
   bool _isBulkUploadingBefore = false;
   bool _isBulkUploadingAfter = false;
 
+  bool get _isEditing => widget.jobToEdit != null;
+
   @override
   void initState() {
     super.initState();
-    // Default initial demonstration photos
-    _beforePhotos.add(PhotoItem(
-      id: 'before_init_1',
-      url: 'https://images.unsplash.com/photo-1542362567-b07e54358753?w=900&auto=format&fit=crop&q=80',
-    ));
-    _afterPhotos.add(PhotoItem(
-      id: 'after_init_1',
-      url: 'https://images.unsplash.com/photo-1563720223185-11003d516935?w=900&auto=format&fit=crop&q=80',
-    ));
+    final edit = widget.jobToEdit;
+    if (edit != null) {
+      _titleCtrl.text = edit.title;
+      _vehicleMakeCtrl.text = edit.vehicleMake;
+      _vehicleModelCtrl.text = edit.vehicleModel;
+      _vehicleYearCtrl.text = edit.vehicleYear.toString();
+      _paintColorCtrl.text = edit.paintColorName;
+      _descriptionCtrl.text = edit.description;
+      if (edit.quotedPrice != null) {
+        _priceCtrl.text = edit.quotedPrice!.toStringAsFixed(0);
+      }
+      _selectedService = edit.serviceType;
+      _hardness = edit.paintHardness;
+
+      // Populate before photos
+      final befores = edit.allBeforePhotos;
+      for (var i = 0; i < befores.length; i++) {
+        _beforePhotos.add(PhotoItem(id: 'before_edit_$i', url: befores[i]));
+      }
+      final beforeHeroIdx = befores.indexOf(edit.beforeImageUrl);
+      if (beforeHeroIdx != -1) _selectedHeroBeforeIndex = beforeHeroIdx;
+
+      // Populate after photos
+      final afters = edit.allAfterPhotos;
+      for (var i = 0; i < afters.length; i++) {
+        _afterPhotos.add(PhotoItem(id: 'after_edit_$i', url: afters[i]));
+      }
+      final afterHeroIdx = afters.indexOf(edit.afterImageUrl);
+      if (afterHeroIdx != -1) _selectedHeroAfterIndex = afterHeroIdx;
+    } else {
+      // Default initial demonstration photos
+      _beforePhotos.add(PhotoItem(
+        id: 'before_init_1',
+        url: 'https://images.unsplash.com/photo-1542362567-b07e54358753?w=900&auto=format&fit=crop&q=80',
+      ));
+      _afterPhotos.add(PhotoItem(
+        id: 'after_init_1',
+        url: 'https://images.unsplash.com/photo-1563720223185-11003d516935?w=900&auto=format&fit=crop&q=80',
+      ));
+    }
   }
 
   @override
@@ -356,7 +391,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
 
     // Only one single 50/50 hero zone is created
     final singleHeroZone = JobMediaZone(
-      id: 'hero_pair_${DateTime.now().millisecondsSinceEpoch}',
+      id: widget.jobToEdit != null ? widget.jobToEdit!.id : 'hero_pair_${DateTime.now().millisecondsSinceEpoch}',
       zoneName: 'Hero 50/50 Transformation',
       beforeImageUrl: heroBeforeUrl,
       afterImageUrl: heroAfterUrl,
@@ -365,52 +400,84 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       finalMicrons: 109.5,
     );
 
-    final newJob = DetailJob(
-      id: 'job_${DateTime.now().millisecondsSinceEpoch}',
-      author: widget.repository.currentUser,
-      createdAt: DateTime.now(),
-      title: _titleCtrl.text.trim(),
-      description: _descriptionCtrl.text.trim(),
-      vehicleYear: int.tryParse(_vehicleYearCtrl.text.trim()) ?? 2024,
-      vehicleMake: _vehicleMakeCtrl.text.trim(),
-      vehicleModel: _vehicleModelCtrl.text.trim(),
-      paintColorName: _paintColorCtrl.text.trim(),
-      paintCode: 'OEM',
-      paintHardness: _hardness,
-      initialPaintThicknessMicrons: 112.0,
-      finalPaintThicknessMicrons: 109.5,
-      defectSeverity: 7,
-      serviceType: _selectedService,
-      recipeStages: const [],
-      beforeImageUrl: heroBeforeUrl,
-      afterImageUrl: heroAfterUrl,
-      defectBadge: '50/50 Transformation',
-      beforePhotos: allBeforeUrls,
-      afterPhotos: allAfterUrls,
-      mediaZones: [singleHeroZone],
-      durationHours: 6.0,
-      quotedPrice: double.tryParse(_priceCtrl.text.trim()),
-      likesCount: 0,
-      isLiked: false,
-      savesCount: 0,
-      isSaved: false,
-      comments: [],
-    );
-
-    widget.repository.addJob(newJob);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.check_circle_rounded, color: AppTheme.primary),
-            SizedBox(width: 8),
-            Text('Transformation recipe published to Explore & Portfolio!'),
-          ],
+    if (_isEditing) {
+      final updated = widget.jobToEdit!.copyWith(
+        title: _titleCtrl.text.trim(),
+        description: _descriptionCtrl.text.trim(),
+        vehicleYear: int.tryParse(_vehicleYearCtrl.text.trim()) ?? 2024,
+        vehicleMake: _vehicleMakeCtrl.text.trim(),
+        vehicleModel: _vehicleModelCtrl.text.trim(),
+        paintColorName: _paintColorCtrl.text.trim(),
+        paintHardness: _hardness,
+        serviceType: _selectedService,
+        beforeImageUrl: heroBeforeUrl,
+        afterImageUrl: heroAfterUrl,
+        beforePhotos: allBeforeUrls,
+        afterPhotos: allAfterUrls,
+        mediaZones: [singleHeroZone],
+        quotedPrice: double.tryParse(_priceCtrl.text.trim()),
+      );
+      widget.repository.updateJob(updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle_rounded, color: AppTheme.primary),
+              SizedBox(width: 8),
+              Text('Transformation updated successfully!'),
+            ],
+          ),
+          backgroundColor: AppTheme.surface,
         ),
-        backgroundColor: AppTheme.surface,
-      ),
-    );
+      );
+    } else {
+      final newJob = DetailJob(
+        id: 'job_${DateTime.now().millisecondsSinceEpoch}',
+        author: widget.repository.currentUser,
+        createdAt: DateTime.now(),
+        title: _titleCtrl.text.trim(),
+        description: _descriptionCtrl.text.trim(),
+        vehicleYear: int.tryParse(_vehicleYearCtrl.text.trim()) ?? 2024,
+        vehicleMake: _vehicleMakeCtrl.text.trim(),
+        vehicleModel: _vehicleModelCtrl.text.trim(),
+        paintColorName: _paintColorCtrl.text.trim(),
+        paintCode: 'OEM',
+        paintHardness: _hardness,
+        initialPaintThicknessMicrons: 112.0,
+        finalPaintThicknessMicrons: 109.5,
+        defectSeverity: 7,
+        serviceType: _selectedService,
+        recipeStages: const [],
+        beforeImageUrl: heroBeforeUrl,
+        afterImageUrl: heroAfterUrl,
+        defectBadge: '50/50 Transformation',
+        beforePhotos: allBeforeUrls,
+        afterPhotos: allAfterUrls,
+        mediaZones: [singleHeroZone],
+        durationHours: 6.0,
+        quotedPrice: double.tryParse(_priceCtrl.text.trim()),
+        likesCount: 0,
+        isLiked: false,
+        savesCount: 0,
+        isSaved: false,
+        comments: [],
+      );
+
+      widget.repository.addJob(newJob);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle_rounded, color: AppTheme.primary),
+              SizedBox(width: 8),
+              Text('Transformation recipe published to Explore & Portfolio!'),
+            ],
+          ),
+          backgroundColor: AppTheme.surface,
+        ),
+      );
+    }
 
     widget.onJobCreated();
     Navigator.of(context).pop();
@@ -783,7 +850,10 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
           icon: const Icon(Icons.close_rounded),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text('Post Transformation', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        title: Text(
+          _isEditing ? 'Edit Transformation' : 'Post Transformation',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
@@ -794,8 +864,8 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
-              icon: const Icon(Icons.send_rounded, size: 16),
-              label: const Text('Publish', style: TextStyle(fontWeight: FontWeight.bold)),
+              icon: Icon(_isEditing ? Icons.save_rounded : Icons.send_rounded, size: 16),
+              label: Text(_isEditing ? 'Save Changes' : 'Publish', style: const TextStyle(fontWeight: FontWeight.bold)),
               onPressed: _publishTransformation,
             ),
           ),
@@ -1007,7 +1077,10 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
               onPressed: _publishTransformation,
-              child: const Text('Publish Transformation Recipe', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              child: Text(
+                _isEditing ? 'Save Changes' : 'Publish Transformation Recipe',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
             ),
             const SizedBox(height: 20),
           ],
