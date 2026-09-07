@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
 import '../models/user_vehicle.dart';
+import '../models/booking_models.dart';
+import '../models/team_member.dart';
 import '../services/job_repository.dart';
 import 'vehicle_editor_dialog.dart';
 import 'auth_modal.dart';
@@ -791,104 +793,169 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       ),
 
                       // TAB 2: Services & Pricing
-                      ListView(
-                        padding: const EdgeInsets.all(16),
-                        children: [
-                          // Header with "+ Add Service Package" CTA
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Studio Services & Menus',
-                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '${packages.length} active service packages offered to clients',
-                                    style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
-                                  ),
-                                ],
-                              ),
-                              ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppTheme.primary,
-                                  foregroundColor: Colors.black,
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                ),
-                                onPressed: () {
-                                  ServicePackageEditorDialog.show(
-                                    context,
-                                    onSave: (newPkg) => widget.repository.addServicePackage(newPkg),
-                                  );
-                                },
-                                icon: const Icon(Icons.add_rounded, size: 18),
-                                label: const Text(
-                                  'Add Package',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final isDesktop = constraints.maxWidth >= 720;
+                          final isWide = constraints.maxWidth >= 1024;
+                          final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
 
-                          if (packages.isEmpty)
-                            Container(
-                              padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
-                              decoration: BoxDecoration(
-                                color: AppTheme.surface,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: AppTheme.border),
-                              ),
-                              child: Column(
+                          return Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 1200),
+                              child: ListView(
+                                padding: const EdgeInsets.all(16),
                                 children: [
-                                  const Icon(Icons.miscellaneous_services_outlined, size: 48, color: AppTheme.textMuted),
-                                  const SizedBox(height: 12),
-                                  const Text('No Services Defined Yet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                  const SizedBox(height: 6),
-                                  const Text('Add your interior, exterior, ceramic coating, or PPF packages for clients to book.', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
-                                  const SizedBox(height: 16),
-                                  ElevatedButton.icon(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppTheme.primary,
-                                      foregroundColor: Colors.black,
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                    ),
-                                    onPressed: () {
-                                      ServicePackageEditorDialog.show(
-                                        context,
-                                        onSave: (newPkg) => widget.repository.addServicePackage(newPkg),
-                                      );
-                                    },
-                                    icon: const Icon(Icons.add_rounded, size: 18),
-                                    label: const Text('Create First Package', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  // Header with "+ Add Service Package" CTA
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'Studio Services & Menus',
+                                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '${packages.length} active service packages offered to clients',
+                                            style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                                          ),
+                                        ],
+                                      ),
+                                      ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: AppTheme.primary,
+                                          foregroundColor: Colors.black,
+                                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        ),
+                                        onPressed: () {
+                                          ServicePackageEditorDialog.show(
+                                            context,
+                                            onSave: (newPkg) => widget.repository.addServicePackage(newPkg),
+                                          );
+                                        },
+                                        icon: const Icon(Icons.add_rounded, size: 18),
+                                        label: const Text(
+                                          'Add Package',
+                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                        ),
+                                      ),
+                                    ],
                                   ),
+                                  const SizedBox(height: 14),
+
+                                  if (packages.isEmpty)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.surface,
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(color: AppTheme.border),
+                                      ),
+                                      child: Column(
+                                        children: [
+                                          const Icon(Icons.miscellaneous_services_outlined, size: 48, color: AppTheme.textMuted),
+                                          const SizedBox(height: 12),
+                                          const Text('No Services Defined Yet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                          const SizedBox(height: 6),
+                                          const Text('Add your interior, exterior, ceramic coating, or PPF packages for clients to book.', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+                                          const SizedBox(height: 16),
+                                          ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: AppTheme.primary,
+                                              foregroundColor: Colors.black,
+                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                            ),
+                                            onPressed: () {
+                                              ServicePackageEditorDialog.show(
+                                                context,
+                                                onSave: (newPkg) => widget.repository.addServicePackage(newPkg),
+                                              );
+                                            },
+                                            icon: const Icon(Icons.add_rounded, size: 18),
+                                            label: const Text('Create First Package', style: TextStyle(fontWeight: FontWeight.bold)),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  else if (!isDesktop)
+                                    ...packages.map((pkg) => _buildServicePackageCard(pkg, isGrid: false))
+                                  else
+                                    GridView.builder(
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: crossAxisCount,
+                                        crossAxisSpacing: 16,
+                                        mainAxisSpacing: 16,
+                                        childAspectRatio: 1.15,
+                                      ),
+                                      itemCount: packages.length,
+                                      itemBuilder: (context, index) {
+                                        return _buildServicePackageCard(packages[index], isGrid: true);
+                                      },
+                                    ),
                                 ],
                               ),
-                            )
-                          else
-                            ...packages.map((pkg) {
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 14),
+                            ),
+                          );
+                        },
+                      ),
+
+                      // TAB 3: My Team (Hired Staff)
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final isDesktop = constraints.maxWidth >= 720;
+                          final isWide = constraints.maxWidth >= 1024;
+                          final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
+
+                          return Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 1200),
+                              child: ListView(
                                 padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.surface,
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: pkg.isPopular ? AppTheme.primary.withAlpha(150) : AppTheme.border,
-                                    width: pkg.isPopular ? 1.5 : 1,
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // 1. OWNER / FOUNDER CARD AT THE TOP
+                                  Container(
+                                    margin: const EdgeInsets.only(bottom: 14),
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.surface,
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(color: AppTheme.primary, width: 1.5),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: AppTheme.primary.withAlpha(25),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 4),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Row(
                                       children: [
+                                        Stack(
+                                          alignment: Alignment.bottomRight,
+                                          children: [
+                                            CircleAvatar(
+                                              radius: 26,
+                                              backgroundImage: user.localAvatarBytes != null
+                                                  ? MemoryImage(user.localAvatarBytes!) as ImageProvider
+                                                  : NetworkImage(user.avatarUrl),
+                                            ),
+                                            Container(
+                                              padding: const EdgeInsets.all(3),
+                                              decoration: const BoxDecoration(
+                                                color: AppTheme.primary,
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: const Icon(Icons.workspace_premium_rounded, size: 12, color: Colors.black),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(width: 14),
                                         Expanded(
                                           child: Column(
                                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -897,275 +964,101 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                                 children: [
                                                   Flexible(
                                                     child: Text(
-                                                      pkg.title,
-                                                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                                      user.displayName,
+                                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white),
+                                                      overflow: TextOverflow.ellipsis,
                                                     ),
                                                   ),
-                                                  if (pkg.isPopular) ...[
-                                                    const SizedBox(width: 8),
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.amber.withAlpha(30),
-                                                        borderRadius: BorderRadius.circular(6),
-                                                        border: Border.all(color: Colors.amber, width: 0.8),
-                                                      ),
-                                                      child: const Row(
-                                                        mainAxisSize: MainAxisSize.min,
-                                                        children: [
-                                                          Icon(Icons.star_rounded, size: 12, color: Colors.amber),
-                                                          SizedBox(width: 2),
-                                                          Text(
-                                                            'POPULAR',
-                                                            style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.amber),
-                                                          ),
-                                                        ],
-                                                      ),
+                                                  const SizedBox(width: 8),
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: AppTheme.primary.withAlpha(30),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                      border: Border.all(color: AppTheme.primary.withAlpha(120)),
                                                     ),
-                                                  ],
+                                                    child: const Text(
+                                                      'Founder & Lead Master',
+                                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                                                    ),
+                                                  ),
                                                 ],
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                user.businessName,
+                                                style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
                                               ),
                                               const SizedBox(height: 4),
                                               Row(
                                                 children: [
-                                                  const Icon(Icons.timer_outlined, size: 14, color: AppTheme.textMuted),
+                                                  const Icon(Icons.star_rounded, size: 14, color: Colors.amber),
                                                   const SizedBox(width: 4),
-                                                  Text(pkg.estimatedDuration, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                                                  Text('${user.averageRating} Rating', style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold)),
+                                                  const SizedBox(width: 8),
+                                                  Text('• ${user.totalJobsCount} jobs completed', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
                                                 ],
                                               ),
                                             ],
                                           ),
                                         ),
-                                        Row(
-                                          children: [
-                                            Text(
-                                              '\$${pkg.basePrice.toStringAsFixed(0)}',
-                                              style: const TextStyle(
-                                                fontSize: 18,
-                                                fontWeight: FontWeight.bold,
-                                                color: AppTheme.primary,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            InkWell(
-                                              onTap: () {
-                                                ServicePackageEditorDialog.show(
-                                                  context,
-                                                  package: pkg,
-                                                  onSave: (updated) => widget.repository.updateServicePackage(updated),
-                                                  onDelete: () => widget.repository.removeServicePackage(pkg.id),
-                                                );
-                                              },
-                                              borderRadius: BorderRadius.circular(8),
-                                              child: Container(
-                                                padding: const EdgeInsets.all(6),
-                                                decoration: BoxDecoration(
-                                                  color: AppTheme.surfaceLight,
-                                                  borderRadius: BorderRadius.circular(8),
-                                                  border: Border.all(color: AppTheme.border),
-                                                ),
-                                                child: const Icon(Icons.edit_outlined, size: 15, color: AppTheme.primary),
-                                              ),
-                                            ),
-                                          ],
+                                        IconButton(
+                                          icon: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 20),
+                                          tooltip: 'Edit Profile',
+                                          onPressed: () => EditProfileDialog.show(context, repository: widget.repository),
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 10),
-                                    if (pkg.description.isNotEmpty) ...[
-                                      Text(pkg.description, style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
-                                      const SizedBox(height: 12),
-                                    ],
-                                    ...pkg.includes.map((inc) => Padding(
-                                          padding: const EdgeInsets.only(bottom: 6),
-                                          child: Row(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Icon(Icons.check_circle_rounded, size: 14, color: AppTheme.primary),
-                                              const SizedBox(width: 8),
-                                              Expanded(child: Text(inc, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary))),
-                                            ],
-                                          ),
-                                        )),
-                                  ],
-                                ),
-                              );
-                            }),
-                        ],
-                      ),
-
-                      // TAB 3: My Team (Hired Staff)
-                      ListView(
-                        padding: const EdgeInsets.all(16),
-                        children: [
-                          // 1. OWNER / FOUNDER CARD AT THE TOP
-                          Container(
-                            margin: const EdgeInsets.only(bottom: 14),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: AppTheme.surface,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: AppTheme.primary, width: 1.5),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppTheme.primary.withAlpha(25),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              children: [
-                                Stack(
-                                  alignment: Alignment.bottomRight,
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 26,
-                                      backgroundImage: user.localAvatarBytes != null
-                                          ? MemoryImage(user.localAvatarBytes!) as ImageProvider
-                                          : NetworkImage(user.avatarUrl),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.all(3),
-                                      decoration: const BoxDecoration(
-                                        color: AppTheme.primary,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: const Icon(Icons.workspace_premium_rounded, size: 12, color: Colors.black),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Flexible(
-                                            child: Text(
-                                              user.displayName,
-                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: AppTheme.primary.withAlpha(30),
-                                              borderRadius: BorderRadius.circular(6),
-                                              border: Border.all(color: AppTheme.primary.withAlpha(120)),
-                                            ),
-                                            child: const Text(
-                                              'Founder & Lead Master',
-                                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        user.businessName,
-                                        style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Row(
-                                        children: [
-                                          const Icon(Icons.star_rounded, size: 14, color: Colors.amber),
-                                          const SizedBox(width: 4),
-                                          Text('${user.averageRating} Rating', style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold)),
-                                          const SizedBox(width: 8),
-                                          Text('• ${user.totalJobsCount} jobs completed', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-                                        ],
-                                      ),
-                                    ],
                                   ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 20),
-                                  tooltip: 'Edit Profile',
-                                  onPressed: () => EditProfileDialog.show(context, repository: widget.repository),
-                                ),
-                              ],
-                            ),
-                          ),
 
-                          // 2. ADD STAFF BUTTON
-                          OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: AppTheme.primary),
-                              foregroundColor: AppTheme.primary,
-                              minimumSize: const Size(double.infinity, 44),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
-                            label: const Text('Add Hired Staff Member', style: TextStyle(fontWeight: FontWeight.bold)),
-                            onPressed: () => AddTeamMemberDialog.show(context, repository: widget.repository),
-                          ),
-                          const SizedBox(height: 14),
-
-                          // 3. HIRED STAFF MEMBERS LIST
-                          if (team.isEmpty)
-                            const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(24),
-                                child: Text(
-                                  'No additional staff hired yet.\nWhen you expand your business, add hired specialists here so clients can select them when booking!',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.4),
-                                ),
-                              ),
-                            )
-                          else
-                            ...team.map((member) {
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 10),
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.surface,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: AppTheme.border),
-                                ),
-                                child: Row(
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 24,
-                                      backgroundImage: member.localAvatarBytes != null
-                                          ? MemoryImage(member.localAvatarBytes!) as ImageProvider
-                                          : NetworkImage(member.avatarUrl),
+                                  // 2. ADD STAFF BUTTON
+                                  OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      side: const BorderSide(color: AppTheme.primary),
+                                      foregroundColor: AppTheme.primary,
+                                      minimumSize: const Size(double.infinity, 44),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                     ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(member.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                          const SizedBox(height: 2),
-                                          Text(member.roleTitle, style: const TextStyle(fontSize: 12, color: AppTheme.primary)),
-                                          const SizedBox(height: 4),
-                                          Row(
-                                            children: [
-                                              const Icon(Icons.star_rounded, size: 14, color: Colors.amber),
-                                              const SizedBox(width: 4),
-                                              Text('${member.rating} Rating', style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                                              const SizedBox(width: 8),
-                                              Text('• ${member.completedJobsCount} jobs done', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-                                            ],
-                                          ),
-                                        ],
+                                    icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+                                    label: const Text('Add Hired Staff Member', style: TextStyle(fontWeight: FontWeight.bold)),
+                                    onPressed: () => AddTeamMemberDialog.show(context, repository: widget.repository),
+                                  ),
+                                  const SizedBox(height: 14),
+
+                                  // 3. HIRED STAFF MEMBERS LIST
+                                  if (team.isEmpty)
+                                    const Center(
+                                      child: Padding(
+                                        padding: EdgeInsets.all(24),
+                                        child: Text(
+                                          'No additional staff hired yet.\nWhen you expand your business, add hired specialists here so clients can select them when booking!',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.4),
+                                        ),
                                       ),
+                                    )
+                                  else if (!isDesktop)
+                                    ...team.map((member) => _buildTeamMemberCard(member, isGrid: false))
+                                  else
+                                    GridView.builder(
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: crossAxisCount,
+                                        crossAxisSpacing: 16,
+                                        mainAxisSpacing: 16,
+                                        childAspectRatio: 2.8,
+                                      ),
+                                      itemCount: team.length,
+                                      itemBuilder: (context, index) {
+                                        return _buildTeamMemberCard(team[index], isGrid: true);
+                                      },
                                     ),
-                                    IconButton(
-                                      icon: const Icon(Icons.close_rounded, color: AppTheme.textMuted, size: 18),
-                                      tooltip: 'Remove from team',
-                                      onPressed: () => widget.repository.removeTeamMember(member.id),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }),
-                        ],
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ],
                   )
@@ -1359,6 +1252,176 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 ],
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildServicePackageCard(ServicePackage pkg, {bool isGrid = false}) {
+    return Container(
+      margin: EdgeInsets.only(bottom: isGrid ? 0 : 14),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: pkg.isPopular ? AppTheme.primary.withAlpha(150) : AppTheme.border,
+          width: pkg.isPopular ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            pkg.title,
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        if (pkg.isPopular) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withAlpha(30),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.amber, width: 0.8),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.star_rounded, size: 12, color: Colors.amber),
+                                SizedBox(width: 2),
+                                Text(
+                                  'POPULAR',
+                                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.amber),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.timer_outlined, size: 14, color: AppTheme.textMuted),
+                        const SizedBox(width: 4),
+                        Text(pkg.estimatedDuration, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                children: [
+                  Text(
+                    '\$${pkg.basePrice.toStringAsFixed(0)}',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: () {
+                      ServicePackageEditorDialog.show(
+                        context,
+                        package: pkg,
+                        onSave: (updated) => widget.repository.updateServicePackage(updated),
+                        onDelete: () => widget.repository.removeServicePackage(pkg.id),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceLight,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: const Icon(Icons.edit_outlined, size: 15, color: AppTheme.primary),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (pkg.description.isNotEmpty) ...[
+            Text(pkg.description, style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+            const SizedBox(height: 12),
+          ],
+          ...pkg.includes.map((inc) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.check_circle_rounded, size: 14, color: AppTheme.primary),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(inc, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary))),
+                  ],
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTeamMemberCard(TeamMember member, {bool isGrid = false}) {
+    return Container(
+      margin: EdgeInsets.only(bottom: isGrid ? 0 : 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 24,
+            backgroundImage: member.localAvatarBytes != null
+                ? MemoryImage(member.localAvatarBytes!) as ImageProvider
+                : NetworkImage(member.avatarUrl),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(member.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                const SizedBox(height: 2),
+                Text(member.roleTitle, style: const TextStyle(fontSize: 12, color: AppTheme.primary)),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.star_rounded, size: 14, color: Colors.amber),
+                    const SizedBox(width: 4),
+                    Text('${member.rating} Rating', style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                    const SizedBox(width: 8),
+                    Text('• ${member.completedJobsCount} jobs done', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close_rounded, color: AppTheme.textMuted, size: 18),
+            tooltip: 'Remove from team',
+            onPressed: () => widget.repository.removeTeamMember(member.id),
           ),
         ],
       ),
