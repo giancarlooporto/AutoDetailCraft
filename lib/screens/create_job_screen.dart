@@ -483,6 +483,58 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
     Navigator.of(context).pop();
   }
 
+  void _confirmDelete() {
+    if (widget.jobToEdit == null) return;
+    final job = widget.jobToEdit!;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Colors.redAccent),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+            SizedBox(width: 8),
+            Text('Delete Transformation?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to delete "${job.title}"? This will permanently remove this transformation from your portfolio and Explore.',
+          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Navigator.pop(ctx); // Close dialog
+              widget.repository.deleteJob(job.id);
+              widget.onJobCreated();
+              Navigator.of(context).pop(); // Close create/edit screen
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Transformation permanently removed.'),
+                  backgroundColor: AppTheme.surface,
+                ),
+              );
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPhotoThumbnail(PhotoItem photo, int index, bool isBefore) {
     final isSelectedAsHero = isBefore
         ? _selectedHeroBeforeIndex == index
@@ -1082,7 +1134,24 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
             ),
-            const SizedBox(height: 20),
+            if (_isEditing) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.redAccent,
+                  side: const BorderSide(color: Colors.redAccent, width: 1.2),
+                  minimumSize: const Size(double.infinity, 48),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                label: const Text(
+                  'Delete Transformation',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+                onPressed: _confirmDelete,
+              ),
+            ],
+            const SizedBox(height: 24),
           ],
         ),
       ),

@@ -80,6 +80,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       builder: (_) => VehicleEditorDialog(
         repository: widget.repository,
         vehicleToEdit: vehicle,
+        onDelete: vehicle != null
+            ? () => widget.repository.removeVehicleFromGarage(vehicle.id)
+            : null,
       ),
     );
   }
@@ -1198,16 +1201,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       icon: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 18),
                       tooltip: 'Edit Vehicle & Photo',
                       onPressed: () => _openVehicleEditor(context, veh),
-                    ),
-                    const SizedBox(width: 8),
-                    // Delete Button
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      icon: const Icon(Icons.delete_outline_rounded, color: AppTheme.textMuted, size: 18),
-                      tooltip: 'Remove from Garage',
-                      onPressed: () => widget.repository.removeVehicleFromGarage(veh.id),
                     ),
                   ],
                 ),

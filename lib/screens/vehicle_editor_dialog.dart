@@ -11,11 +11,13 @@ import '../services/vehicle_api_service.dart';
 class VehicleEditorDialog extends StatefulWidget {
   final JobRepository repository;
   final UserVehicle? vehicleToEdit; // If null, creating new
+  final VoidCallback? onDelete;
 
   const VehicleEditorDialog({
     super.key,
     required this.repository,
     this.vehicleToEdit,
+    this.onDelete,
   });
 
   @override
@@ -641,6 +643,16 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
       ),
     ),
       actions: [
+        if (widget.vehicleToEdit != null && widget.onDelete != null)
+          TextButton.icon(
+            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            icon: const Icon(Icons.delete_outline_rounded, size: 18),
+            label: const Text('Delete Vehicle'),
+            onPressed: () {
+              Navigator.of(context).pop();
+              widget.onDelete!();
+            },
+          ),
         TextButton(
           onPressed: _isUploadingToCloud ? null : () => Navigator.of(context).pop(),
           child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),

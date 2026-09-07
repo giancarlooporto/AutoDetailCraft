@@ -69,54 +69,6 @@ class JobRecipeCard extends StatelessWidget {
     );
   }
 
-  void _confirmDeleteJob(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Colors.redAccent),
-        ),
-        title: const Row(
-          children: [
-            Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
-            SizedBox(width: 8),
-            Text('Delete Transformation?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          ],
-        ),
-        content: Text(
-          'Are you sure you want to delete "${job.title}"? This will permanently remove this transformation from your portfolio and Explore.',
-          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              Navigator.pop(ctx);
-              repository.deleteJob(job.id);
-              if (onJobChanged != null) onJobChanged!();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Transformation removed from portfolio.'),
-                  backgroundColor: AppTheme.surface,
-                ),
-              );
-            },
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showImageGalleryModal(BuildContext context, String title, List<String> imageUrls, Color accentColor) {
     showModalBottomSheet(
       context: context,
@@ -328,11 +280,6 @@ class JobRecipeCard extends StatelessWidget {
                     icon: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 19),
                     tooltip: 'Edit Transformation',
                     onPressed: () => _editJob(context),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 19),
-                    tooltip: 'Delete Transformation',
-                    onPressed: () => _confirmDeleteJob(context),
                   ),
                 ] else
                   IconButton(

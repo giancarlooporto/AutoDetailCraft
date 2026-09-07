@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
 import '../services/job_repository.dart';
 import '../services/supabase_service.dart';
@@ -79,26 +80,36 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             index: currentIndex,
             children: screens,
           ),
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: currentIndex,
-            onDestinationSelected: (idx) => widget.repository.setActiveTab(idx),
-            destinations: [
-              const NavigationDestination(
-                icon: Icon(Icons.explore_outlined),
-                selectedIcon: Icon(Icons.explore_rounded),
-                label: 'Explore',
+          bottomNavigationBar: Container(
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: AppTheme.border.withAlpha(100), width: 0.5)),
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 650),
+                child: NavigationBar(
+                  selectedIndex: currentIndex,
+                  onDestinationSelected: (idx) => widget.repository.setActiveTab(idx),
+                  destinations: [
+                    const NavigationDestination(
+                      icon: Icon(Icons.explore_outlined),
+                      selectedIcon: Icon(Icons.explore_rounded),
+                      label: 'Explore',
+                    ),
+                    const NavigationDestination(
+                      icon: Icon(Icons.calendar_month_outlined),
+                      selectedIcon: Icon(Icons.calendar_month_rounded),
+                      label: 'Bookings',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(studioIcon),
+                      selectedIcon: Icon(studioSelectedIcon),
+                      label: studioLabel,
+                    ),
+                  ],
+                ),
               ),
-              const NavigationDestination(
-                icon: Icon(Icons.calendar_month_outlined),
-                selectedIcon: Icon(Icons.calendar_month_rounded),
-                label: 'Bookings',
-              ),
-              NavigationDestination(
-                icon: Icon(studioIcon),
-                selectedIcon: Icon(studioSelectedIcon),
-                label: studioLabel,
-              ),
-            ],
+            ),
           ),
         );
       },
