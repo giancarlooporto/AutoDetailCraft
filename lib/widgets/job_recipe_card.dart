@@ -56,16 +56,13 @@ class JobRecipeCard extends StatelessWidget {
   }
 
   void _editJob(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => CreateJobScreen(
-          repository: repository,
-          jobToEdit: job,
-          onJobCreated: () {
-            if (onJobChanged != null) onJobChanged!();
-          },
-        ),
-      ),
+    CreateJobScreen.show(
+      context,
+      repository: repository,
+      jobToEdit: job,
+      onJobCreated: () {
+        if (onJobChanged != null) onJobChanged!();
+      },
     );
   }
 
@@ -509,11 +506,7 @@ class JobRecipeCard extends StatelessWidget {
                           constraints: const BoxConstraints(),
                           icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16, color: AppTheme.textSecondary),
                           onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => JobDetailScreen(job: job, repository: repository),
-                              ),
-                            );
+                            JobDetailScreen.show(context, job: job, repository: repository);
                           },
                         ),
                         const SizedBox(width: 2),
@@ -540,11 +533,7 @@ class JobRecipeCard extends StatelessWidget {
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                       onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => JobDetailScreen(job: job, repository: repository),
-                          ),
-                        );
+                        JobDetailScreen.show(context, job: job, repository: repository);
                       },
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,

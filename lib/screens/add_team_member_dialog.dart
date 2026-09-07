@@ -130,28 +130,54 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return Dialog(
       backgroundColor: AppTheme.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
         side: const BorderSide(color: AppTheme.border),
       ),
-      title: const Row(
-        children: [
-          Icon(Icons.person_add_alt_1_rounded, color: AppTheme.primary, size: 22),
-          SizedBox(width: 10),
-          Text('Add Hired Staff Member', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        ],
-      ),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: SizedBox(
-          width: double.maxFinite,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 720),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Universal Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withAlpha(30),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.person_add_alt_1_rounded, color: AppTheme.primary, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Add Hired Staff Member',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded, color: AppTheme.textMuted),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Divider(color: AppTheme.border, height: 1),
+            const SizedBox(height: 16),
+
+            // Scrollable Content
+            Expanded(
+              child: ListView(
+                children: [
               // Photo Preview & Picker Section
               Center(
                 child: Stack(
@@ -240,26 +266,45 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
                   prefixIcon: Icon(Icons.link_rounded, size: 18),
                 ),
               ),
+              const SizedBox(height: 12),
             ],
           ),
         ),
-      ),
-    ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
-        ),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppTheme.primary,
-            foregroundColor: Colors.black,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-          onPressed: _submit,
-          child: const Text('Add to Company', style: TextStyle(fontWeight: FontWeight.bold)),
+
+        const SizedBox(height: 16),
+        const Divider(color: AppTheme.border, height: 1),
+        const SizedBox(height: 16),
+
+        // Bottom Action Bar (Universal UX)
+        Row(
+          children: [
+            const Spacer(),
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.textSecondary,
+                side: const BorderSide(color: AppTheme.border),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('Cancel'),
+            ),
+            const SizedBox(width: 10),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: _submit,
+              child: const Text('Add to Company', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
         ),
       ],
-    );
+    ),
+  ),
+);
   }
 }

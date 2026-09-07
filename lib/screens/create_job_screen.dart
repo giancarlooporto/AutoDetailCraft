@@ -36,6 +36,23 @@ class CreateJobScreen extends StatefulWidget {
     this.jobToEdit,
   });
 
+  static Future<void> show(
+    BuildContext context, {
+    required JobRepository repository,
+    required VoidCallback onJobCreated,
+    DetailJob? jobToEdit,
+  }) {
+    return showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => CreateJobScreen(
+        repository: repository,
+        onJobCreated: onJobCreated,
+        jobToEdit: jobToEdit,
+      ),
+    );
+  }
+
   @override
   State<CreateJobScreen> createState() => _CreateJobScreenState();
 }
@@ -896,38 +913,60 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
   Widget build(BuildContext context) {
     final totalUploaded = _beforePhotos.length + _afterPhotos.length;
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.close_rounded),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Text(
-          _isEditing ? 'Edit Transformation' : 'Post Transformation',
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              icon: Icon(_isEditing ? Icons.save_rounded : Icons.send_rounded, size: 16),
-              label: Text(_isEditing ? 'Save Changes' : 'Publish', style: const TextStyle(fontWeight: FontWeight.bold)),
-              onPressed: _publishTransformation,
-            ),
-          ),
-        ],
+    return Dialog(
+      backgroundColor: AppTheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppTheme.border),
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 860, maxHeight: 880),
+        padding: const EdgeInsets.all(24),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withAlpha(30),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          _isEditing ? Icons.edit_note_rounded : Icons.add_photo_alternate_rounded,
+                          color: AppTheme.primary,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        _isEditing ? 'Edit Transformation' : 'Post Transformation Recipe',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded, color: AppTheme.textMuted),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(color: AppTheme.border, height: 1),
+              const SizedBox(height: 16),
+
+              // Scrollable Form Content
+              Expanded(
+                child: ListView(
+                  children: [
             // Tier Usage Header Bar
             Container(
               padding: const EdgeInsets.all(12),
@@ -1120,39 +1159,53 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                 labelText: 'Job Story & Craft Details (Paint observations, pad/compound combo, customer reaction)',
               ),
             ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.black,
-                minimumSize: const Size(double.infinity, 50),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: _publishTransformation,
-              child: Text(
-                _isEditing ? 'Save Changes' : 'Publish Transformation Recipe',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-            ),
-            if (_isEditing) ...[
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.redAccent,
-                  side: const BorderSide(color: Colors.redAccent, width: 1.2),
-                  minimumSize: const Size(double.infinity, 48),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    const SizedBox(height: 16),
+                  ],
                 ),
-                icon: const Icon(Icons.delete_outline_rounded, size: 20),
-                label: const Text(
-                  'Delete Transformation',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                ),
-                onPressed: _confirmDelete,
+              ),
+
+              const SizedBox(height: 16),
+              const Divider(color: AppTheme.border, height: 1),
+              const SizedBox(height: 16),
+
+              // Bottom Action Bar (Universal UX)
+              Row(
+                children: [
+                  if (_isEditing)
+                    TextButton.icon(
+                      onPressed: _confirmDelete,
+                      icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
+                      label: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+                    ),
+                  const Spacer(),
+                  OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.textSecondary,
+                      side: const BorderSide(color: AppTheme.border),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 10),
+                  ElevatedButton(
+                    onPressed: _publishTransformation,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: Text(
+                      _isEditing ? 'Save Changes' : 'Publish Recipe',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
               ),
             ],
-            const SizedBox(height: 24),
-          ],
+          ),
         ),
       ),
     );

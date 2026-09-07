@@ -11,6 +11,17 @@ class JobDetailScreen extends StatefulWidget {
 
   const JobDetailScreen({super.key, required this.job, this.repository});
 
+  static Future<void> show(
+    BuildContext context, {
+    required DetailJob job,
+    JobRepository? repository,
+  }) {
+    return showDialog(
+      context: context,
+      builder: (context) => JobDetailScreen(job: job, repository: repository),
+    );
+  }
+
   @override
   State<JobDetailScreen> createState() => _JobDetailScreenState();
 }
@@ -321,31 +332,75 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     final beforeList = _currentJob.allBeforePhotos;
     final afterList = _currentJob.allAfterPhotos;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Job Recipe & Inspection'),
-        actions: [
-          IconButton(
-            onPressed: _showExportSuccess,
-            icon: const Icon(Icons.share_outlined, color: AppTheme.primary),
-            tooltip: 'Share Client Report',
-          ),
-        ],
+    return Dialog(
+      backgroundColor: AppTheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppTheme.border),
       ),
-      body: SingleChildScrollView(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 860, maxHeight: 880),
+        padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. Strictly ONE Single 50/50 Comparative Hero Slider
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: SplitSliderWidget(
-                beforeImageUrl: _currentJob.beforeImageUrl,
-                afterImageUrl: _currentJob.afterImageUrl,
-                defectBadge: _currentJob.defectBadge,
-                height: 320,
-              ),
+            // Universal Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withAlpha(30),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.receipt_long_rounded, color: AppTheme.primary, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Job Recipe & Inspection Details',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: _showExportSuccess,
+                      icon: const Icon(Icons.share_outlined, color: AppTheme.primary, size: 20),
+                      tooltip: 'Share Client Report',
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded, color: AppTheme.textMuted),
+                    ),
+                  ],
+                ),
+              ],
             ),
+            const SizedBox(height: 16),
+            const Divider(color: AppTheme.border, height: 1),
+            const SizedBox(height: 16),
+
+            // Scrollable Content
+            Expanded(
+              child: ListView(
+                children: [
+                  // 1. Strictly ONE Single 50/50 Comparative Hero Slider with true resolution containment
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: SplitSliderWidget(
+                      beforeImageUrl: _currentJob.beforeImageUrl,
+                      afterImageUrl: _currentJob.afterImageUrl,
+                      defectBadge: _currentJob.defectBadge,
+                      height: 420,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
 
             // 2. Inspection Photo Containers (View All Before & After)
             Padding(
@@ -734,7 +789,36 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               ),
             ),
 
-            const SizedBox(height: 30),
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+            const Divider(color: AppTheme.border, height: 1),
+            const SizedBox(height: 16),
+
+            // Bottom Action Bar (Universal UX)
+            Row(
+              children: [
+                TextButton.icon(
+                  onPressed: _showExportSuccess,
+                  icon: const Icon(Icons.share_rounded, color: AppTheme.primary, size: 18),
+                  label: const Text('Share Inspection Report', style: TextStyle(color: AppTheme.primary)),
+                ),
+                const Spacer(),
+                OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.textSecondary,
+                    side: const BorderSide(color: AppTheme.border),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('Close'),
+                ),
+              ],
+            ),
           ],
         ),
       ),

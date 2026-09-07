@@ -52,15 +52,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       return;
     }
 
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => CreateJobScreen(
-          repository: widget.repository,
-          onJobCreated: () {
-            setState(() {});
-          },
-        ),
-      ),
+    CreateJobScreen.show(
+      context,
+      repository: widget.repository,
+      onJobCreated: () {
+        setState(() {});
+      },
     );
   }
 
@@ -133,10 +130,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 title: const Text('Log Out', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
                 subtitle: const Text('Return to guest mode', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
                 onTap: () async {
+                  final sm = ScaffoldMessenger.of(context);
                   Navigator.of(ctx).pop();
                   await widget.repository.logoutUser();
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    sm.showSnackBar(
                       const SnackBar(
                         content: Text('You have been logged out.'),
                         backgroundColor: AppTheme.surface,
@@ -204,10 +202,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               foregroundColor: Colors.white,
             ),
             onPressed: () async {
+              final sm = ScaffoldMessenger.of(context);
               Navigator.of(ctx).pop();
               await widget.repository.deleteAccount();
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                sm.showSnackBar(
                   const SnackBar(
                     content: Text('Account data has been deleted.'),
                     backgroundColor: AppTheme.surface,
@@ -476,22 +475,25 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                           children: [
                             OutlinedButton.icon(
                               style: OutlinedButton.styleFrom(
-                                foregroundColor: isDetailer ? AppTheme.primary : Colors.white,
-                                side: BorderSide(
-                                  color: isDetailer ? AppTheme.primary.withAlpha(140) : AppTheme.border,
-                                ),
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                foregroundColor: isDetailer ? AppTheme.primary : Colors.black,
+                                backgroundColor: isDetailer ? AppTheme.surface.withAlpha(160) : AppTheme.primary,
+                                side: const BorderSide(color: AppTheme.primary),
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                backgroundColor: AppTheme.surface.withAlpha(160),
                               ),
                               onPressed: () => widget.repository.toggleHostMode(),
                               icon: Icon(
                                 isDetailer ? Icons.directions_car_rounded : Icons.storefront_rounded,
                                 size: 16,
+                                color: isDetailer ? AppTheme.primary : Colors.black,
                               ),
                               label: Text(
-                                isDetailer ? 'Switch to Client Mode' : 'Switch to Detailer Mode',
-                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                isDetailer ? 'Switch to Client Mode' : 'Become a Detailer',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDetailer ? AppTheme.primary : Colors.black,
+                                ),
                               ),
                             ),
                             if (isDetailer) ...[
@@ -750,43 +752,46 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                       return Center(
                                         child: ConstrainedBox(
                                           constraints: const BoxConstraints(maxWidth: 1200),
-                                          child: !isDesktop
-                                              ? ListView.builder(
-                                                  padding: const EdgeInsets.all(16),
-                                                  itemCount: myJobs.length,
-                                                  itemBuilder: (context, index) {
-                                                    final job = myJobs[index];
-                                                    return JobRecipeCard(
-                                                      job: job,
-                                                      repository: widget.repository,
-                                                      showDetailerManagement: true,
-                                                      onJobChanged: () => setState(() {}),
-                                                      onLike: () => widget.repository.toggleLike(job.id),
-                                                      onSave: () => widget.repository.toggleSave(job.id),
-                                                    );
-                                                  },
-                                                )
-                                              : GridView.builder(
-                                                  padding: const EdgeInsets.all(16),
-                                                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                                    crossAxisCount: crossAxisCount,
-                                                    crossAxisSpacing: 16,
-                                                    mainAxisSpacing: 16,
-                                                    childAspectRatio: 0.54,
+                                          child: SizedBox(
+                                            width: double.infinity,
+                                            child: !isDesktop
+                                                ? ListView.builder(
+                                                    padding: const EdgeInsets.all(16),
+                                                    itemCount: myJobs.length,
+                                                    itemBuilder: (context, index) {
+                                                      final job = myJobs[index];
+                                                      return JobRecipeCard(
+                                                        job: job,
+                                                        repository: widget.repository,
+                                                        showDetailerManagement: true,
+                                                        onJobChanged: () => setState(() {}),
+                                                        onLike: () => widget.repository.toggleLike(job.id),
+                                                        onSave: () => widget.repository.toggleSave(job.id),
+                                                      );
+                                                    },
+                                                  )
+                                                : GridView.builder(
+                                                    padding: const EdgeInsets.all(16),
+                                                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                                      crossAxisCount: crossAxisCount,
+                                                      crossAxisSpacing: 16,
+                                                      mainAxisSpacing: 16,
+                                                      mainAxisExtent: 670,
+                                                    ),
+                                                    itemCount: myJobs.length,
+                                                    itemBuilder: (context, index) {
+                                                      final job = myJobs[index];
+                                                      return JobRecipeCard(
+                                                        job: job,
+                                                        repository: widget.repository,
+                                                        showDetailerManagement: true,
+                                                        onJobChanged: () => setState(() {}),
+                                                        onLike: () => widget.repository.toggleLike(job.id),
+                                                        onSave: () => widget.repository.toggleSave(job.id),
+                                                      );
+                                                    },
                                                   ),
-                                                  itemCount: myJobs.length,
-                                                  itemBuilder: (context, index) {
-                                                    final job = myJobs[index];
-                                                    return JobRecipeCard(
-                                                      job: job,
-                                                      repository: widget.repository,
-                                                      showDetailerManagement: true,
-                                                      onJobChanged: () => setState(() {}),
-                                                      onLike: () => widget.repository.toggleLike(job.id),
-                                                      onSave: () => widget.repository.toggleSave(job.id),
-                                                    );
-                                                  },
-                                                ),
+                                          ),
                                         ),
                                       );
                                     },

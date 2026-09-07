@@ -151,26 +151,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                                     isSelected: currentIndex == 2,
                                     onTap: () => widget.repository.setActiveTab(2),
                                   ),
-
-                                  const SizedBox(width: 20),
-
-                                  // Role Switcher / Quick Action Button
-                                  if (!isGuest) ...[
-                                    OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: isDetailer ? AppTheme.primary : Colors.white,
-                                        side: BorderSide(color: isDetailer ? AppTheme.primary.withAlpha(120) : AppTheme.border),
-                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                      ),
-                                      icon: Icon(isDetailer ? Icons.swap_horiz_rounded : Icons.storefront_outlined, size: 16),
-                                      label: Text(
-                                        isDetailer ? 'Switch to Client' : 'Become a Detailer',
-                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                                      ),
-                                      onPressed: () => widget.repository.toggleHostMode(),
-                                    ),
-                                  ],
                                 ],
                               ),
                             ),

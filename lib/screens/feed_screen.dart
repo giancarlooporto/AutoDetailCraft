@@ -441,7 +441,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                           crossAxisCount: crossAxisCount,
                                           crossAxisSpacing: 16,
                                           mainAxisSpacing: 16,
-                                          childAspectRatio: 0.54,
+                                          mainAxisExtent: 670,
                                         ),
                                         itemCount: jobs.length,
                                         itemBuilder: (context, idx) {

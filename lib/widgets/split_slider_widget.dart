@@ -9,6 +9,7 @@ class SplitSliderWidget extends StatefulWidget {
   final double? height;
   final double? aspectRatio;
   final double initialPosition;
+  final BoxFit fit;
 
   const SplitSliderWidget({
     super.key,
@@ -18,6 +19,7 @@ class SplitSliderWidget extends StatefulWidget {
     this.height,
     this.aspectRatio = 16 / 10,
     this.initialPosition = 0.5,
+    this.fit = BoxFit.cover,
   });
 
   @override
@@ -34,31 +36,43 @@ class _SplitSliderWidgetState extends State<SplitSliderWidget> {
   }
 
   Widget _buildImage(String url, bool isBefore, double effectiveHeight) {
+    Widget img;
     if (url.startsWith('data:image')) {
       try {
         final base64String = url.split(',').last;
         final bytes = base64Decode(base64String);
-        return Image.memory(
+        img = Image.memory(
           bytes,
-          fit: BoxFit.cover,
+          fit: widget.fit,
           width: double.infinity,
           height: effectiveHeight,
+          alignment: Alignment.center,
         );
-      } catch (_) {}
+      } catch (_) {
+        return _buildPlaceholder(isBefore, effectiveHeight);
+      }
+    } else {
+      img = Image.network(
+        url,
+        fit: widget.fit,
+        width: double.infinity,
+        height: effectiveHeight,
+        alignment: Alignment.center,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return _buildPlaceholder(isBefore, effectiveHeight, isLoading: true);
+        },
+        errorBuilder: (context, error, stackTrace) {
+          return _buildPlaceholder(isBefore, effectiveHeight);
+        },
+      );
     }
 
-    return Image.network(
-      url,
-      fit: BoxFit.cover,
+    return Container(
+      color: const Color(0xFF0A0D14),
       width: double.infinity,
       height: effectiveHeight,
-      loadingBuilder: (context, child, loadingProgress) {
-        if (loadingProgress == null) return child;
-        return _buildPlaceholder(isBefore, effectiveHeight, isLoading: true);
-      },
-      errorBuilder: (context, error, stackTrace) {
-        return _buildPlaceholder(isBefore, effectiveHeight);
-      },
+      child: img,
     );
   }
 

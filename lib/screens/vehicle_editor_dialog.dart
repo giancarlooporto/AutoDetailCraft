@@ -305,35 +305,51 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
         ? _availableColors
         : VehicleApiService.getFactoryColorsFor(_selectedMake, _selectedModel);
 
-    return AlertDialog(
+    return Dialog(
       backgroundColor: AppTheme.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
         side: const BorderSide(color: AppTheme.border),
       ),
-      title: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(color: AppTheme.primary.withAlpha(30), shape: BoxShape.circle),
-            child: const Icon(Icons.directions_car_filled_rounded, color: AppTheme.primary, size: 20),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            widget.vehicleToEdit != null ? 'Edit Vehicle' : 'Add Vehicle to Garage',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-        ],
-      ),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
-        child: SizedBox(
-          width: double.maxFinite,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 580, maxHeight: 760),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(color: AppTheme.primary.withAlpha(30), borderRadius: BorderRadius.circular(10)),
+                      child: const Icon(Icons.directions_car_filled_rounded, color: AppTheme.primary, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      widget.vehicleToEdit != null ? 'Edit Vehicle' : 'Add Vehicle to Garage',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded, color: AppTheme.textMuted),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Divider(color: AppTheme.border, height: 1),
+            const SizedBox(height: 16),
+
+            // Scrollable form
+            Expanded(
+              child: ListView(
+                children: [
               // NHTSA Database verification badge
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -637,42 +653,61 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
             ),
               const SizedBox(height: 4),
               const Text('📸 Upload your own high-resolution car photo or choose a studio preset', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+              const SizedBox(height: 12),
             ],
           ),
         ),
-      ),
-    ),
-      actions: [
-        if (widget.vehicleToEdit != null && widget.onDelete != null)
-          TextButton.icon(
-            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-            icon: const Icon(Icons.delete_outline_rounded, size: 18),
-            label: const Text('Delete Vehicle'),
-            onPressed: () {
-              Navigator.of(context).pop();
-              widget.onDelete!();
-            },
-          ),
-        TextButton(
-          onPressed: _isUploadingToCloud ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
-        ),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppTheme.primary,
-            foregroundColor: Colors.black,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-          onPressed: _isUploadingToCloud ? null : _saveVehicle,
-          child: _isUploadingToCloud
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
-                )
-              : Text(widget.vehicleToEdit != null ? 'Save Changes' : 'Add to Garage', style: const TextStyle(fontWeight: FontWeight.bold)),
+
+        const SizedBox(height: 16),
+        const Divider(color: AppTheme.border, height: 1),
+        const SizedBox(height: 16),
+
+        // Bottom Action Bar (Universal UX)
+        Row(
+          children: [
+            if (widget.vehicleToEdit != null && widget.onDelete != null)
+              TextButton.icon(
+                style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                label: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  widget.onDelete!();
+                },
+              ),
+            const Spacer(),
+            OutlinedButton(
+              onPressed: _isUploadingToCloud ? null : () => Navigator.of(context).pop(),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.textSecondary,
+                side: const BorderSide(color: AppTheme.border),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('Cancel'),
+            ),
+            const SizedBox(width: 10),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: _isUploadingToCloud ? null : _saveVehicle,
+              child: _isUploadingToCloud
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                    )
+                  : Text(widget.vehicleToEdit != null ? 'Save Changes' : 'Add to Garage', style: const TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
         ),
       ],
-    );
+    ),
+  ),
+);
   }
 }
