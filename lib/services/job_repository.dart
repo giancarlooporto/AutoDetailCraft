@@ -69,13 +69,26 @@ class JobRepository extends ChangeNotifier {
       _isLoggedIn = false;
     }
 
-    // 3. Load persistent bookings if logged in
+    // 3. Load persistent custom transformation jobs
+    final customJobs = await LocalStorageService.loadCustomJobs();
+    if (customJobs.isNotEmpty) {
+      // Prepend custom jobs before mock jobs, deduplicating by ID
+      final existingIds = customJobs.map((j) => j.id).toSet();
+      _jobs = [
+        ...customJobs,
+        ...MockDataService.getInitialJobs().where((j) => !existingIds.contains(j.id)),
+      ];
+    } else {
+      _jobs = MockDataService.getInitialJobs();
+    }
+
+    // 4. Load persistent bookings if logged in
     final savedBookings = await LocalStorageService.loadBookings();
     if (savedBookings != null) {
       _bookings = savedBookings;
     }
 
-    // 4. Load persistent likes & bookmarks
+    // 5. Load persistent likes & bookmarks
     final interaction = await LocalStorageService.loadInteractionState();
     if (interaction.likedJobIds.isNotEmpty || interaction.savedJobIds.isNotEmpty) {
       _jobs = _jobs.map((job) {
@@ -88,6 +101,9 @@ class JobRepository extends ChangeNotifier {
       }).toList();
     }
 
+    // 6. Background fetch newest community jobs from Supabase if online
+    _refreshJobsFromCloud();
+
     _isInitialized = true;
     notifyListeners();
   }
@@ -99,6 +115,21 @@ class JobRepository extends ChangeNotifier {
         _currentUser = cloudProfile;
         _persistUser();
         notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _refreshJobsFromCloud() async {
+    try {
+      final cloudJobs = await SupabaseDbService.fetchJobs();
+      if (cloudJobs.isNotEmpty) {
+        final currentIds = _jobs.map((j) => j.id).toSet();
+        final newFromCloud = cloudJobs.where((j) => !currentIds.contains(j.id)).toList();
+        if (newFromCloud.isNotEmpty) {
+          _jobs = [...newFromCloud, ..._jobs];
+          _persistCustomJobs();
+          notifyListeners();
+        }
       }
     } catch (_) {}
   }
@@ -149,6 +180,13 @@ class JobRepository extends ChangeNotifier {
 
   void _persistBookings() {
     LocalStorageService.saveBookings(_bookings);
+  }
+
+  void _persistCustomJobs() {
+    // Only persist jobs that are custom user jobs (not initial mock ids or created by current user)
+    final mockIds = MockDataService.getInitialJobs().map((j) => j.id).toSet();
+    final customJobs = _jobs.where((j) => !mockIds.contains(j.id)).toList();
+    LocalStorageService.saveCustomJobs(customJobs);
   }
 
   void _persistInteractions() {
@@ -422,6 +460,34 @@ class JobRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Add / Edit / Remove Service Package (Persisted)
+  void addServicePackage(ServicePackage package) {
+    _currentUser = _currentUser.copyWith(
+      servicePackages: [..._currentUser.servicePackages, package],
+    );
+    _persistUser();
+    notifyListeners();
+  }
+
+  void updateServicePackage(ServicePackage updated) {
+    final idx = _currentUser.servicePackages.indexWhere((p) => p.id == updated.id);
+    if (idx != -1) {
+      final list = List<ServicePackage>.from(_currentUser.servicePackages);
+      list[idx] = updated;
+      _currentUser = _currentUser.copyWith(servicePackages: list);
+      _persistUser();
+      notifyListeners();
+    }
+  }
+
+  void removeServicePackage(String packageId) {
+    _currentUser = _currentUser.copyWith(
+      servicePackages: _currentUser.servicePackages.where((p) => p.id != packageId).toList(),
+    );
+    _persistUser();
+    notifyListeners();
+  }
+
   void toggleLike(String jobId) {
     final idx = _jobs.indexWhere((j) => j.id == jobId);
     if (idx != -1) {
@@ -450,6 +516,10 @@ class JobRepository extends ChangeNotifier {
 
   void addJob(DetailJob newJob) {
     _jobs.insert(0, newJob);
+    _persistCustomJobs();
+    if (_isLoggedIn) {
+      SupabaseDbService.saveJob(newJob);
+    }
     if (_currentUser.id == newJob.author.id) {
       _currentUser = _currentUser.copyWith(
         totalJobsCount: _currentUser.totalJobsCount + 1,

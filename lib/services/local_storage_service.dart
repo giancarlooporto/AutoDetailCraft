@@ -3,11 +3,13 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_profile.dart';
 import '../models/booking_models.dart';
+import '../models/detail_job.dart';
 
 class LocalStorageService {
   static const String _userKeyPrefix = 'adc_user_state_v3_';
   static const String _lastActiveUserKey = 'adc_last_active_user_id_v1';
   static const String _bookingsKey = 'adc_bookings_state_v3';
+  static const String _customJobsKey = 'adc_custom_jobs_v1';
   static const String _savedJobsKey = 'adc_saved_jobs_v3';
   static const String _likedJobsKey = 'adc_liked_jobs_v3';
   static const String _activeTabKey = 'adc_active_tab_index_v1';
@@ -127,7 +129,7 @@ class LocalStorageService {
       final prefs = await SharedPreferences.getInstance();
       final lastId = prefs.getString(_lastActiveUserKey);
       if (lastId != null && lastId.isNotEmpty) {
-        return loadUserById(lastId);
+        return await loadUserById(lastId);
       }
     } catch (_) {}
     return null;
@@ -176,5 +178,38 @@ class LocalStorageService {
     } catch (_) {
       return (likedJobIds: <String>{}, savedJobIds: <String>{});
     }
+  }
+
+  // Save custom user-created jobs
+  static Future<void> saveCustomJobs(List<DetailJob> jobs) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = jobs.map((j) => j.toJson()).toList();
+      await prefs.setString(_customJobsKey, jsonEncode(list));
+      if (kDebugMode) {
+        print('[LocalStorageService] Successfully saved ${jobs.length} custom jobs.');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[LocalStorageService] Error saving custom jobs: $e');
+      }
+    }
+  }
+
+  // Load custom user-created jobs
+  static Future<List<DetailJob>> loadCustomJobs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_customJobsKey);
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(jsonStr);
+        return list.map((item) => DetailJob.fromJson(item as Map<String, dynamic>)).toList();
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[LocalStorageService] Error loading custom jobs: $e');
+      }
+    }
+    return [];
   }
 }

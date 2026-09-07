@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
-import '../models/team_member.dart';
 import '../models/user_vehicle.dart';
 import '../services/job_repository.dart';
 import 'vehicle_editor_dialog.dart';
@@ -10,6 +9,7 @@ import 'edit_profile_dialog.dart';
 import 'add_team_member_dialog.dart';
 import 'public_studio_screen.dart';
 import 'create_job_screen.dart';
+import 'service_package_editor_dialog.dart';
 import '../widgets/job_recipe_card.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -754,70 +754,207 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       ),
 
                       // TAB 2: Services & Pricing
-                      ListView.builder(
+                      ListView(
                         padding: const EdgeInsets.all(16),
-                        itemCount: packages.length,
-                        itemBuilder: (context, index) {
-                          final pkg = packages[index];
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 14),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: AppTheme.surface,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: pkg.isPopular ? AppTheme.primary.withAlpha(150) : AppTheme.border,
-                                width: pkg.isPopular ? 1.5 : 1,
+                        children: [
+                          // Header with "+ Add Service Package" CTA
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Studio Services & Menus',
+                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${packages.length} active service packages offered to clients',
+                                    style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                                  ),
+                                ],
                               ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.primary,
+                                  foregroundColor: Colors.black,
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                                onPressed: () {
+                                  ServicePackageEditorDialog.show(
+                                    context,
+                                    onSave: (newPkg) => widget.repository.addServicePackage(newPkg),
+                                  );
+                                },
+                                icon: const Icon(Icons.add_rounded, size: 18),
+                                label: const Text(
+                                  'Add Package',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+
+                          if (packages.isEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+                              decoration: BoxDecoration(
+                                color: AppTheme.surface,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: AppTheme.border),
+                              ),
+                              child: Column(
+                                children: [
+                                  const Icon(Icons.miscellaneous_services_outlined, size: 48, color: AppTheme.textMuted),
+                                  const SizedBox(height: 12),
+                                  const Text('No Services Defined Yet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 6),
+                                  const Text('Add your interior, exterior, ceramic coating, or PPF packages for clients to book.', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+                                  const SizedBox(height: 16),
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppTheme.primary,
+                                      foregroundColor: Colors.black,
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    onPressed: () {
+                                      ServicePackageEditorDialog.show(
+                                        context,
+                                        onSave: (newPkg) => widget.repository.addServicePackage(newPkg),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.add_rounded, size: 18),
+                                    label: const Text('Create First Package', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else
+                            ...packages.map((pkg) {
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 14),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.surface,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: pkg.isPopular ? AppTheme.primary.withAlpha(150) : AppTheme.border,
+                                    width: pkg.isPopular ? 1.5 : 1,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Expanded(
-                                      child: Text(
-                                        pkg.title,
-                                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                      ),
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Flexible(
+                                                    child: Text(
+                                                      pkg.title,
+                                                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                                    ),
+                                                  ),
+                                                  if (pkg.isPopular) ...[
+                                                    const SizedBox(width: 8),
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.amber.withAlpha(30),
+                                                        borderRadius: BorderRadius.circular(6),
+                                                        border: Border.all(color: Colors.amber, width: 0.8),
+                                                      ),
+                                                      child: const Row(
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                          Icon(Icons.star_rounded, size: 12, color: Colors.amber),
+                                                          SizedBox(width: 2),
+                                                          Text(
+                                                            'POPULAR',
+                                                            style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.amber),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Row(
+                                                children: [
+                                                  const Icon(Icons.timer_outlined, size: 14, color: AppTheme.textMuted),
+                                                  const SizedBox(width: 4),
+                                                  Text(pkg.estimatedDuration, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Row(
+                                          children: [
+                                            Text(
+                                              '\$${pkg.basePrice.toStringAsFixed(0)}',
+                                              style: const TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.bold,
+                                                color: AppTheme.primary,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            InkWell(
+                                              onTap: () {
+                                                ServicePackageEditorDialog.show(
+                                                  context,
+                                                  package: pkg,
+                                                  onSave: (updated) => widget.repository.updateServicePackage(updated),
+                                                  onDelete: () => widget.repository.removeServicePackage(pkg.id),
+                                                );
+                                              },
+                                              borderRadius: BorderRadius.circular(8),
+                                              child: Container(
+                                                padding: const EdgeInsets.all(6),
+                                                decoration: BoxDecoration(
+                                                  color: AppTheme.surfaceLight,
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  border: Border.all(color: AppTheme.border),
+                                                ),
+                                                child: const Icon(Icons.edit_outlined, size: 15, color: AppTheme.primary),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
                                     ),
-                                    Text(
-                                      '\$${pkg.basePrice.toStringAsFixed(0)}',
-                                      style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppTheme.primary,
-                                      ),
-                                    ),
+                                    const SizedBox(height: 10),
+                                    if (pkg.description.isNotEmpty) ...[
+                                      Text(pkg.description, style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+                                      const SizedBox(height: 12),
+                                    ],
+                                    ...pkg.includes.map((inc) => Padding(
+                                          padding: const EdgeInsets.only(bottom: 6),
+                                          child: Row(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              const Icon(Icons.check_circle_rounded, size: 14, color: AppTheme.primary),
+                                              const SizedBox(width: 8),
+                                              Expanded(child: Text(inc, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary))),
+                                            ],
+                                          ),
+                                        )),
                                   ],
                                 ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    const Icon(Icons.timer_outlined, size: 14, color: AppTheme.textMuted),
-                                    const SizedBox(width: 4),
-                                    Text(pkg.estimatedDuration, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                Text(pkg.description, style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
-                                const SizedBox(height: 12),
-                                ...pkg.includes.map((inc) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 6),
-                                      child: Row(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          const Icon(Icons.check_circle_rounded, size: 14, color: AppTheme.primary),
-                                          const SizedBox(width: 8),
-                                          Expanded(child: Text(inc, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary))),
-                                        ],
-                                      ),
-                                    )),
-                              ],
-                            ),
-                          );
-                        },
+                              );
+                            }),
+                        ],
                       ),
 
                       // TAB 3: My Team (Hired Staff)

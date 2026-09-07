@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_profile.dart';
 import '../models/user_vehicle.dart';
 import '../models/team_member.dart';
+import '../models/detail_job.dart';
 import 'supabase_service.dart';
 import 'mock_data_service.dart';
 
@@ -169,6 +170,54 @@ class SupabaseDbService {
       await client.from('team_members').delete().eq('id', memberId);
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error deleting team member: $e');
+    }
+  }
+
+  /// Upsert a transformation job record to Supabase
+  static Future<void> saveJob(DetailJob job) async {
+    final client = _client;
+    if (client == null) return;
+
+    try {
+      await client.from('jobs').upsert({
+        'id': job.id,
+        'author_id': job.author.id,
+        'title': job.title,
+        'description': job.description,
+        'vehicle_year': job.vehicleYear,
+        'vehicle_make': job.vehicleMake,
+        'vehicle_model': job.vehicleModel,
+        'paint_color': job.paintColorName,
+        'service_type': job.serviceType,
+        'before_image_url': job.beforeImageUrl,
+        'after_image_url': job.afterImageUrl,
+        'raw_data': job.toJson(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      });
+      if (kDebugMode) print('[SupabaseDbService] Job saved to Supabase: ${job.id}');
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error saving job to Supabase: $e');
+    }
+  }
+
+  /// Fetch jobs from Supabase
+  static Future<List<DetailJob>> fetchJobs() async {
+    final client = _client;
+    if (client == null) return [];
+
+    try {
+      final res = await client.from('jobs').select().order('created_at', ascending: false);
+      final List<dynamic> list = res as List<dynamic>;
+      final jobs = <DetailJob>[];
+      for (final item in list) {
+        if (item['raw_data'] != null) {
+          jobs.add(DetailJob.fromJson(item['raw_data'] as Map<String, dynamic>));
+        }
+      }
+      return jobs;
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error fetching jobs: $e');
+      return [];
     }
   }
 }

@@ -55,6 +55,45 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         (widget.detailer.servicePackages.isNotEmpty
             ? widget.detailer.servicePackages.first
             : widget.repository.currentUser.servicePackages.first);
+    _adjustSelectedSlotIfBlocked();
+  }
+
+  /// Check if a given time slot is already booked for this detailer on the selected date
+  bool _isSlotBooked(String slot) {
+    return widget.repository.bookings.any((b) {
+      if (b.detailerId != widget.detailer.id) return false;
+      if (b.status == BookingStatus.cancelled) return false;
+
+      // Check date match
+      final isSameDay = b.scheduledDate.year == _selectedDate.year &&
+          b.scheduledDate.month == _selectedDate.month &&
+          b.scheduledDate.day == _selectedDate.day;
+      
+      // If the booked package was multi-day (e.g. 2 days), block subsequent days
+      final bookedDuration = b.package.estimatedDuration.toLowerCase();
+      if (bookedDuration.contains('day')) {
+        final match = RegExp(r'\d+').firstMatch(bookedDuration);
+        final days = match != null ? int.parse(match.group(0)!) : 1;
+        final diff = _selectedDate.difference(DateTime(b.scheduledDate.year, b.scheduledDate.month, b.scheduledDate.day)).inDays;
+        if (diff >= 0 && diff < days) {
+          return true; // Entire day is blocked by a multi-day job
+        }
+      }
+
+      return isSameDay && b.scheduledTimeSlot == slot;
+    });
+  }
+
+  /// Automatically select first available unblocked slot if currently selected is booked
+  void _adjustSelectedSlotIfBlocked() {
+    if (_isSlotBooked(_selectedTimeSlot)) {
+      for (final slot in _timeSlots) {
+        if (!_isSlotBooked(slot)) {
+          _selectedTimeSlot = slot;
+          break;
+        }
+      }
+    }
   }
 
   @override
@@ -670,7 +709,12 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                     firstDate: DateTime.now(),
                     lastDate: DateTime.now().add(const Duration(days: 60)),
                   );
-                  if (picked != null) setState(() => _selectedDate = picked);
+                  if (picked != null) {
+                    setState(() {
+                      _selectedDate = picked;
+                      _adjustSelectedSlotIfBlocked();
+                    });
+                  }
                 },
                 child: const Text('Change Date', style: TextStyle(color: AppTheme.primary)),
               ),
@@ -682,11 +726,63 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           spacing: 8,
           runSpacing: 8,
           children: _timeSlots.map((slot) {
-            final isSelected = _selectedTimeSlot == slot;
-            return ChoiceChip(
-              label: Text(slot),
-              selected: isSelected,
-              onSelected: (val) => setState(() => _selectedTimeSlot = slot),
+            final isBooked = _isSlotBooked(slot);
+            final isSelected = _selectedTimeSlot == slot && !isBooked;
+
+            return Tooltip(
+              message: isBooked ? 'Detailer already booked for this time window' : 'Available',
+              child: FilterChip(
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      slot,
+                      style: TextStyle(
+                        fontSize: 12,
+                        decoration: isBooked ? TextDecoration.lineThrough : null,
+                        color: isBooked
+                            ? Colors.grey.shade600
+                            : (isSelected ? Colors.black : Colors.white),
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                    if (isBooked) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent.withAlpha(40),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.redAccent.withAlpha(100), width: 0.8),
+                        ),
+                        child: const Text(
+                          'BOOKED',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.redAccent,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                selected: isSelected,
+                selectedColor: AppTheme.primary,
+                backgroundColor: AppTheme.surface,
+                checkmarkColor: Colors.black,
+                showCheckmark: isSelected,
+                side: BorderSide(
+                  color: isBooked
+                      ? Colors.redAccent.withAlpha(50)
+                      : (isSelected ? AppTheme.primary : AppTheme.border),
+                ),
+                onSelected: isBooked
+                    ? null
+                    : (val) {
+                        if (val) setState(() => _selectedTimeSlot = slot);
+                      },
+              ),
             );
           }).toList(),
         ),

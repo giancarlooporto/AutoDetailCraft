@@ -28,6 +28,26 @@ class RecipeStage {
     this.dilution,
     this.notes,
   });
+
+  Map<String, dynamic> toJson() => {
+    'stageName': stageName,
+    'machine': machine,
+    'pad': pad,
+    'chemical': chemical,
+    'technique': technique,
+    'dilution': dilution,
+    'notes': notes,
+  };
+
+  factory RecipeStage.fromJson(Map<String, dynamic> json) => RecipeStage(
+    stageName: json['stageName'] as String? ?? 'Stage',
+    machine: json['machine'] as String? ?? '',
+    pad: json['pad'] as String? ?? '',
+    chemical: json['chemical'] as String? ?? '',
+    technique: json['technique'] as String? ?? '',
+    dilution: json['dilution'] as String?,
+    notes: json['notes'] as String?,
+  );
 }
 
 class JobComment {
@@ -46,6 +66,24 @@ class JobComment {
     required this.createdAt,
     this.isVerifiedPro = false,
   });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'authorName': authorName,
+    'authorAvatar': authorAvatar,
+    'text': text,
+    'createdAt': createdAt.toIso8601String(),
+    'isVerifiedPro': isVerifiedPro,
+  };
+
+  factory JobComment.fromJson(Map<String, dynamic> json) => JobComment(
+    id: json['id'] as String? ?? 'cmt_${DateTime.now().millisecondsSinceEpoch}',
+    authorName: json['authorName'] as String? ?? 'Anonymous',
+    authorAvatar: json['authorAvatar'] as String? ?? '',
+    text: json['text'] as String? ?? '',
+    createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+    isVerifiedPro: json['isVerifiedPro'] as bool? ?? false,
+  );
 }
 
 class JobMediaZone {
@@ -241,6 +279,85 @@ class DetailJob {
       savesCount: savesCount ?? this.savesCount,
       isSaved: isSaved ?? this.isSaved,
       comments: comments ?? this.comments,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'author': author.toJson(),
+    'createdAt': createdAt.toIso8601String(),
+    'title': title,
+    'description': description,
+    'vehicleYear': vehicleYear,
+    'vehicleMake': vehicleMake,
+    'vehicleModel': vehicleModel,
+    'paintColorName': paintColorName,
+    'paintCode': paintCode,
+    'paintHardness': paintHardness.name,
+    'initialPaintThicknessMicrons': initialPaintThicknessMicrons,
+    'finalPaintThicknessMicrons': finalPaintThicknessMicrons,
+    'defectSeverity': defectSeverity,
+    'serviceType': serviceType,
+    'recipeStages': recipeStages.map((s) => s.toJson()).toList(),
+    'beforeImageUrl': beforeImageUrl,
+    'afterImageUrl': afterImageUrl,
+    'defectBadge': defectBadge,
+    'mediaZones': mediaZones.map((z) => z.toJson()).toList(),
+    'durationHours': durationHours,
+    'quotedPrice': quotedPrice,
+    'likesCount': likesCount,
+    'isLiked': isLiked,
+    'savesCount': savesCount,
+    'isSaved': isSaved,
+    'comments': comments.map((c) => c.toJson()).toList(),
+  };
+
+  factory DetailJob.fromJson(Map<String, dynamic> json) {
+    return DetailJob(
+      id: json['id'] as String? ?? 'job_${DateTime.now().millisecondsSinceEpoch}',
+      author: json['author'] != null ? UserProfile.fromJson(json['author'] as Map<String, dynamic>) : UserProfile(
+        id: 'usr_anon',
+        username: 'detailer',
+        displayName: 'Master Detailer',
+        businessName: 'Craft Studio',
+        avatarUrl: '',
+        location: 'United States',
+        bio: '',
+      ),
+      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+      title: json['title'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      vehicleYear: json['vehicleYear'] as int? ?? DateTime.now().year,
+      vehicleMake: json['vehicleMake'] as String? ?? '',
+      vehicleModel: json['vehicleModel'] as String? ?? '',
+      paintColorName: json['paintColorName'] as String? ?? '',
+      paintCode: json['paintCode'] as String? ?? '',
+      paintHardness: PaintHardness.values.firstWhere(
+        (h) => h.name == (json['paintHardness'] as String?),
+        orElse: () => PaintHardness.medium,
+      ),
+      initialPaintThicknessMicrons: (json['initialPaintThicknessMicrons'] as num?)?.toDouble() ?? 120.0,
+      finalPaintThicknessMicrons: (json['finalPaintThicknessMicrons'] as num?)?.toDouble() ?? 116.0,
+      defectSeverity: json['defectSeverity'] as int? ?? 5,
+      serviceType: json['serviceType'] as String? ?? 'Paint Correction',
+      recipeStages: (json['recipeStages'] as List<dynamic>?)
+          ?.map((s) => RecipeStage.fromJson(s as Map<String, dynamic>))
+          .toList() ?? [],
+      beforeImageUrl: json['beforeImageUrl'] as String? ?? '',
+      afterImageUrl: json['afterImageUrl'] as String? ?? '',
+      defectBadge: json['defectBadge'] as String? ?? 'Swirl Marks & Micro-Marring',
+      mediaZones: (json['mediaZones'] as List<dynamic>?)
+          ?.map((z) => JobMediaZone.fromJson(z as Map<String, dynamic>))
+          .toList() ?? [],
+      durationHours: (json['durationHours'] as num?)?.toDouble() ?? 8.0,
+      quotedPrice: (json['quotedPrice'] as num?)?.toDouble(),
+      likesCount: json['likesCount'] as int? ?? 0,
+      isLiked: json['isLiked'] as bool? ?? false,
+      savesCount: json['savesCount'] as int? ?? 0,
+      isSaved: json['isSaved'] as bool? ?? false,
+      comments: (json['comments'] as List<dynamic>?)
+          ?.map((c) => JobComment.fromJson(c as Map<String, dynamic>))
+          .toList() ?? [],
     );
   }
 }
