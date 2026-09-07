@@ -6,7 +6,8 @@ class SplitSliderWidget extends StatefulWidget {
   final String beforeImageUrl;
   final String afterImageUrl;
   final String defectBadge;
-  final double height;
+  final double? height;
+  final double? aspectRatio;
   final double initialPosition;
 
   const SplitSliderWidget({
@@ -14,7 +15,8 @@ class SplitSliderWidget extends StatefulWidget {
     required this.beforeImageUrl,
     required this.afterImageUrl,
     this.defectBadge = '50/50 Paint Correction',
-    this.height = 320,
+    this.height,
+    this.aspectRatio = 16 / 10,
     this.initialPosition = 0.5,
   });
 
@@ -31,7 +33,7 @@ class _SplitSliderWidgetState extends State<SplitSliderWidget> {
     _position = widget.initialPosition;
   }
 
-  Widget _buildImage(String url, bool isBefore) {
+  Widget _buildImage(String url, bool isBefore, double effectiveHeight) {
     if (url.startsWith('data:image')) {
       try {
         final base64String = url.split(',').last;
@@ -40,7 +42,7 @@ class _SplitSliderWidgetState extends State<SplitSliderWidget> {
           bytes,
           fit: BoxFit.cover,
           width: double.infinity,
-          height: widget.height,
+          height: effectiveHeight,
         );
       } catch (_) {}
     }
@@ -49,20 +51,20 @@ class _SplitSliderWidgetState extends State<SplitSliderWidget> {
       url,
       fit: BoxFit.cover,
       width: double.infinity,
-      height: widget.height,
+      height: effectiveHeight,
       loadingBuilder: (context, child, loadingProgress) {
         if (loadingProgress == null) return child;
-        return _buildPlaceholder(isBefore, isLoading: true);
+        return _buildPlaceholder(isBefore, effectiveHeight, isLoading: true);
       },
       errorBuilder: (context, error, stackTrace) {
-        return _buildPlaceholder(isBefore);
+        return _buildPlaceholder(isBefore, effectiveHeight);
       },
     );
   }
 
-  Widget _buildPlaceholder(bool isBefore, {bool isLoading = false}) {
+  Widget _buildPlaceholder(bool isBefore, double effectiveHeight, {bool isLoading = false}) {
     return Container(
-      height: widget.height,
+      height: effectiveHeight,
       width: double.infinity,
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -104,17 +106,18 @@ class _SplitSliderWidgetState extends State<SplitSliderWidget> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
+        final effectiveHeight = widget.height ?? (width / (widget.aspectRatio ?? (16 / 10)));
 
         return ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: SizedBox(
-            height: widget.height,
+            height: effectiveHeight,
             width: width,
             child: Stack(
               children: [
                 // 1. Bottom Layer: AFTER Image (Full Width)
                 Positioned.fill(
-                  child: _buildImage(widget.afterImageUrl, false),
+                  child: _buildImage(widget.afterImageUrl, false, effectiveHeight),
                 ),
 
                 // 2. Top Layer: BEFORE Image (Clipped dynamically by slider position)
@@ -128,9 +131,9 @@ class _SplitSliderWidgetState extends State<SplitSliderWidget> {
                       alignment: Alignment.topLeft,
                       maxWidth: width,
                       minWidth: width,
-                      maxHeight: widget.height,
-                      minHeight: widget.height,
-                      child: _buildImage(widget.beforeImageUrl, true),
+                      maxHeight: effectiveHeight,
+                      minHeight: effectiveHeight,
+                      child: _buildImage(widget.beforeImageUrl, true, effectiveHeight),
                     ),
                   ),
                 ),
@@ -219,7 +222,7 @@ class _SplitSliderWidgetState extends State<SplitSliderWidget> {
                 // 6. Interactive Circular Handle
                 Positioned(
                   left: (width * _position) - 18,
-                  top: (widget.height / 2) - 18,
+                  top: (effectiveHeight / 2) - 18,
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
                     onHorizontalDragUpdate: (details) {

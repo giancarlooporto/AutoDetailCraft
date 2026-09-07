@@ -336,7 +336,7 @@ class JobRecipeCard extends StatelessWidget {
             beforeImageUrl: job.beforeImageUrl,
             afterImageUrl: job.afterImageUrl,
             defectBadge: job.defectBadge,
-            height: 260,
+            aspectRatio: 16 / 10,
           ),
 
           // Container Bar: View all Before & After inspection photos
