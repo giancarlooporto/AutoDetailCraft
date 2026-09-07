@@ -243,6 +243,28 @@ class _FeedScreenState extends State<FeedScreen> {
                                               ),
                                               child: const Text('YOU', style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: AppTheme.primary)),
                                             ),
+                                          ] else if (d.subscriptionTier != SubscriptionTier.free) ...[
+                                            const SizedBox(width: 4),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                              decoration: BoxDecoration(
+                                                color: d.subscriptionTier == SubscriptionTier.enterprise
+                                                    ? Colors.purpleAccent.withAlpha(40)
+                                                    : AppTheme.primary.withAlpha(40),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                d.subscriptionTier == SubscriptionTier.enterprise ? 'SHOP' : 'PRO',
+                                                style: TextStyle(
+                                                  fontSize: 8,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: d.subscriptionTier == SubscriptionTier.enterprise ? Colors.purpleAccent : AppTheme.primary,
+                                                ),
+                                              ),
+                                            ),
+                                          ] else if (d.isVerifiedHost) ...[
+                                            const SizedBox(width: 4),
+                                            const Icon(Icons.verified_rounded, size: 13, color: AppTheme.primary),
                                           ],
                                         ],
                                       ),

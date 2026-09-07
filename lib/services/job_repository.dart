@@ -194,7 +194,7 @@ class JobRepository extends ChangeNotifier {
   }
 
   List<DetailJob> get filteredJobs {
-    return _jobs.where((job) {
+    final list = _jobs.where((job) {
       if (_selectedServiceType != 'All Services' &&
           !job.serviceType.toLowerCase().contains(_selectedServiceType.toLowerCase())) {
         return false;
@@ -221,11 +221,68 @@ class JobRepository extends ChangeNotifier {
 
       return true;
     }).toList();
+
+    // Sort jobs by recency combined with detailer composite rank weight
+    list.sort((a, b) {
+      final scoreA = a.createdAt.millisecondsSinceEpoch + (calculateDetailerCompositeScore(a.author) * 86400000);
+      final scoreB = b.createdAt.millisecondsSinceEpoch + (calculateDetailerCompositeScore(b.author) * 86400000);
+      return scoreB.compareTo(scoreA);
+    });
+
+    return list;
   }
 
-  // Filtered detailers list for Explore search
+  /// Calculates a detailer's Weighted Composite Rank Score for Explore Feed ranking.
+  /// Combines: Rating (40%), Activity/Recency (20%), Verification (15%), Certifications (10%), Subscription Tier (15%).
+  double calculateDetailerCompositeScore(UserProfile detailer) {
+    double score = 0.0;
+
+    // 1. Rating & Review Volume (0 - 8.0 pts)
+    score += (detailer.averageRating.clamp(0.0, 5.0)) * 1.4;
+    if (detailer.reviewCount > 0) {
+      score += (detailer.reviewCount.clamp(0, 100) / 10.0);
+    }
+
+    // 2. Verified Host Status (+2.0 pts)
+    if (detailer.isVerifiedHost) {
+      score += 2.0;
+    }
+
+    // 3. Certifications (+0.5 pts per cert, max +2.0 pts)
+    score += (detailer.certifications.length * 0.5).clamp(0.0, 2.0);
+
+    // 4. Recency & Activity (+0.5 pts per job, +2.5 pts if posted in last 7 days)
+    final detailerJobs = _jobs.where((j) => j.author.id == detailer.id).toList();
+    score += (detailerJobs.length * 0.5).clamp(0.0, 3.0);
+    if (detailerJobs.isNotEmpty) {
+      detailerJobs.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      final daysAgo = DateTime.now().difference(detailerJobs.first.createdAt).inDays;
+      if (daysAgo <= 7) {
+        score += 2.5;
+      } else if (daysAgo <= 30) {
+        score += 1.0;
+      }
+    }
+
+    // 5. Subscription Tier Bonus (+2.5 pts for Pro, +4.0 pts for Enterprise)
+    switch (detailer.subscriptionTier) {
+      case SubscriptionTier.enterprise:
+        score += 4.0;
+        break;
+      case SubscriptionTier.pro:
+        score += 2.5;
+        break;
+      case SubscriptionTier.free:
+        score += 0.0;
+        break;
+    }
+
+    return score;
+  }
+
+  // Filtered detailers list for Explore search, sorted descending by Composite Rank Score
   List<UserProfile> get filteredDetailers {
-    return publicDetailers.where((detailer) {
+    final list = publicDetailers.where((detailer) {
       if (_selectedLocationCity != 'All Locations' &&
           !detailer.location.toLowerCase().contains(_selectedLocationCity.toLowerCase())) {
         return false;
@@ -245,6 +302,10 @@ class JobRepository extends ChangeNotifier {
 
       return true;
     }).toList();
+
+    // Rank detailers descending by Composite Score
+    list.sort((a, b) => calculateDetailerCompositeScore(b).compareTo(calculateDetailerCompositeScore(a)));
+    return list;
   }
 
   List<DetailJob> get savedJobs => _jobs.where((j) => j.isSaved).toList();
