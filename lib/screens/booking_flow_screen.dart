@@ -208,7 +208,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                   const Divider(color: AppTheme.border, height: 16),
                   _receiptRow('Total Price', '\$${_calculatedTotal.toStringAsFixed(0)}', isBold: true),
                   const SizedBox(height: 4),
-                  _receiptRow('Deposit Reserved', '\$${_depositAmount.toStringAsFixed(0)} (Turo-Style Escrow)', color: AppTheme.primary),
+                  _receiptRow('Deposit Reserved', '\$${_depositAmount.toStringAsFixed(0)} (Secure Escrow)', color: AppTheme.primary),
                 ],
               ),
             ),
@@ -578,7 +578,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           const SizedBox(height: 16),
         ],
 
-        const Text('Vehicle Size (Turo-Style Pricing)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+        const Text('Vehicle Size', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
         Row(
           children: VehicleSize.values.map((size) {
@@ -831,7 +831,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                 children: [
                   Icon(Icons.shield_rounded, color: AppTheme.primary, size: 20),
                   SizedBox(width: 8),
-                  Text('Turo-Style Peace of Mind Escrow', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  Text('AutoDetailCraft Escrow & Guarantee', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 ],
               ),
               const SizedBox(height: 8),

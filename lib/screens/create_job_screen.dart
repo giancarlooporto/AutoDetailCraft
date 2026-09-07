@@ -161,8 +161,142 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
   int get _maxZones => _tier.maxZones;
   bool get _canAddZone => _zones.length < _maxZones;
 
-  Future<void> _pickAndUploadImage(ZoneDraft zone, bool isBefore) async {
+  int _heroZoneIndex = 0;
+  bool _isBulkUploadingBefore = false;
+  bool _isBulkUploadingAfter = false;
+
+  Future<void> _uploadSingleZonePhoto({
+    required ZoneDraft zone,
+    required Uint8List bytes,
+    required bool isBefore,
+  }) async {
     final user = widget.repository.currentUser;
+    setState(() {
+      if (isBefore) {
+        zone.isUploadingBefore = true;
+        zone.beforeBytes = bytes;
+      } else {
+        zone.isUploadingAfter = true;
+        zone.afterBytes = bytes;
+      }
+    });
+
+    try {
+      final fileName = 'job_${isBefore ? "before" : "after"}_${zone.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final cdnUrl = await R2StorageService.uploadImage(
+        userId: user.id,
+        bytes: bytes,
+        customFileName: fileName,
+      );
+
+      setState(() {
+        if (isBefore) {
+          if (cdnUrl != null && cdnUrl.isNotEmpty) {
+            zone.beforeImageUrl = cdnUrl;
+          } else {
+            zone.beforeImageUrl = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+          }
+          zone.isUploadingBefore = false;
+        } else {
+          if (cdnUrl != null && cdnUrl.isNotEmpty) {
+            zone.afterImageUrl = cdnUrl;
+          } else {
+            zone.afterImageUrl = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+          }
+          zone.isUploadingAfter = false;
+        }
+      });
+    } catch (_) {
+      setState(() {
+        if (isBefore) {
+          zone.isUploadingBefore = false;
+          zone.beforeImageUrl = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+        } else {
+          zone.isUploadingAfter = false;
+          zone.afterImageUrl = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+        }
+      });
+    }
+  }
+
+  Future<void> _pickBulkImages({required bool isBefore}) async {
+    setState(() {
+      if (isBefore) {
+        _isBulkUploadingBefore = true;
+      } else {
+        _isBulkUploadingAfter = true;
+      }
+    });
+
+    try {
+      final pickedFiles = await pickMultipleImagesFromDevice();
+      if (pickedFiles.isEmpty) {
+        setState(() {
+          if (isBefore) {
+            _isBulkUploadingBefore = false;
+          } else {
+            _isBulkUploadingAfter = false;
+          }
+        });
+        return;
+      }
+
+      // If selecting Before photos, expand zones if needed up to max allowed
+      if (isBefore && _zones.length < pickedFiles.length) {
+        final needed = pickedFiles.length - _zones.length;
+        for (var i = 0; i < needed; i++) {
+          if (!_canAddZone) break;
+          final unusedPreset = kAnglePresets.firstWhere(
+            (p) => !_zones.any((z) => z.zoneName == p.zoneName),
+            orElse: () => kAnglePresets[_zones.length % kAnglePresets.length],
+          );
+          _zones.add(
+            ZoneDraft(
+              id: 'zone_${DateTime.now().millisecondsSinceEpoch}_$i',
+              zoneName: unusedPreset.zoneName,
+              shotGuide: unusedPreset.shotGuide,
+              defectBadge: unusedPreset.defaultBadge,
+              initialMicrons: 110.0,
+              finalMicrons: 108.0,
+            ),
+          );
+        }
+      }
+
+      // Map each image sequentially into zones
+      final count = pickedFiles.length.clamp(0, _zones.length);
+      for (var i = 0; i < count; i++) {
+        final zone = _zones[i];
+        final file = pickedFiles[i];
+        _uploadSingleZonePhoto(zone: zone, bytes: file.bytes, isBefore: isBefore);
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.photo_library_rounded, color: AppTheme.primary, size: 18),
+                const SizedBox(width: 8),
+                Text('Loaded $count ${isBefore ? "Before" : "After"} photos across vehicle angles!'),
+              ],
+            ),
+            backgroundColor: AppTheme.surface,
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        if (isBefore) {
+          _isBulkUploadingBefore = false;
+        } else {
+          _isBulkUploadingAfter = false;
+        }
+      });
+    }
+  }
+
+  Future<void> _pickAndUploadImage(ZoneDraft zone, bool isBefore) async {
     setState(() {
       if (isBefore) {
         zone.isUploadingBefore = true;
@@ -184,66 +318,26 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
         return;
       }
 
-      // 1. Immediately store local bytes for instant preview so image loads immediately!
-      setState(() {
-        if (isBefore) {
-          zone.beforeBytes = picked.bytes;
-        } else {
-          zone.afterBytes = picked.bytes;
-        }
-      });
-
-      // 2. Upload to Cloudflare R2
-      final fileName = 'job_${isBefore ? "before" : "after"}_${zone.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final cdnUrl = await R2StorageService.uploadImage(
-        userId: user.id,
+      await _uploadSingleZonePhoto(
+        zone: zone,
         bytes: picked.bytes!,
-        customFileName: fileName,
+        isBefore: isBefore,
       );
 
-      setState(() {
-        if (isBefore) {
-          if (cdnUrl != null && cdnUrl.isNotEmpty) {
-            zone.beforeImageUrl = cdnUrl;
-          } else {
-            // Fallback: encode as data URI so it remains valid and visible
-            zone.beforeImageUrl = 'data:image/jpeg;base64,${base64Encode(picked.bytes!)}';
-          }
-          zone.isUploadingBefore = false;
-        } else {
-          if (cdnUrl != null && cdnUrl.isNotEmpty) {
-            zone.afterImageUrl = cdnUrl;
-          } else {
-            zone.afterImageUrl = 'data:image/jpeg;base64,${base64Encode(picked.bytes!)}';
-          }
-          zone.isUploadingAfter = false;
-        }
-      });
-
       if (mounted) {
-        if (cdnUrl != null && cdnUrl.isNotEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.cloud_done_rounded, color: AppTheme.primary, size: 18),
-                  const SizedBox(width: 8),
-                  Text('${isBefore ? "Before" : "After"} photo uploaded to Cloudflare R2!'),
-                ],
-              ),
-              backgroundColor: AppTheme.surface,
-              duration: const Duration(seconds: 2),
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.cloud_done_rounded, color: AppTheme.primary, size: 18),
+                const SizedBox(width: 8),
+                Text('${isBefore ? "Before" : "After"} photo uploaded!'),
+              ],
             ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${isBefore ? "Before" : "After"} photo loaded locally (R2 direct upload in progress).'),
-              backgroundColor: AppTheme.surface,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
+            backgroundColor: AppTheme.surface,
+            duration: const Duration(seconds: 2),
+          ),
+        );
       }
     } catch (e) {
       setState(() {
@@ -436,7 +530,8 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       finalMicrons: z.finalMicrons,
     )).toList();
 
-    final primaryZone = mediaZones.first;
+    final safeHeroIndex = _heroZoneIndex.clamp(0, mediaZones.length - 1);
+    final primaryZone = mediaZones[safeHeroIndex];
 
     final newJob = DetailJob(
       id: 'job_${DateTime.now().millisecondsSinceEpoch}',
@@ -581,21 +676,144 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
             const SizedBox(height: 18),
 
             // Section 1: Multi-Zone Guided Before & After Photos
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  '1. Guided Angle Photos (50/50 Zones)',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                ),
-                TextButton.icon(
-                  onPressed: _addZone,
-                  icon: const Icon(Icons.add_rounded, size: 16),
-                  label: const Text('Add Angle / Zone', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                ),
-              ],
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        '1. Guided Angle Photos (50/50 Zones)',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                      ),
+                      TextButton.icon(
+                        onPressed: _addZone,
+                        icon: const Icon(Icons.add_rounded, size: 16),
+                        label: const Text('Add Angle', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Upload photos in bulk or slot by slot. Select multiple photos at once and they will automatically map across guided vehicle angles.',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                  ),
+                  const SizedBox(height: 12),
+                  // Bulk Upload Buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.surfaceLight,
+                            foregroundColor: AppTheme.hardnessSoft,
+                            side: const BorderSide(color: AppTheme.hardnessSoft, width: 1.2),
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          icon: _isBulkUploadingBefore
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.hardnessSoft))
+                              : const Icon(Icons.flash_on_rounded, size: 18),
+                          label: Text(
+                            _isBulkUploadingBefore ? 'Importing...' : 'Bulk Before Photos',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                          onPressed: _isBulkUploadingBefore || _isBulkUploadingAfter
+                              ? null
+                              : () => _pickBulkImages(isBefore: true),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          icon: _isBulkUploadingAfter
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                              : const Icon(Icons.auto_awesome_rounded, size: 18),
+                          label: Text(
+                            _isBulkUploadingAfter ? 'Importing...' : 'Bulk After Photos',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                          onPressed: _isBulkUploadingBefore || _isBulkUploadingAfter
+                              ? null
+                              : () => _pickBulkImages(isBefore: false),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  // Quick Angle Preset Chips
+                  const Text(
+                    'Quick Add Vehicle Angles:',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textMuted),
+                  ),
+                  const SizedBox(height: 6),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: kAnglePresets.map((preset) {
+                        final alreadyAdded = _zones.any((z) => z.zoneName == preset.zoneName);
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ActionChip(
+                            avatar: Icon(
+                              preset.icon,
+                              size: 14,
+                              color: alreadyAdded ? AppTheme.primary : AppTheme.textMuted,
+                            ),
+                            label: Text(
+                              preset.zoneName.split(' / ').first,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: alreadyAdded ? Colors.white : AppTheme.textSecondary,
+                                fontWeight: alreadyAdded ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                            backgroundColor: alreadyAdded ? AppTheme.primary.withAlpha(25) : AppTheme.surfaceLight,
+                            side: BorderSide(
+                              color: alreadyAdded ? AppTheme.primary.withAlpha(100) : AppTheme.border,
+                            ),
+                            onPressed: alreadyAdded
+                                ? null
+                                : () {
+                                    if (!_canAddZone) {
+                                      _showUpgradeDialog();
+                                      return;
+                                    }
+                                    setState(() {
+                                      _zones.add(
+                                        ZoneDraft(
+                                          id: 'zone_${DateTime.now().millisecondsSinceEpoch}',
+                                          zoneName: preset.zoneName,
+                                          shotGuide: preset.shotGuide,
+                                          defectBadge: preset.defaultBadge,
+                                          initialMicrons: 110.0,
+                                          finalMicrons: 108.0,
+                                        ),
+                                      );
+                                    });
+                                  },
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 14),
 
             // Render Each Zone Draft
             ..._zones.asMap().entries.map((entry) {
@@ -786,11 +1004,56 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                   ),
                 ),
               ),
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    _heroZoneIndex = index;
+                  });
+                },
+                borderRadius: BorderRadius.circular(6),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _heroZoneIndex == index ? AppTheme.primary : AppTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: _heroZoneIndex == index ? AppTheme.primary : AppTheme.border,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _heroZoneIndex == index ? Icons.star_rounded : Icons.star_border_rounded,
+                        size: 14,
+                        color: _heroZoneIndex == index ? Colors.black : AppTheme.textMuted,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _heroZoneIndex == index ? 'Hero Cover' : 'Set Cover',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                          color: _heroZoneIndex == index ? Colors.black : AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
               if (_zones.length > 1)
                 IconButton(
                   icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
                   tooltip: 'Remove this angle',
-                  onPressed: () => _removeZone(index),
+                  onPressed: () {
+                    if (_heroZoneIndex == index) {
+                      _heroZoneIndex = 0;
+                    } else if (_heroZoneIndex > index) {
+                      _heroZoneIndex--;
+                    }
+                    _removeZone(index);
+                  },
                 ),
             ],
           ),

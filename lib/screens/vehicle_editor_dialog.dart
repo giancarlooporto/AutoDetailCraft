@@ -176,7 +176,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
     });
   }
 
-  Future<void> _loadMakes({String? keepMake}) async {
+  Future<void> _loadMakes() async {
     if (_isManualMake) return;
     setState(() => _isLoadingMakes = true);
 

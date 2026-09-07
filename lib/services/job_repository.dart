@@ -375,7 +375,7 @@ class JobRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Turo-Style Host Promotion / Mode Toggle
+  // Detailer / Host Promotion / Mode Toggle
   void toggleHostMode() {
     final isNowHost = _currentUser.role == UserRole.client;
     _currentUser = _currentUser.copyWith(

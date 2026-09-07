@@ -4,30 +4,13 @@ import 'dart:html' as html;
 import 'dart:typed_data';
 import 'dart:async';
 
-Future<({Uint8List? bytes, String? name})> pickImageFromDevice() async {
-  final input = html.FileUploadInputElement()
-    ..accept = 'image/*'
-    ..click();
-
-  await input.onChange.first;
-
-  final file = input.files?.first;
-  if (file == null) return (bytes: null, name: null);
-
-  final reader = html.FileReader();
-  reader.readAsDataUrl(file);
-  await reader.onLoad.first;
-
-  final dataUrl = reader.result as String?;
-  if (dataUrl == null) return (bytes: null, name: file.name);
-
-  // Downscale image using HTML5 Canvas to keep base64 within localStorage limits (~100-300KB)
+Future<Uint8List?> _downscaleAndCompressImage(String dataUrl) async {
   final completer = Completer<Uint8List?>();
   final img = html.ImageElement();
   img.src = dataUrl;
 
   img.onLoad.listen((_) {
-    final maxDim = 1200.0;
+    const maxDim = 1200.0;
     var width = img.naturalWidth.toDouble();
     var height = img.naturalHeight.toDouble();
 
@@ -60,6 +43,61 @@ Future<({Uint8List? bytes, String? name})> pickImageFromDevice() async {
     completer.complete(null);
   });
 
-  final compressedBytes = await completer.future;
+  return completer.future;
+}
+
+Future<({Uint8List? bytes, String? name})> pickImageFromDevice() async {
+  final input = html.FileUploadInputElement()
+    ..accept = 'image/*'
+    ..click();
+
+  await input.onChange.first;
+
+  final file = input.files?.first;
+  if (file == null) return (bytes: null, name: null);
+
+  final reader = html.FileReader();
+  reader.readAsDataUrl(file);
+  await reader.onLoad.first;
+
+  final dataUrl = reader.result as String?;
+  if (dataUrl == null) return (bytes: null, name: file.name);
+
+  final compressedBytes = await _downscaleAndCompressImage(dataUrl);
   return (bytes: compressedBytes, name: file.name);
 }
+
+Future<List<({Uint8List bytes, String name})>> pickMultipleImagesFromDevice() async {
+  final input = html.FileUploadInputElement()
+    ..accept = 'image/*'
+    ..multiple = true
+    ..click();
+
+  await input.onChange.first;
+
+  final files = input.files;
+  if (files == null || files.isEmpty) return [];
+
+  final List<({Uint8List bytes, String name})> results = [];
+
+  for (final file in files) {
+    try {
+      final reader = html.FileReader();
+      reader.readAsDataUrl(file);
+      await reader.onLoad.first;
+
+      final dataUrl = reader.result as String?;
+      if (dataUrl != null) {
+        final compressedBytes = await _downscaleAndCompressImage(dataUrl);
+        if (compressedBytes != null && compressedBytes.isNotEmpty) {
+          results.add((bytes: compressedBytes, name: file.name));
+        }
+      }
+    } catch (_) {
+      // Continue processing remaining files
+    }
+  }
+
+  return results;
+}
+

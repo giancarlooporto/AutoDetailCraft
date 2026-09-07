@@ -2,7 +2,6 @@ import '../models/user_profile.dart';
 import '../models/booking_models.dart';
 import '../models/detail_job.dart';
 import '../models/team_member.dart';
-import '../models/user_vehicle.dart';
 
 class MockDataService {
   // Standard detailing service packages
