@@ -12,6 +12,24 @@ class LocalStorageService {
   static const String _likedJobsKey = 'adc_liked_jobs_v3';
   static const String _activeTabKey = 'adc_active_tab_index_v1';
   static const String _isGuestKey = 'adc_is_guest_mode_v1';
+  static const String _siteAccessUnlockedKey = 'adc_site_access_unlocked_v1';
+
+  // Site Access Gate
+  static Future<bool> isSiteUnlocked() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_siteAccessUnlockedKey) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> saveSiteUnlocked(bool unlocked) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_siteAccessUnlockedKey, unlocked);
+    } catch (_) {}
+  }
 
   // Guest mode flag
   static Future<void> saveIsGuest(bool isGuest) async {

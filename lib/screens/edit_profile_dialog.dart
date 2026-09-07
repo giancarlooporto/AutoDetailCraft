@@ -88,24 +88,33 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
           }
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle_rounded, color: AppTheme.primary),
-                SizedBox(width: 8),
-                Text('Profile photo updated!'),
-              ],
+        if (cloudUrl != null && cloudUrl.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle_rounded, color: AppTheme.primary),
+                  SizedBox(width: 8),
+                  Text('Profile photo uploaded to Cloudflare R2!'),
+                ],
+              ),
+              backgroundColor: AppTheme.surface,
             ),
-            backgroundColor: AppTheme.surface,
-          ),
-        );
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to upload photo to Cloudflare R2.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isUploadingAvatar = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload failed: $e'), backgroundColor: Colors.redAccent),
+          SnackBar(content: Text('Upload error: $e'), backgroundColor: Colors.redAccent),
         );
       }
     }
@@ -134,16 +143,28 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
           }
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Cover banner photo updated!'),
-            backgroundColor: AppTheme.surface,
-          ),
-        );
+        if (cloudUrl != null && cloudUrl.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cover banner uploaded to Cloudflare R2!'),
+              backgroundColor: AppTheme.surface,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to upload cover banner to Cloudflare R2.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isUploadingCover = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Cover upload error: $e'), backgroundColor: Colors.redAccent),
+        );
       }
     }
   }

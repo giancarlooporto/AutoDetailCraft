@@ -3,6 +3,7 @@ import 'core/theme/app_theme.dart';
 import 'services/job_repository.dart';
 import 'services/supabase_service.dart';
 import 'screens/main_navigation_screen.dart';
+import 'screens/site_access_gate_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,7 +32,10 @@ class DetailCraftApp extends StatelessWidget {
           title: 'AutoDetailCraft',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.darkTheme,
-          home: MainNavigationScreen(repository: repository),
+          home: SiteAccessGateScreen(
+            accessPin: '9229',
+            child: MainNavigationScreen(repository: repository),
+          ),
         );
       },
     );

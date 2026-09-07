@@ -1,6 +1,6 @@
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'r2_storage_service.dart';
 
 class SupabaseService {
   static const String supabaseUrl = 'https://bczyryganiynfhjwlcgl.supabase.co';
@@ -37,38 +37,33 @@ class SupabaseService {
     }
   }
 
-  /// Uploads vehicle photo bytes to Supabase Storage and returns the public CDN URL.
+  /// Uploads photo bytes exclusively to Cloudflare R2 and returns the public CDN URL.
+  /// Supabase Storage is completely bypassed and disabled for media storage.
   static Future<String?> uploadVehiclePhoto({
     required String userId,
     required Uint8List bytes,
     String? customFileName,
   }) async {
-    final c = client;
-    if (c == null) return null;
-
     try {
-      final fileName = customFileName ?? 'veh_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final storagePath = '$userId/$fileName';
-
-      // Upload binary to Supabase Storage
-      await c.storage.from(vehiclePhotosBucket).uploadBinary(
-            storagePath,
-            bytes,
-            fileOptions: const FileOptions(
-              contentType: 'image/jpeg',
-              upsert: true,
-            ),
-          );
-
-      // Get public CDN URL
-      final publicUrl = c.storage.from(vehiclePhotosBucket).getPublicUrl(storagePath);
-      if (kDebugMode) {
-        print('[SupabaseService] Uploaded photo successfully: $publicUrl');
+      final r2Url = await R2StorageService.uploadImage(
+        userId: userId,
+        bytes: bytes,
+        customFileName: customFileName,
+        contentType: 'image/jpeg',
+      );
+      if (r2Url != null && r2Url.isNotEmpty) {
+        if (kDebugMode) {
+          print('[Storage] Successfully uploaded to Cloudflare R2: $r2Url');
+        }
+        return r2Url;
       }
-      return publicUrl;
+      if (kDebugMode) {
+        print('[Storage] Cloudflare R2 upload returned null URL');
+      }
+      return null;
     } catch (e) {
       if (kDebugMode) {
-        print('[SupabaseService] Failed to upload to Supabase Storage: $e');
+        print('[Storage] Cloudflare R2 upload error: $e');
       }
       return null;
     }
