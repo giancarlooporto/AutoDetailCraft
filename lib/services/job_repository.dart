@@ -8,6 +8,7 @@ import 'mock_data_service.dart';
 import 'local_storage_service.dart';
 import 'supabase_auth_service.dart';
 import 'supabase_db_service.dart';
+import 'r2_storage_service.dart';
 
 class JobRepository extends ChangeNotifier {
   List<DetailJob> _jobs = [];
@@ -542,13 +543,34 @@ class JobRepository extends ChangeNotifier {
   }
 
   void deleteJob(String jobId) {
-    final job = _jobs.firstWhere((j) => j.id == jobId, orElse: () => _jobs.first);
+    final jobMatches = _jobs.where((j) => j.id == jobId);
+    final DetailJob? jobToDelete = jobMatches.isNotEmpty ? jobMatches.first : null;
+
     _jobs.removeWhere((j) => j.id == jobId);
     _persistCustomJobs();
+
     if (_isLoggedIn) {
       SupabaseDbService.deleteJob(jobId);
     }
-    if (_currentUser.id == job.author.id && _currentUser.totalJobsCount > 0) {
+
+    // Permanently purge all associated images from Cloudflare R2
+    if (jobToDelete != null) {
+      final List<String> imageUrlsToPurge = [];
+      if (jobToDelete.beforeImageUrl.isNotEmpty) imageUrlsToPurge.add(jobToDelete.beforeImageUrl);
+      if (jobToDelete.afterImageUrl.isNotEmpty) imageUrlsToPurge.add(jobToDelete.afterImageUrl);
+      imageUrlsToPurge.addAll(jobToDelete.beforePhotos);
+      imageUrlsToPurge.addAll(jobToDelete.afterPhotos);
+      for (final zone in jobToDelete.mediaZones) {
+        if (zone.beforeImageUrl.isNotEmpty) imageUrlsToPurge.add(zone.beforeImageUrl);
+        if (zone.afterImageUrl.isNotEmpty) imageUrlsToPurge.add(zone.afterImageUrl);
+      }
+
+      if (imageUrlsToPurge.isNotEmpty) {
+        R2StorageService.deleteImages(imageUrlsToPurge);
+      }
+    }
+
+    if (jobToDelete != null && _currentUser.id == jobToDelete.author.id && _currentUser.totalJobsCount > 0) {
       _currentUser = _currentUser.copyWith(
         totalJobsCount: _currentUser.totalJobsCount - 1,
       );

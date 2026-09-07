@@ -67,6 +67,56 @@ class R2StorageService {
     return 'https://$endpointHost$canonicalUri?$canonicalQueryString&X-Amz-Signature=$signature';
   }
 
+  /// Generates an AWS S3 SigV4 presigned DELETE URL.
+  static String generatePresignedDeleteUrl({
+    required String objectKey,
+    int expiresInSeconds = 3600,
+  }) {
+    final now = DateTime.now().toUtc();
+    final amzDate = _formatAmzDate(now);
+    final dateStamp = amzDate.substring(0, 8);
+    final credentialScope = '$dateStamp/$_region/$_service/aws4_request';
+    final canonicalUri = '/$bucketName/$objectKey';
+
+    final queryParams = <String, String>{
+      'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
+      'X-Amz-Credential': '$_accessKeyId/$credentialScope',
+      'X-Amz-Date': amzDate,
+      'X-Amz-Expires': expiresInSeconds.toString(),
+      'X-Amz-SignedHeaders': 'host',
+    };
+
+    final sortedKeys = queryParams.keys.toList()..sort();
+    final canonicalQueryString = sortedKeys
+        .map((k) => '${Uri.encodeComponent(k)}=${Uri.encodeComponent(queryParams[k]!)}')
+        .join('&');
+
+    final canonicalHeaders = 'host:$endpointHost\n';
+    const signedHeaders = 'host';
+    const payloadHash = 'UNSIGNED-PAYLOAD';
+
+    final canonicalRequest = [
+      'DELETE',
+      canonicalUri,
+      canonicalQueryString,
+      canonicalHeaders,
+      signedHeaders,
+      payloadHash,
+    ].join('\n');
+
+    final stringToSign = [
+      'AWS4-HMAC-SHA256',
+      amzDate,
+      credentialScope,
+      sha256.convert(utf8.encode(canonicalRequest)).toString(),
+    ].join('\n');
+
+    final signingKey = _getSignatureKey(_secretAccessKey, dateStamp, _region, _service);
+    final signature = Hmac(sha256, signingKey).convert(utf8.encode(stringToSign)).toString();
+
+    return 'https://$endpointHost$canonicalUri?$canonicalQueryString&X-Amz-Signature=$signature';
+  }
+
   /// Uploads binary image bytes to Cloudflare R2 via presigned URL and returns the public CDN URL.
   static Future<String?> uploadImage({
     required String userId,
@@ -107,6 +157,59 @@ class R2StorageService {
         print('[R2StorageService] Exception during R2 upload: $e');
       }
       return null;
+    }
+  }
+
+  /// Extracts the R2 object key from a full public CDN URL (e.g. https://media.autodetailcraft.com/userId/img_123.jpg -> userId/img_123.jpg)
+  static String? extractObjectKey(String url) {
+    if (url.startsWith(publicDomain)) {
+      var path = url.substring(publicDomain.length);
+      if (path.startsWith('/')) {
+        path = path.substring(1);
+      }
+      return path.isNotEmpty ? path : null;
+    }
+    return null;
+  }
+
+  /// Permanently deletes an image from Cloudflare R2 bucket given its URL or object key.
+  static Future<bool> deleteImage(String urlOrKey) async {
+    try {
+      final objectKey = extractObjectKey(urlOrKey) ?? urlOrKey;
+      if (objectKey.isEmpty || objectKey.startsWith('http')) {
+        // Not an R2 bucket URL
+        return false;
+      }
+
+      final presignedUrl = generatePresignedDeleteUrl(objectKey: objectKey);
+      final response = await http.delete(Uri.parse(presignedUrl));
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        if (kDebugMode) {
+          print('[R2StorageService] Successfully permanently deleted from R2: $objectKey');
+        }
+        return true;
+      } else {
+        if (kDebugMode) {
+          print('[R2StorageService] Failed to delete from R2: HTTP ${response.statusCode} - ${response.body}');
+        }
+        return false;
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[R2StorageService] Exception during R2 delete: $e');
+      }
+      return false;
+    }
+  }
+
+  /// Bulk deletes a list of images from Cloudflare R2 bucket.
+  static Future<void> deleteImages(List<String> urlsOrKeys) async {
+    final uniqueKeys = urlsOrKeys.toSet();
+    for (final key in uniqueKeys) {
+      if (key.isNotEmpty) {
+        await deleteImage(key);
+      }
     }
   }
 
