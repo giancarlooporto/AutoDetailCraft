@@ -226,6 +226,7 @@ class JobRecipeCard extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           // Header: Detailer profile & verified tag (Tappable to view Studio)
           Padding(
@@ -279,9 +280,21 @@ class JobRecipeCard extends StatelessWidget {
                     onPressed: () => _editJob(context),
                   ),
                 ] else
-                  IconButton(
-                    icon: const Icon(Icons.calendar_month_rounded, color: AppTheme.primary),
-                    tooltip: 'Book with this detailer',
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      minimumSize: const Size(0, 30),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      elevation: 0,
+                    ),
+                    icon: const Icon(Icons.bolt_rounded, size: 15, color: Colors.black),
+                    label: const Text(
+                      'Book Here',
+                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.black),
+                    ),
                     onPressed: () => _openBookingFlow(context),
                   ),
               ],
@@ -293,7 +306,7 @@ class JobRecipeCard extends StatelessWidget {
             beforeImageUrl: job.beforeImageUrl,
             afterImageUrl: job.afterImageUrl,
             defectBadge: job.defectBadge,
-            aspectRatio: 16 / 10,
+            height: 220,
           ),
 
           // Container Bar: View all Before & After inspection photos

@@ -10,6 +10,7 @@ class SplitSliderWidget extends StatefulWidget {
   final double? aspectRatio;
   final double initialPosition;
   final BoxFit fit;
+  final double zoomScale;
 
   const SplitSliderWidget({
     super.key,
@@ -20,6 +21,7 @@ class SplitSliderWidget extends StatefulWidget {
     this.aspectRatio = 16 / 10,
     this.initialPosition = 0.5,
     this.fit = BoxFit.cover,
+    this.zoomScale = 1.0,
   });
 
   @override
@@ -28,11 +30,13 @@ class SplitSliderWidget extends StatefulWidget {
 
 class _SplitSliderWidgetState extends State<SplitSliderWidget> {
   late double _position;
+  late double _currentZoom;
 
   @override
   void initState() {
     super.initState();
     _position = widget.initialPosition;
+    _currentZoom = widget.zoomScale;
   }
 
   Widget _buildImage(String url, bool isBefore, double effectiveHeight) {
@@ -131,7 +135,13 @@ class _SplitSliderWidgetState extends State<SplitSliderWidget> {
               children: [
                 // 1. Bottom Layer: AFTER Image (Full Width)
                 Positioned.fill(
-                  child: _buildImage(widget.afterImageUrl, false, effectiveHeight),
+                  child: ClipRect(
+                    child: Transform.scale(
+                      scale: _currentZoom,
+                      alignment: Alignment.center,
+                      child: _buildImage(widget.afterImageUrl, false, effectiveHeight),
+                    ),
+                  ),
                 ),
 
                 // 2. Top Layer: BEFORE Image (Clipped dynamically by slider position)
@@ -147,7 +157,11 @@ class _SplitSliderWidgetState extends State<SplitSliderWidget> {
                       minWidth: width,
                       maxHeight: effectiveHeight,
                       minHeight: effectiveHeight,
-                      child: _buildImage(widget.beforeImageUrl, true, effectiveHeight),
+                      child: Transform.scale(
+                        scale: _currentZoom,
+                        alignment: Alignment.center,
+                        child: _buildImage(widget.beforeImageUrl, true, effectiveHeight),
+                      ),
                     ),
                   ),
                 ),
@@ -282,6 +296,51 @@ class _SplitSliderWidgetState extends State<SplitSliderWidget> {
                     },
                   ),
                 ),
+
+                // 8. Interactive Zoom Toggle Pill
+                if (widget.zoomScale > 1.0)
+                  Positioned(
+                    bottom: 10,
+                    right: 10,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        setState(() {
+                          _currentZoom = (_currentZoom > 1.05) ? 1.0 : widget.zoomScale;
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withAlpha(200),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _currentZoom > 1.05 ? AppTheme.primary : AppTheme.border,
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.zoom_in_rounded,
+                              size: 13,
+                              color: _currentZoom > 1.05 ? AppTheme.primary : Colors.white70,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${_currentZoom.toStringAsFixed(1)}x',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                                color: _currentZoom > 1.05 ? AppTheme.primary : Colors.white70,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

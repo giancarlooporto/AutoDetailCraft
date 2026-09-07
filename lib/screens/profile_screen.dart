@@ -770,27 +770,32 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                                       );
                                                     },
                                                   )
-                                                : GridView.builder(
-                                                    padding: const EdgeInsets.all(16),
-                                                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                                      crossAxisCount: crossAxisCount,
-                                                      crossAxisSpacing: 16,
-                                                      mainAxisSpacing: 16,
-                                                      mainAxisExtent: 670,
-                                                    ),
-                                                    itemCount: myJobs.length,
-                                                    itemBuilder: (context, index) {
-                                                      final job = myJobs[index];
-                                                      return JobRecipeCard(
-                                                        job: job,
-                                                        repository: widget.repository,
-                                                        showDetailerManagement: true,
-                                                        onJobChanged: () => setState(() {}),
-                                                        onLike: () => widget.repository.toggleLike(job.id),
-                                                        onSave: () => widget.repository.toggleSave(job.id),
-                                                      );
-                                                    },
-                                                  ),
+                                                : SingleChildScrollView(
+                                                     padding: const EdgeInsets.all(16),
+                                                     child: Row(
+                                                       crossAxisAlignment: CrossAxisAlignment.start,
+                                                       children: [
+                                                         for (int col = 0; col < crossAxisCount; col++) ...[
+                                                           if (col > 0) const SizedBox(width: 16),
+                                                           Expanded(
+                                                             child: Column(
+                                                               children: [
+                                                                 for (int i = col; i < myJobs.length; i += crossAxisCount)
+                                                                   JobRecipeCard(
+                                                                     job: myJobs[i],
+                                                                     repository: widget.repository,
+                                                                     showDetailerManagement: true,
+                                                                     onJobChanged: () => setState(() {}),
+                                                                     onLike: () => widget.repository.toggleLike(myJobs[i].id),
+                                                                     onSave: () => widget.repository.toggleSave(myJobs[i].id),
+                                                                   ),
+                                                               ],
+                                                             ),
+                                                           ),
+                                                         ],
+                                                       ],
+                                                     ),
+                                                   ),
                                           ),
                                         ),
                                       );

@@ -120,44 +120,49 @@ class _FeedScreenState extends State<FeedScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Desktop Turo-style Search & Filter Pill
+                        // Desktop Turo-style Search & Filter Pill (Centered)
                         if (isDesktop) ...[
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                            child: Container(
-                              height: 48,
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              decoration: BoxDecoration(
-                                color: AppTheme.surface,
-                                borderRadius: BorderRadius.circular(24),
-                                border: Border.all(color: AppTheme.border),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.search_rounded, color: AppTheme.primary, size: 20),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: TextField(
-                                      controller: _searchCtrl,
-                                      decoration: const InputDecoration(
-                                        hintText: 'Search detailing transformations, studios, cities (e.g. ceramic, Porsche, Los Angeles)...',
-                                        border: InputBorder.none,
-                                        isDense: true,
-                                        contentPadding: EdgeInsets.zero,
-                                      ),
-                                      onChanged: (v) => widget.repository.setSearchQuery(v),
-                                    ),
+                            child: Center(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 580),
+                                child: Container(
+                                  height: 48,
+                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.surface,
+                                    borderRadius: BorderRadius.circular(24),
+                                    border: Border.all(color: AppTheme.border),
                                   ),
-                                  if (_searchCtrl.text.isNotEmpty)
-                                    IconButton(
-                                      icon: const Icon(Icons.clear_rounded, size: 18, color: AppTheme.textMuted),
-                                      onPressed: () {
-                                        _searchCtrl.clear();
-                                        widget.repository.setSearchQuery('');
-                                        setState(() {});
-                                      },
-                                    ),
-                                ],
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.search_rounded, color: AppTheme.primary, size: 20),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: TextField(
+                                          controller: _searchCtrl,
+                                          decoration: const InputDecoration(
+                                            hintText: 'Search transformations, studios, cities...',
+                                            border: InputBorder.none,
+                                            isDense: true,
+                                            contentPadding: EdgeInsets.zero,
+                                          ),
+                                          onChanged: (v) => widget.repository.setSearchQuery(v),
+                                        ),
+                                      ),
+                                      if (_searchCtrl.text.isNotEmpty)
+                                        IconButton(
+                                          icon: const Icon(Icons.clear_rounded, size: 18, color: AppTheme.textMuted),
+                                          onPressed: () {
+                                            _searchCtrl.clear();
+                                            widget.repository.setSearchQuery('');
+                                            setState(() {});
+                                          },
+                                        ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -435,24 +440,29 @@ class _FeedScreenState extends State<FeedScreen> {
                                           );
                                         },
                                       )
-                                    : GridView.builder(
+                                    : SingleChildScrollView(
                                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                          crossAxisCount: crossAxisCount,
-                                          crossAxisSpacing: 16,
-                                          mainAxisSpacing: 16,
-                                          mainAxisExtent: 670,
+                                        child: Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            for (int col = 0; col < crossAxisCount; col++) ...[
+                                              if (col > 0) const SizedBox(width: 16),
+                                              Expanded(
+                                                child: Column(
+                                                  children: [
+                                                    for (int i = col; i < jobs.length; i += crossAxisCount)
+                                                      JobRecipeCard(
+                                                        job: jobs[i],
+                                                        repository: widget.repository,
+                                                        onLike: () => widget.repository.toggleLike(jobs[i].id),
+                                                        onSave: () => widget.repository.toggleSave(jobs[i].id),
+                                                      ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ],
                                         ),
-                                        itemCount: jobs.length,
-                                        itemBuilder: (context, idx) {
-                                          final job = jobs[idx];
-                                          return JobRecipeCard(
-                                            job: job,
-                                            repository: widget.repository,
-                                            onLike: () => widget.repository.toggleLike(job.id),
-                                            onSave: () => widget.repository.toggleSave(job.id),
-                                          );
-                                        },
                                       );
                               },
                             ),

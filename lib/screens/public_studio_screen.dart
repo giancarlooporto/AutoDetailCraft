@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
+import '../models/booking_models.dart';
 import '../services/job_repository.dart';
 import '../widgets/job_recipe_card.dart';
 import 'booking_flow_screen.dart';
@@ -52,7 +53,12 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
     final packages = detailer.servicePackages;
 
     return Scaffold(
-      body: NestedScrollView(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1200),
+          child: SizedBox(
+            width: double.infinity,
+            child: NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) {
           return [
             SliverAppBar(
@@ -311,17 +317,50 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                       ),
                     ),
                   )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: studioJobs.length,
-                    itemBuilder: (context, index) {
-                      final job = studioJobs[index];
-                      return JobRecipeCard(
-                        job: job,
-                        repository: widget.repository,
-                        onLike: () => widget.repository.toggleLike(job.id),
-                        onSave: () => widget.repository.toggleSave(job.id),
-                      );
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isDesktop = constraints.maxWidth >= 720;
+                      final isWide = constraints.maxWidth >= 1024;
+                      final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
+
+                      return !isDesktop
+                          ? ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: studioJobs.length,
+                              itemBuilder: (context, index) {
+                                final job = studioJobs[index];
+                                return JobRecipeCard(
+                                  job: job,
+                                  repository: widget.repository,
+                                  onLike: () => widget.repository.toggleLike(job.id),
+                                  onSave: () => widget.repository.toggleSave(job.id),
+                                );
+                              },
+                            )
+                          : SingleChildScrollView(
+                              padding: const EdgeInsets.all(16),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  for (int col = 0; col < crossAxisCount; col++) ...[
+                                    if (col > 0) const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        children: [
+                                          for (int i = col; i < studioJobs.length; i += crossAxisCount)
+                                            JobRecipeCard(
+                                              job: studioJobs[i],
+                                              repository: widget.repository,
+                                              onLike: () => widget.repository.toggleLike(studioJobs[i].id),
+                                              onSave: () => widget.repository.toggleSave(studioJobs[i].id),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
                     },
                   ),
 
@@ -330,207 +369,246 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                 ? const Center(
                     child: Text('No service packages listed yet.', style: TextStyle(color: AppTheme.textMuted)),
                   )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: packages.length,
-                    itemBuilder: (context, index) {
-                      final pkg = packages[index];
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 14),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppTheme.surface,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: pkg.isPopular ? AppTheme.primary.withAlpha(150) : AppTheme.border,
-                            width: pkg.isPopular ? 1.5 : 1,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        pkg.title,
-                                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        pkg.description,
-                                        style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      '\$${pkg.basePrice.toStringAsFixed(0)}',
-                                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                                    ),
-                                    Text(
-                                      pkg.estimatedDuration,
-                                      style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            const Divider(height: 1, color: AppTheme.border),
-                            const SizedBox(height: 12),
-                            ...pkg.includes.map((feat) {
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isDesktop = constraints.maxWidth >= 720;
+                      final isWide = constraints.maxWidth >= 1024;
+                      final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
+
+                      return !isDesktop
+                          ? ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: packages.length,
+                              itemBuilder: (context, index) {
+                                return _buildServicePackageCard(packages[index]);
+                              },
+                            )
+                          : GridView.builder(
+                              padding: const EdgeInsets.all(16),
+                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: crossAxisCount,
+                                crossAxisSpacing: 16,
+                                mainAxisSpacing: 16,
+                                childAspectRatio: 1.15,
+                              ),
+                              itemCount: packages.length,
+                              itemBuilder: (context, index) {
+                                return _buildServicePackageCard(packages[index]);
+                              },
+                            );
+                    },
+                  ),
+
+            // TAB 3: About & Studio Info
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 860),
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    _buildInfoSection(
+                      title: 'Studio Location & Service Coverage',
+                      icon: Icons.location_on_rounded,
+                      children: [
+                        Text('Base City: ${detailer.location}', style: const TextStyle(fontSize: 13)),
+                        const SizedBox(height: 4),
+                        Text('Service Radius: ${detailer.serviceRadius}', style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+                        const SizedBox(height: 4),
+                        const Text('Studio Facility: Climate-controlled clean bay with multi-spectrum color-match LED lighting.', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _buildInfoSection(
+                      title: 'Professional Certifications',
+                      icon: Icons.verified_user_rounded,
+                      children: detailer.certifications.isEmpty
+                          ? [const Text('No public certifications uploaded yet.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12))]
+                          : detailer.certifications.map((c) {
                               return Padding(
-                                padding: const EdgeInsets.only(bottom: 6),
+                                padding: const EdgeInsets.only(bottom: 8),
                                 child: Row(
                                   children: [
-                                    const Icon(Icons.check_circle_outline_rounded, size: 14, color: AppTheme.primary),
+                                    const Icon(Icons.shield_rounded, color: AppTheme.primary, size: 16),
                                     const SizedBox(width: 8),
                                     Expanded(
-                                      child: Text(
-                                        feat,
-                                        style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(c.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                          Text(c.issuer, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+                                        ],
                                       ),
                                     ),
                                   ],
                                 ),
                               );
-                            }),
-                            const SizedBox(height: 10),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: pkg.isPopular ? AppTheme.primary : AppTheme.surfaceLight,
-                                  foregroundColor: pkg.isPopular ? Colors.black : Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 10),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                ),
-                                onPressed: _openBookingFlow,
-                                child: Text(
-                                  'Book ${pkg.title}',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-
-            // TAB 3: About & Studio Info
-            ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _buildInfoSection(
-                  title: 'Studio Location & Service Coverage',
-                  icon: Icons.location_on_rounded,
-                  children: [
-                    Text('Base City: ${detailer.location}', style: const TextStyle(fontSize: 13)),
-                    const SizedBox(height: 4),
-                    Text('Service Radius: ${detailer.serviceRadius}', style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
-                    const SizedBox(height: 4),
-                    const Text('Studio Facility: Climate-controlled clean bay with multi-spectrum color-match LED lighting.', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                            }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildInfoSection(
+                      title: 'Equipment & Precision Standards',
+                      icon: Icons.precision_manufacturing_rounded,
+                      children: const [
+                        Text('• RUPES BigFoot & FLEX Cordless Rotary Polishing Units', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                        SizedBox(height: 4),
+                        Text('• DeFelsko PosiTector 200 Ultrasonic Paint Depth Gauge (Pre & Post micron audit)', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                        SizedBox(height: 4),
+                        Text('• Scangrip 3-Color High CRI+ SunMatch Inspection Lamps', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                        SizedBox(height: 4),
+                        Text('• 100% DI Pure Deionized Spot-Free Water Filtration System', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                      ],
+                    ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                _buildInfoSection(
-                  title: 'Professional Certifications',
-                  icon: Icons.verified_user_rounded,
-                  children: detailer.certifications.isEmpty
-                      ? [const Text('No public certifications uploaded yet.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12))]
-                      : detailer.certifications.map((c) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.shield_rounded, color: AppTheme.primary, size: 16),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(c.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                      Text(c.issuer, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                ),
-                const SizedBox(height: 16),
-                _buildInfoSection(
-                  title: 'Equipment & Precision Standards',
-                  icon: Icons.precision_manufacturing_rounded,
-                  children: const [
-                    Text('• RUPES BigFoot & FLEX Cordless Rotary Polishing Units', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                    SizedBox(height: 4),
-                    Text('• DeFelsko PosiTector 200 Ultrasonic Paint Depth Gauge (Pre & Post micron audit)', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                    SizedBox(height: 4),
-                    Text('• Scangrip 3-Color High CRI+ SunMatch Inspection Lamps', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                    SizedBox(height: 4),
-                    Text('• 100% DI Pure Deionized Spot-Free Water Filtration System', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                  ],
-                ),
-              ],
+              ),
             ),
           ],
         ),
       ),
-      bottomNavigationBar: Container(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        decoration: BoxDecoration(
-          color: AppTheme.surface,
-          border: const Border(top: BorderSide(color: AppTheme.border)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withAlpha(120),
-              blurRadius: 10,
-              offset: const Offset(0, -3),
+    ),
+  ),
+),
+      bottomNavigationBar: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1200),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              border: const Border(top: BorderSide(color: AppTheme.border)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(120),
+                  blurRadius: 10,
+                  offset: const Offset(0, -3),
+                ),
+              ],
             ),
-          ],
+            child: SafeArea(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Next Available Slot', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                        const Text('This Week', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: _openBookingFlow,
+                    icon: const Icon(Icons.calendar_today_rounded, size: 16),
+                    label: const Text(
+                      'Book Studio Service',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
-        child: SafeArea(
-          child: Row(
+      ),
+    );
+  }
+
+  Widget _buildServicePackageCard(ServicePackage pkg) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: pkg.isPopular ? AppTheme.primary.withAlpha(150) : AppTheme.border,
+          width: pkg.isPopular ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Next Available Slot', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-                    const Text('This Week', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                    Text(
+                      pkg.title,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      pkg.description,
+                      style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(width: 16),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: _openBookingFlow,
-                icon: const Icon(Icons.calendar_today_rounded, size: 16),
-                label: const Text(
-                  'Book Studio Service',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '\$${pkg.basePrice.toStringAsFixed(0)}',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                  ),
+                  Text(
+                    pkg.estimatedDuration,
+                    style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                  ),
+                ],
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: AppTheme.border),
+          const SizedBox(height: 12),
+          ...pkg.includes.map((feat) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_outline_rounded, size: 14, color: AppTheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      feat,
+                      style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: pkg.isPopular ? AppTheme.primary : AppTheme.surfaceLight,
+                foregroundColor: pkg.isPopular ? Colors.black : Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: _openBookingFlow,
+              child: Text(
+                'Book ${pkg.title}',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

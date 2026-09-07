@@ -399,6 +399,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                       defectBadge: _currentJob.defectBadge,
                       height: 420,
                       fit: BoxFit.contain,
+                      zoomScale: 1.18,
                     ),
                   ),
 
