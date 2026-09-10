@@ -282,6 +282,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final constrainedWidth = screenWidth > 1280 ? 1280.0 : screenWidth;
+    final dynamicBannerHeight = (constrainedWidth / 3.0).clamp(220.0, 420.0);
     return ListenableBuilder(
       listenable: widget.repository,
       builder: (context, _) {
@@ -309,7 +312,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             headerSliverBuilder: (context, innerBoxIsScrolled) {
               return [
                 SliverAppBar(
-                  expandedHeight: 220,
+                  expandedHeight: dynamicBannerHeight,
                   pinned: false,
                   backgroundColor: AppTheme.background,
                   actions: [

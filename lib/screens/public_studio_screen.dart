@@ -49,6 +49,9 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final constrainedWidth = screenWidth > 1280 ? 1280.0 : screenWidth;
+    final dynamicBannerHeight = (constrainedWidth / 3.0).clamp(220.0, 420.0);
     final detailer = widget.detailer;
     final studioJobs = widget.repository.jobs.where((j) => j.author.id == detailer.id).toList();
     final packages = detailer.servicePackages;
@@ -58,7 +61,7 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
         headerSliverBuilder: (context, innerBoxIsScrolled) {
           return [
             SliverAppBar(
-              expandedHeight: 240,
+              expandedHeight: dynamicBannerHeight,
               pinned: true,
               leading: Container(
                 margin: const EdgeInsets.all(8),
