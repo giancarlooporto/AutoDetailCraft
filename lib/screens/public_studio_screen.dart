@@ -255,7 +255,7 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                         _buildStatCard(
                           icon: Icons.auto_awesome_motion_rounded,
                           label: 'Transformations',
-                          value: '${studioJobs.isNotEmpty ? studioJobs.length : detailer.totalJobsCount}',
+                          value: '${studioJobs.length}',
                         ),
                         const SizedBox(width: 8),
                         _buildStatCard(
