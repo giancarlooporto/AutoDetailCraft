@@ -38,6 +38,7 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   void _openPublicStudio(BuildContext context, UserProfile detailer) {
+    print('DEBUG: _openPublicStudio called for ${detailer.displayName}!');
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PublicStudioScreen(
@@ -174,7 +175,7 @@ class _FeedScreenState extends State<FeedScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: ListView(
                       scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      padding: EdgeInsets.symmetric(horizontal: isDesktop ? 24 : 14),
                       children: activeCities.map((loc) {
                         final isSelected = selectedCity == loc;
                         return Padding(
@@ -200,7 +201,7 @@ class _FeedScreenState extends State<FeedScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: ListView(
                       scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      padding: EdgeInsets.symmetric(horizontal: isDesktop ? 24 : 14),
                       children: AppConstants.serviceTypes.map((service) {
                         final isSelected = widget.repository.selectedServiceType == service;
                         return Padding(
@@ -218,7 +219,7 @@ class _FeedScreenState extends State<FeedScreen> {
                   // 3. Highlighted Detailers in Selected City (Shows your studio card!)
                   if (detailers.isNotEmpty) ...[
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                      padding: EdgeInsets.fromLTRB(isDesktop ? 24 : 16, 8, isDesktop ? 24 : 16, 4),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -243,13 +244,15 @@ class _FeedScreenState extends State<FeedScreen> {
                       height: 126,
                       child: ListView.builder(
                         scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                        padding: EdgeInsets.symmetric(horizontal: isDesktop ? 24 : 14, vertical: 4),
                         itemCount: detailers.length,
                         itemBuilder: (context, idx) {
                           final d = detailers[idx];
                           final isYou = widget.repository.isLoggedIn && d.id == widget.repository.currentUser.id;
 
                           return GestureDetector(
+                            key: Key('detailer_card_${d.id}'),
+                            behavior: HitTestBehavior.opaque,
                             onTap: () => _openPublicStudio(context, d),
                             child: Container(
                               width: 250,
@@ -441,7 +444,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                         },
                                       )
                                     : SingleChildScrollView(
-                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
                                         child: Row(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [

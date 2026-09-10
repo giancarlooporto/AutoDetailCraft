@@ -1,5 +1,7 @@
+import 'package:detail_craft/screens/public_studio_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:detail_craft/core/theme/app_theme.dart';
 import 'package:detail_craft/screens/main_navigation_screen.dart';
 import 'package:detail_craft/services/job_repository.dart';
 
@@ -118,5 +120,56 @@ void main() {
     expect(find.text('Bookings'), findsWidgets);
 
     debugNetworkImageHttpClientProvider = null;
+  });
+
+  
+  
+  
+  
+  
+  testWidgets('PublicStudioScreen renders header, slivers, tabs, and content correctly', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final repository = JobRepository();
+    final detailer = repository.publicDetailers.first;
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: PublicStudioScreen(
+        detailer: detailer,
+        repository: repository,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    print('Direct pump SliverAppBar count: ${find.byType(SliverAppBar).evaluate().length}');
+    print('Direct pump TabBar count: ${find.byType(TabBar).evaluate().length}');
+    print('Direct pump All texts in tree: ${find.byType(Text).evaluate().map((e) => (e.widget as Text).data).toList()}');
+
+    expect(find.byType(PublicStudioScreen), findsOneWidget);
+    expect(find.text('Transformations'), findsWidgets);
+    expect(find.text('Services & Pricing'), findsOneWidget);
+    expect(find.text('About & Studio'), findsOneWidget);
+    expect(find.text('Book Studio Service'), findsOneWidget);
+
+    // Tap on Services & Pricing tab
+    await tester.tap(find.text('Services & Pricing'));
+    await tester.pumpAndSettle();
+
+    // Tap on About & Studio tab
+    await tester.tap(find.text('About & Studio'));
+    await tester.pumpAndSettle();
+    expect(find.text('Studio Location & Service Coverage'), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
   });
 }

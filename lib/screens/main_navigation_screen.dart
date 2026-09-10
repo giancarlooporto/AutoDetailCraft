@@ -106,7 +106,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                                     onTap: () => widget.repository.setActiveTab(0),
                                     borderRadius: BorderRadius.circular(8),
                                     child: Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [

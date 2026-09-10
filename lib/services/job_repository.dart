@@ -11,9 +11,9 @@ import 'supabase_db_service.dart';
 import 'r2_storage_service.dart';
 
 class JobRepository extends ChangeNotifier {
-  List<DetailJob> _jobs = [];
+  List<DetailJob> _jobs = MockDataService.getInitialJobs();
   List<BookingAppointment> _bookings = [];
-  List<UserProfile> _publicDetailers = [];
+  List<UserProfile> _publicDetailers = List.from(MockDataService.publicDetailers);
   UserProfile _currentUser = MockDataService.youUser; // Default fallback
 
   String _selectedServiceType = 'All Services';

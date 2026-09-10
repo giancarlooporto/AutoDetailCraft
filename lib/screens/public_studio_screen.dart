@@ -118,12 +118,17 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                       ),
                     ),
                     Positioned(
-                      bottom: 16,
-                      left: 16,
-                      right: 16,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
+                      bottom: 12,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1200),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
                           Container(
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
@@ -200,6 +205,9 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                           ),
                         ],
                       ),
+                            ),
+                          ),
+                        ),
                     ),
                   ],
                 ),
@@ -383,18 +391,20 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                                 return _buildServicePackageCard(packages[index]);
                               },
                             )
-                          : GridView.builder(
+                                                    : SingleChildScrollView(
                               padding: const EdgeInsets.all(16),
-                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: crossAxisCount,
-                                crossAxisSpacing: 16,
-                                mainAxisSpacing: 16,
-                                childAspectRatio: 1.15,
+                              child: Wrap(
+                                spacing: 16,
+                                runSpacing: 16,
+                                children: packages.map((pkg) {
+                                  final availableWidth = constraints.maxWidth > 1200 ? 1200.0 : constraints.maxWidth;
+                                  final itemWidth = (availableWidth - 32 - (crossAxisCount - 1) * 16) / crossAxisCount;
+                                  return SizedBox(
+                                    width: itemWidth - 0.1,
+                                    child: _buildServicePackageCard(pkg),
+                                  );
+                                }).toList(),
                               ),
-                              itemCount: packages.length,
-                              itemBuilder: (context, index) {
-                                return _buildServicePackageCard(packages[index]);
-                              },
                             );
                     },
                   ),
@@ -468,51 +478,55 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
     ),
   ),
 ),
-      bottomNavigationBar: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1200),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            decoration: BoxDecoration(
-              color: AppTheme.surface,
-              border: const Border(top: BorderSide(color: AppTheme.border)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withAlpha(120),
-                  blurRadius: 10,
-                  offset: const Offset(0, -3),
-                ),
-              ],
-            ),
-            child: SafeArea(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Next Available Slot', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-                        const Text('This Week', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.primary)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: _openBookingFlow,
-                    icon: const Icon(Icons.calendar_today_rounded, size: 16),
-                    label: const Text(
-                      'Book Studio Service',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                    ),
+      bottomNavigationBar: Container(
+        color: AppTheme.surface,
+        child: Center(
+          heightFactor: 1.0,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1200),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                border: const Border(top: BorderSide(color: AppTheme.border)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(120),
+                    blurRadius: 10,
+                    offset: const Offset(0, -3),
                   ),
                 ],
+              ),
+              child: SafeArea(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Next Available Slot', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                          const Text('This Week', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: _openBookingFlow,
+                      icon: const Icon(Icons.calendar_today_rounded, size: 16),
+                      label: const Text(
+                        'Book Studio Service',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
