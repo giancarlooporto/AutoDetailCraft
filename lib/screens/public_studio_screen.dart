@@ -53,12 +53,7 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
     final packages = detailer.servicePackages;
 
     return Scaffold(
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1200),
-          child: SizedBox(
-            width: double.infinity,
-            child: NestedScrollView(
+      body: NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) {
           return [
             SliverAppBar(
@@ -123,7 +118,7 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                       right: 0,
                       child: Center(
                         child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1200),
+                          constraints: const BoxConstraints(maxWidth: 1280),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             child: Row(
@@ -475,15 +470,12 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
           ],
         ),
       ),
-    ),
-  ),
-),
       bottomNavigationBar: Container(
         color: AppTheme.surface,
         child: Center(
           heightFactor: 1.0,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1200),
+            constraints: const BoxConstraints(maxWidth: 1280),
             child: Container(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               decoration: BoxDecoration(
