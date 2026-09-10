@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
 import '../models/user_vehicle.dart';
@@ -322,16 +323,37 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     background: Stack(
                       fit: StackFit.expand,
                       children: [
+                        // 1. Blurred Full-Width Background
                         user.localCoverBytes != null
-                            ? Image.memory(
-                                user.localCoverBytes!,
-                                fit: BoxFit.cover,
-                              )
+                            ? Image.memory(user.localCoverBytes!, fit: BoxFit.cover)
                             : Image.network(
                                 user.coverUrl,
                                 fit: BoxFit.cover,
                                 errorBuilder: (context, error, stackTrace) => Container(color: AppTheme.surfaceLight),
                               ),
+                        ClipRect(
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
+                            child: Container(color: Colors.black.withAlpha(100)),
+                          ),
+                        ),
+                        // 2. Crisp Centered Foreground Image
+                        Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1280),
+                            child: SizedBox(
+                              width: double.infinity,
+                              height: double.infinity,
+                              child: user.localCoverBytes != null
+                                  ? Image.memory(user.localCoverBytes!, fit: BoxFit.cover)
+                                  : Image.network(
+                                      user.coverUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) => const SizedBox(),
+                                    ),
+                            ),
+                          ),
+                        ),
                         Container(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(

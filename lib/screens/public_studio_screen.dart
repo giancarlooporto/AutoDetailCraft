@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
 import '../models/booking_models.dart';
@@ -94,10 +95,34 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                 background: Stack(
                   fit: StackFit.expand,
                   children: [
+                    // 1. Blurred Full-Width Background
                     Image.network(
                       detailer.coverUrl,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) => Container(color: AppTheme.surfaceLight),
+                    ),
+                    ClipRect(
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
+                        child: Container(color: Colors.black.withAlpha(100)),
+                      ),
+                    ),
+                    // 2. Crisp Centered Foreground Image
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1280),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: double.infinity,
+                          child: detailer.localCoverBytes != null
+                              ? Image.memory(detailer.localCoverBytes!, fit: BoxFit.cover)
+                              : Image.network(
+                                  detailer.coverUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) => const SizedBox(),
+                                ),
+                        ),
+                      ),
                     ),
                     DecoratedBox(
                       decoration: BoxDecoration(
