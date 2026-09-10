@@ -347,9 +347,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         ),
                         Positioned(
                           bottom: 12,
-                          left: 16,
-                          right: 16,
-                          child: Row(
+                          left: 0,
+                          right: 0,
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 1280),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                child: Row(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               GestureDetector(
@@ -459,15 +464,21 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                               ),
                             ],
                           ),
+                              ),
+                            ),
+                          ),
                         ),
                       ],
                     ),
                   ),
                 ),
                 SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                    child: Column(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1280),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Clean Mode Switch & Public Storefront Actions (No enclosing box)
@@ -591,6 +602,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         ],
                       ],
                     ),
+                      ),
+                    ),
                   ),
                 ),
 
@@ -619,7 +632,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     controller: _tabController,
                     children: [
                       // TAB 1: Detailer Portfolio
-                      Column(
+                      Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1280),
+                          child: Column(
                         children: [
                           // Studio Portfolio Header Bar with Upload CTA & Tier Indicator
                           Padding(
@@ -803,6 +819,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                   ),
                           ),
                         ],
+                          ),
+                        ),
                       ),
 
                       // TAB 2: Services & Pricing
@@ -814,7 +832,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
                           return Center(
                             child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 1200),
+                              constraints: const BoxConstraints(maxWidth: 1280),
                               child: ListView(
                                 padding: const EdgeInsets.all(16),
                                 children: [
@@ -927,7 +945,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
                           return Center(
                             child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 1200),
+                              constraints: const BoxConstraints(maxWidth: 1280),
                               child: ListView(
                                 padding: const EdgeInsets.all(16),
                                 children: [
