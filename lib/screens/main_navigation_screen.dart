@@ -7,6 +7,7 @@ import '../services/job_repository.dart';
 import '../services/supabase_service.dart';
 import 'feed_screen.dart';
 import 'bookings_list_screen.dart';
+import 'messages_screen.dart';
 import 'profile_screen.dart';
 import 'update_password_dialog.dart';
 
@@ -55,9 +56,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: widget.repository,
-      builder: (context, _) {
+       builder: (context, _) {
         final rawIndex = widget.repository.activeTabIndex;
-        final currentIndex = rawIndex.clamp(0, 2);
+        final currentIndex = rawIndex.clamp(0, 3);
 
         final isGuest = widget.repository.isGuestMode;
         final isDetailer = widget.repository.currentUser.role == UserRole.detailer;
@@ -69,9 +70,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             ? Icons.person_rounded
             : (isDetailer ? Icons.storefront_rounded : Icons.garage_rounded);
 
+        final unread = widget.repository.totalUnreadMessages;
+
         final screens = [
           FeedScreen(repository: widget.repository),
           BookingsListScreen(repository: widget.repository),
+          MessagesScreen(repository: widget.repository),
           ProfileScreen(repository: widget.repository),
         ];
 
@@ -130,7 +134,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
                                   const Spacer(),
 
-                                  // Desktop Nav Tabs (Explore, Bookings, My Studio)
+                                  // Desktop Nav Tabs
                                   _buildDesktopNavTab(
                                     label: 'Explore',
                                     icon: Icons.explore_rounded,
@@ -146,10 +150,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                                   ),
                                   const SizedBox(width: 8),
                                   _buildDesktopNavTab(
-                                    label: studioLabel,
-                                    icon: studioSelectedIcon,
+                                    label: 'Messages',
+                                    icon: Icons.chat_rounded,
                                     isSelected: currentIndex == 2,
                                     onTap: () => widget.repository.setActiveTab(2),
+                                    badgeCount: unread,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _buildDesktopNavTab(
+                                    label: studioLabel,
+                                    icon: studioSelectedIcon,
+                                    isSelected: currentIndex == 3,
+                                    onTap: () => widget.repository.setActiveTab(3),
                                   ),
                                 ],
                               ),
@@ -163,7 +175,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 index: currentIndex,
                 children: screens,
               ),
-              // Mobile Bottom Navigation Bar (Hidden on desktop!)
+              // Mobile Bottom Navigation Bar
               bottomNavigationBar: isDesktop
                   ? null
                   : NavigationBar(
@@ -179,6 +191,19 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                           icon: Icon(Icons.calendar_month_outlined),
                           selectedIcon: Icon(Icons.calendar_month_rounded),
                           label: 'Bookings',
+                        ),
+                        NavigationDestination(
+                          icon: Badge(
+                            isLabelVisible: unread > 0,
+                            label: Text('$unread'),
+                            child: const Icon(Icons.chat_outlined),
+                          ),
+                          selectedIcon: Badge(
+                            isLabelVisible: unread > 0,
+                            label: Text('$unread'),
+                            child: const Icon(Icons.chat_rounded),
+                          ),
+                          label: 'Messages',
                         ),
                         NavigationDestination(
                           icon: Icon(studioIcon),
@@ -199,6 +224,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     required IconData icon,
     required bool isSelected,
     required VoidCallback onTap,
+    int badgeCount = 0,
   }) {
     return InkWell(
       onTap: onTap,
@@ -213,7 +239,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 18, color: isSelected ? AppTheme.primary : AppTheme.textSecondary),
+            Badge(
+              isLabelVisible: badgeCount > 0,
+              label: Text('$badgeCount'),
+              child: Icon(icon, size: 18, color: isSelected ? AppTheme.primary : AppTheme.textSecondary),
+            ),
             const SizedBox(width: 8),
             Text(
               label,

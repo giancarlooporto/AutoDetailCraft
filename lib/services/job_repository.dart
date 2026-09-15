@@ -1,13 +1,16 @@
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/detail_job.dart';
 import '../models/user_profile.dart';
 import '../models/booking_models.dart';
 import '../models/team_member.dart';
 import '../models/user_vehicle.dart';
+import '../models/message_model.dart';
 import 'mock_data_service.dart';
 import 'local_storage_service.dart';
 import 'supabase_auth_service.dart';
 import 'supabase_db_service.dart';
+import 'supabase_service.dart';
 import 'r2_storage_service.dart';
 
 class JobRepository extends ChangeNotifier {
@@ -22,6 +25,10 @@ class JobRepository extends ChangeNotifier {
   int _activeTabIndex = 0;
   bool _isLoggedIn = false;
   bool _isInitialized = false;
+
+  // Messaging state
+  List<Conversation> _conversations = [];
+  RealtimeChannel? _messagesChannel;
 
   JobRepository() {
     init();
@@ -616,4 +623,85 @@ class JobRepository extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  // ─── MESSAGING ────────────────────────────────────────────────────────────
+
+  List<Conversation> get conversations => _conversations;
+
+  int get totalUnreadMessages =>
+      _conversations.fold(0, (sum, c) => sum + c.unreadCount);
+
+  /// Loads conversations from Supabase and subscribes to realtime updates.
+  Future<void> loadConversations() async {
+    if (!_isLoggedIn) return;
+    try {
+      final convs = await SupabaseDbService.fetchConversations(_currentUser.id);
+      _conversations = convs;
+      notifyListeners();
+      _subscribeToMessages();
+    } catch (e) {
+      if (kDebugMode) print('[JobRepository] loadConversations error: $e');
+    }
+  }
+
+  /// Opens (or creates) a DM conversation and returns the conversationId.
+  Future<String?> openOrCreateConversation(String otherUserId) async {
+    if (!_isLoggedIn) return null;
+    return SupabaseDbService.createOrGetConversation(_currentUser.id, otherUserId);
+  }
+
+  /// Fetches messages for a given conversation.
+  Future<List<DirectMessage>> fetchMessages(String conversationId) async {
+    final messages = await SupabaseDbService.fetchMessages(conversationId);
+    // Mark as read
+    SupabaseDbService.markMessagesAsRead(conversationId, _currentUser.id);
+    // Update unread badge
+    final idx = _conversations.indexWhere((c) => c.id == conversationId);
+    if (idx != -1) {
+      _conversations[idx] = _conversations[idx].copyWith(unreadCount: 0);
+      notifyListeners();
+    }
+    return messages;
+  }
+
+  /// Sends a DM message in a conversation.
+  Future<DirectMessage?> sendMessage(String conversationId, String text) async {
+    if (!_isLoggedIn || text.trim().isEmpty) return null;
+    final msg = await SupabaseDbService.sendMessage(
+      conversationId: conversationId,
+      senderId: _currentUser.id,
+      text: text.trim(),
+    );
+    if (msg != null) {
+      // Refresh conversations to update last message preview
+      loadConversations();
+    }
+    return msg;
+  }
+
+  /// Subscribes to Supabase Realtime on the messages table.
+  void _subscribeToMessages() {
+    final client = SupabaseService.client;
+    if (client == null) return;
+    _messagesChannel?.unsubscribe();
+    _messagesChannel = client
+        .channel('public:messages')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'messages',
+          callback: (_) {
+            // Refresh conversations on any new message
+            loadConversations();
+          },
+        )
+        .subscribe();
+  }
+
+  @override
+  void dispose() {
+    _messagesChannel?.unsubscribe();
+    super.dispose();
+  }
 }
+

@@ -6,6 +6,7 @@ import '../models/booking_models.dart';
 import '../services/job_repository.dart';
 import '../widgets/job_recipe_card.dart';
 import 'booking_flow_screen.dart';
+import 'chat_screen.dart';
 
 class PublicStudioScreen extends StatefulWidget {
   final UserProfile detailer;
@@ -531,6 +532,43 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                       ),
                     ),
                     const SizedBox(width: 16),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.surfaceLight,
+                        foregroundColor: AppTheme.textPrimary,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: const BorderSide(color: AppTheme.border),
+                        ),
+                      ),
+                      onPressed: () async {
+                        if (widget.repository.isGuestMode) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Sign in to message detailers')),
+                          );
+                          return;
+                        }
+                        final convId = await widget.repository.openOrCreateConversation(widget.detailer.id);
+                        if (convId != null && context.mounted) {
+                          ChatScreen.open(
+                            context,
+                            conversationId: convId,
+                            otherUserName: widget.detailer.businessName.isNotEmpty
+                                ? widget.detailer.businessName
+                                : widget.detailer.displayName,
+                            otherUserAvatar: widget.detailer.avatarUrl,
+                            repository: widget.repository,
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.chat_rounded, size: 16),
+                      label: const Text(
+                        'Message',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.primary,

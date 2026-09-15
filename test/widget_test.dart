@@ -88,6 +88,7 @@ void main() {
     expect(find.text('AutoDetailCraft'), findsWidgets);
     expect(find.text('Explore'), findsWidgets);
     expect(find.text('Bookings'), findsWidgets);
+    expect(find.text('Messages'), findsWidgets);
 
     // Verify bottom navigation bar is null on desktop
     final scaffold = tester.firstWidget(find.byType(Scaffold)) as Scaffold;
@@ -118,15 +119,11 @@ void main() {
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.text('Explore'), findsWidgets);
     expect(find.text('Bookings'), findsWidgets);
+    expect(find.text('Messages'), findsWidgets);
 
     debugNetworkImageHttpClientProvider = null;
   });
 
-  
-  
-  
-  
-  
   testWidgets('PublicStudioScreen renders header, slivers, tabs, and content correctly', (WidgetTester tester) async {
     debugNetworkImageHttpClientProvider = () => _MockHttpClient();
     addTearDown(() {
@@ -149,14 +146,11 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    print('Direct pump SliverAppBar count: ${find.byType(SliverAppBar).evaluate().length}');
-    print('Direct pump TabBar count: ${find.byType(TabBar).evaluate().length}');
-    print('Direct pump All texts in tree: ${find.byType(Text).evaluate().map((e) => (e.widget as Text).data).toList()}');
-
     expect(find.byType(PublicStudioScreen), findsOneWidget);
     expect(find.text('Transformations'), findsWidgets);
     expect(find.text('Services & Pricing'), findsOneWidget);
     expect(find.text('About & Studio'), findsOneWidget);
+    expect(find.text('Message'), findsOneWidget);
     expect(find.text('Book Studio Service'), findsOneWidget);
 
     // Tap on Services & Pricing tab

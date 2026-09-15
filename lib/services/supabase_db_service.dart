@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../models/message_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_profile.dart';
 import '../models/user_vehicle.dart';
@@ -231,4 +232,165 @@ class SupabaseDbService {
       return [];
     }
   }
+
+  // ─── MESSAGING ────────────────────────────────────────────────────────────
+
+  /// Returns or creates a conversation between two users.
+  static Future<String?> createOrGetConversation(String userId, String otherUserId) async {
+    final client = _client;
+    if (client == null) return null;
+    try {
+      // Check both orderings since participant_a/b aren't ordered
+      final existing = await client
+          .from('conversations')
+          .select('id')
+          .or('and(participant_a.eq.$userId,participant_b.eq.$otherUserId),and(participant_a.eq.$otherUserId,participant_b.eq.$userId)')
+          .maybeSingle();
+      if (existing != null) return existing['id'] as String;
+
+      // Create new conversation
+      final res = await client.from('conversations').insert({
+        'participant_a': userId,
+        'participant_b': otherUserId,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).select('id').single();
+      return res['id'] as String;
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] createOrGetConversation error: $e');
+      return null;
+    }
+  }
+
+  /// Fetches all conversations for a user, enriched with the other user's profile info.
+  static Future<List<Conversation>> fetchConversations(String userId) async {
+    final client = _client;
+    if (client == null) return [];
+    try {
+      final res = await client
+          .from('conversations')
+          .select()
+          .or('participant_a.eq.$userId,participant_b.eq.$userId')
+          .order('updated_at', ascending: false);
+
+      final List<dynamic> rows = res as List<dynamic>;
+      final conversations = <Conversation>[];
+
+      for (final row in rows) {
+        var conv = Conversation.fromJson(row as Map<String, dynamic>);
+        final otherId = conv.participantA == userId ? conv.participantB : conv.participantA;
+
+        // Fetch the other participant's profile
+        try {
+          final profile = await client.from('profiles').select('display_name, business_name, avatar_url, role').eq('id', otherId).maybeSingle();
+          if (profile != null) {
+            final isDetailer = (profile['role'] as String?) == 'detailer';
+            final name = isDetailer
+                ? (profile['business_name'] as String? ?? profile['display_name'] as String? ?? 'User')
+                : (profile['display_name'] as String? ?? 'User');
+            conv = conv.copyWith(
+              otherUserName: name,
+              otherUserAvatar: profile['avatar_url'] as String? ?? '',
+            );
+          }
+        } catch (_) {}
+
+        // Fetch last message
+        try {
+          final lastMsg = await client
+              .from('messages')
+              .select()
+              .eq('conversation_id', conv.id)
+              .order('created_at', ascending: false)
+              .limit(1)
+              .maybeSingle();
+          if (lastMsg != null) {
+            conv = conv.copyWith(lastMessage: DirectMessage.fromJson(lastMsg as Map<String, dynamic>));
+          }
+        } catch (_) {}
+
+        // Fetch unread count
+        try {
+          final unreadRes = await client
+              .from('messages')
+              .select()
+              .eq('conversation_id', conv.id)
+              .eq('is_read', false)
+              .neq('sender_id', userId);
+          conv = conv.copyWith(unreadCount: (unreadRes as List).length);
+        } catch (_) {}
+
+        conversations.add(conv);
+      }
+
+      return conversations;
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] fetchConversations error: $e');
+      return [];
+    }
+  }
+
+  /// Fetches all messages for a conversation.
+  static Future<List<DirectMessage>> fetchMessages(String conversationId) async {
+    final client = _client;
+    if (client == null) return [];
+    try {
+      final res = await client
+          .from('messages')
+          .select()
+          .eq('conversation_id', conversationId)
+          .order('created_at', ascending: true);
+      return (res as List<dynamic>)
+          .map((m) => DirectMessage.fromJson(m as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] fetchMessages error: $e');
+      return [];
+    }
+  }
+
+  /// Sends a message and bumps the conversation updated_at.
+  static Future<DirectMessage?> sendMessage({
+    required String conversationId,
+    required String senderId,
+    required String text,
+  }) async {
+    final client = _client;
+    if (client == null) return null;
+    try {
+      final res = await client.from('messages').insert({
+        'conversation_id': conversationId,
+        'sender_id': senderId,
+        'text': text,
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+        'is_read': false,
+      }).select().single();
+
+      // Bump conversation updated_at for sorting
+      await client.from('conversations').update({
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', conversationId);
+
+      return DirectMessage.fromJson(res as Map<String, dynamic>);
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] sendMessage error: $e');
+      return null;
+    }
+  }
+
+  /// Marks all received messages in a conversation as read.
+  static Future<void> markMessagesAsRead(String conversationId, String userId) async {
+    final client = _client;
+    if (client == null) return;
+    try {
+      await client
+          .from('messages')
+          .update({'is_read': true})
+          .eq('conversation_id', conversationId)
+          .eq('is_read', false)
+          .neq('sender_id', userId);
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] markMessagesAsRead error: $e');
+    }
+  }
 }
+
