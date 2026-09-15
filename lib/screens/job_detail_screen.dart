@@ -54,31 +54,46 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     }
     final convId = await repo.openOrCreateConversation(widget.job.author.id);
     if (convId != null && mounted) {
-      // Close the recipe dialog first, then open chat
-      Navigator.of(context).pop();
-      ChatScreen.open(
-        context,
-        conversationId: convId,
-        otherUserName: widget.job.author.businessName.isNotEmpty
-            ? widget.job.author.businessName
-            : widget.job.author.displayName,
-        otherUserAvatar: widget.job.author.avatarUrl,
-        repository: repo,
-      );
+      final otherUserName = widget.job.author.businessName.isNotEmpty
+          ? widget.job.author.businessName
+          : widget.job.author.displayName;
+      final otherUserAvatar = widget.job.author.avatarUrl;
+      // Store navigator reference BEFORE popping — context becomes stale after pop
+      final nav = Navigator.of(context);
+      nav.pop();
+      nav.push(MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          conversationId: convId,
+          otherUserName: otherUserName,
+          otherUserAvatar: otherUserAvatar,
+          repository: repo,
+        ),
+      ));
     }
   }
 
+
+
   void _handleAddComment() {
+    final repo = widget.repository;
     final text = _commentController.text.trim();
     if (text.isEmpty) return;
 
+    if (repo != null && repo.isGuestMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sign in to join the discussion')),
+      );
+      return;
+    }
+
+    final user = repo?.currentUser;
     final newComment = JobComment(
       id: 'c_${DateTime.now().millisecondsSinceEpoch}',
-      authorName: 'Marcus Vance',
-      authorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
+      authorName: user?.displayName ?? 'Anonymous',
+      authorAvatar: user?.avatarUrl ?? '',
       text: text,
       createdAt: DateTime.now(),
-      isVerifiedPro: true,
+      isVerifiedPro: user?.isIdaCertified ?? false,
     );
 
     setState(() {
@@ -88,14 +103,18 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       _commentController.clear();
     });
 
+    // Persist to Supabase via repository
+    repo?.addComment(_currentJob.id, newComment);
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Comment posted to job recipe!'),
+        content: Text('Comment posted!'),
         backgroundColor: AppTheme.surfaceLight,
         duration: Duration(seconds: 2),
       ),
     );
   }
+
 
   void _showImageZoomModal(BuildContext context, String imageUrl, String label) {
     showDialog(

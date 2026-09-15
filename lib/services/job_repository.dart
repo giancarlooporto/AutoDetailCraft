@@ -549,6 +549,16 @@ class JobRepository extends ChangeNotifier {
     }
   }
 
+  /// Appends a comment to a job and persists to Supabase.
+  void addComment(String jobId, JobComment comment) {
+    final idx = _jobs.indexWhere((j) => j.id == jobId);
+    if (idx == -1) return;
+    final updatedJob = _jobs[idx].copyWith(
+      comments: [..._jobs[idx].comments, comment],
+    );
+    updateJob(updatedJob);
+  }
+
   void deleteJob(String jobId) {
     final jobMatches = _jobs.where((j) => j.id == jobId);
     final DetailJob? jobToDelete = jobMatches.isNotEmpty ? jobMatches.first : null;
