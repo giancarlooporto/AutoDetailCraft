@@ -4,6 +4,7 @@ import '../models/detail_job.dart';
 import '../widgets/paint_hardness_badge.dart';
 import '../widgets/split_slider_widget.dart';
 import '../services/job_repository.dart';
+import 'chat_screen.dart';
 
 class JobDetailScreen extends StatefulWidget {
   final DetailJob job;
@@ -40,6 +41,31 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   void dispose() {
     _commentController.dispose();
     super.dispose();
+  }
+
+  Future<void> _messageDetailer() async {
+    final repo = widget.repository;
+    if (repo == null) return;
+    if (repo.isGuestMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sign in to message detailers')),
+      );
+      return;
+    }
+    final convId = await repo.openOrCreateConversation(widget.job.author.id);
+    if (convId != null && mounted) {
+      // Close the recipe dialog first, then open chat
+      Navigator.of(context).pop();
+      ChatScreen.open(
+        context,
+        conversationId: convId,
+        otherUserName: widget.job.author.businessName.isNotEmpty
+            ? widget.job.author.businessName
+            : widget.job.author.displayName,
+        otherUserAvatar: widget.job.author.avatarUrl,
+        repository: repo,
+      );
+    }
   }
 
   void _handleAddComment() {
@@ -808,6 +834,25 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   label: const Text('Share Inspection Report', style: TextStyle(color: AppTheme.primary)),
                 ),
                 const Spacer(),
+                // Show Message button for other detailers' recipes (not your own)
+                if (widget.repository != null &&
+                    !widget.repository!.isGuestMode &&
+                    widget.repository!.currentUser.id != _currentJob.author.id) ...[
+                  ElevatedButton.icon(
+                    onPressed: _messageDetailer,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.surfaceLight,
+                      foregroundColor: AppTheme.textPrimary,
+                      side: const BorderSide(color: AppTheme.border),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      elevation: 0,
+                    ),
+                    icon: const Icon(Icons.chat_rounded, size: 16),
+                    label: const Text('Message', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 OutlinedButton(
                   onPressed: () => Navigator.of(context).pop(),
                   style: OutlinedButton.styleFrom(
