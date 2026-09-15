@@ -30,6 +30,7 @@ class JobDetailScreen extends StatefulWidget {
 class _JobDetailScreenState extends State<JobDetailScreen> {
   final TextEditingController _commentController = TextEditingController();
   late DetailJob _currentJob;
+  bool _messagingLoading = false;
 
   @override
   void initState() {
@@ -52,29 +53,41 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       );
       return;
     }
+    setState(() => _messagingLoading = true);
     final convId = await repo.openOrCreateConversation(widget.job.author.id);
-    if (convId != null && mounted) {
-      final otherUserName = widget.job.author.businessName.isNotEmpty
-          ? widget.job.author.businessName
-          : widget.job.author.displayName;
-      final otherUserAvatar = widget.job.author.avatarUrl;
-      // Store navigator reference BEFORE popping — context becomes stale after pop
-      final nav = Navigator.of(context);
-      nav.pop();
-      nav.push(MaterialPageRoute(
-        builder: (_) => ChatScreen(
-          conversationId: convId,
-          otherUserName: otherUserName,
-          otherUserAvatar: otherUserAvatar,
-          repository: repo,
+    if (!mounted) return;
+    setState(() => _messagingLoading = false);
+
+    if (convId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open conversation — try from their Studio page.'),
+          duration: Duration(seconds: 3),
         ),
-      ));
+      );
+      return;
     }
+
+    final otherUserName = widget.job.author.businessName.isNotEmpty
+        ? widget.job.author.businessName
+        : widget.job.author.displayName;
+    final otherUserAvatar = widget.job.author.avatarUrl;
+    // Store navigator BEFORE popping — context becomes stale after pop
+    final nav = Navigator.of(context);
+    nav.pop();
+    nav.push(MaterialPageRoute(
+      builder: (_) => ChatScreen(
+        conversationId: convId,
+        otherUserName: otherUserName,
+        otherUserAvatar: otherUserAvatar,
+        repository: repo,
+      ),
+    ));
   }
 
 
 
-  void _handleAddComment() {
+  Future<void> _handleAddComment() async {
     final repo = widget.repository;
     final text = _commentController.text.trim();
     if (text.isEmpty) return;
@@ -103,17 +116,32 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       _commentController.clear();
     });
 
-    // Persist to Supabase via repository
+    // Persist comment to Supabase
     repo?.addComment(_currentJob.id, newComment);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Comment posted!'),
-        backgroundColor: AppTheme.surfaceLight,
-        duration: Duration(seconds: 2),
-      ),
-    );
+    // Ping the detailer in Messages (only for other people's recipes)
+    final isMyOwnJob = repo != null && repo.currentUser.id == _currentJob.author.id;
+    if (repo != null && !isMyOwnJob) {
+      final convId = await repo.openOrCreateConversation(_currentJob.author.id);
+      if (convId != null) {
+        await repo.sendMessage(
+          convId,
+          '💬 ${user?.displayName ?? 'Someone'} commented on your recipe "${_currentJob.title}":\n"$text"',
+        );
+      }
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Comment posted & detailer notified!'),
+          backgroundColor: AppTheme.surfaceLight,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
+
 
 
   void _showImageZoomModal(BuildContext context, String imageUrl, String label) {
@@ -857,8 +885,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                 if (widget.repository != null &&
                     !widget.repository!.isGuestMode &&
                     widget.repository!.currentUser.id != _currentJob.author.id) ...[
-                  ElevatedButton.icon(
-                    onPressed: _messageDetailer,
+                  ElevatedButton(
+                    onPressed: _messagingLoading ? null : _messageDetailer,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.surfaceLight,
                       foregroundColor: AppTheme.textPrimary,
@@ -867,8 +895,23 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       elevation: 0,
                     ),
-                    icon: const Icon(Icons.chat_rounded, size: 16),
-                    label: const Text('Message', style: TextStyle(fontWeight: FontWeight.bold)),
+                    child: _messagingLoading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppTheme.primary,
+                            ),
+                          )
+                        : const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.chat_rounded, size: 16),
+                              SizedBox(width: 6),
+                              Text('Message', style: TextStyle(fontWeight: FontWeight.bold)),
+                            ],
+                          ),
                   ),
                   const SizedBox(width: 8),
                 ],
