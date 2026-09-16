@@ -403,4 +403,49 @@ void main() {
     final updated = repository.bookings.firstWhere((b) => b.id == booking.id);
     expect(updated.status, BookingStatus.completed);
   });
+
+  testWidgets('Desktop view renders single unified unlayered search bar with embedded dropdowns', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: FeedScreen(repository: repository),
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify search TextField exists
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.text('Search transformations, studios, cities...'), findsOneWidget);
+
+    // Verify location & service dropdown buttons are embedded in the bar
+    expect(find.byKey(const Key('location_dropdown_btn')), findsOneWidget);
+    expect(find.byKey(const Key('service_dropdown_btn')), findsOneWidget);
+
+    // Enter search query
+    await tester.enterText(find.byType(TextField), 'Ceramic');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify reset button appears
+    expect(find.byKey(const Key('reset_filters_btn')), findsOneWidget);
+
+    // Tap reset button
+    await tester.tap(find.byKey(const Key('reset_filters_btn')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(repository.searchQuery, isEmpty);
+    debugNetworkImageHttpClientProvider = null;
+  });
 }
