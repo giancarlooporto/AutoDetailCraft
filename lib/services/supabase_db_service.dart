@@ -294,6 +294,18 @@ class SupabaseDbService {
           }
         } catch (_) {}
 
+        // Fallback to public detailers if not in Supabase profiles (e.g. mock detailers)
+        if (conv.otherUserName.isEmpty || conv.otherUserName == 'User') {
+          final match = MockDataService.publicDetailers.where((d) => d.id == otherId);
+          if (match.isNotEmpty) {
+            final d = match.first;
+            conv = conv.copyWith(
+              otherUserName: d.businessName.isNotEmpty ? d.businessName : d.displayName,
+              otherUserAvatar: d.avatarUrl,
+            );
+          }
+        }
+
         // Fetch last message
         try {
           final lastMsg = await client
@@ -304,7 +316,7 @@ class SupabaseDbService {
               .limit(1)
               .maybeSingle();
           if (lastMsg != null) {
-            conv = conv.copyWith(lastMessage: DirectMessage.fromJson(lastMsg as Map<String, dynamic>));
+            conv = conv.copyWith(lastMessage: DirectMessage.fromJson(lastMsg));
           }
         } catch (_) {}
 
@@ -370,7 +382,7 @@ class SupabaseDbService {
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', conversationId);
 
-      return DirectMessage.fromJson(res as Map<String, dynamic>);
+      return DirectMessage.fromJson(res);
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] sendMessage error: $e');
       return null;

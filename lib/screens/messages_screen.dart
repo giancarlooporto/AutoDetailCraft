@@ -3,6 +3,7 @@ import '../core/theme/app_theme.dart';
 import '../models/message_model.dart';
 import '../services/job_repository.dart';
 import 'chat_screen.dart';
+import 'auth_modal.dart';
 
 class MessagesScreen extends StatefulWidget {
   final JobRepository repository;
@@ -27,8 +28,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   Future<void> _openChat(Conversation conv) async {
-    final myId = widget.repository.currentUser.id;
-    final otherId = conv.participantA == myId ? conv.participantB : conv.participantA;
     await ChatScreen.open(
       context,
       conversationId: conv.id,
@@ -77,7 +76,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
                   // Body
                   Expanded(
-                    child: isGuest
+                    child: isGuest && conversations.isEmpty
                         ? _buildGuestEmpty()
                         : _loading
                             ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
@@ -89,7 +88,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                     child: ListView.separated(
                                       padding: EdgeInsets.zero,
                                       itemCount: conversations.length,
-                                      separatorBuilder: (_, __) =>
+                                      separatorBuilder: (_, _) =>
                                           const Divider(height: 1, color: AppTheme.border),
                                       itemBuilder: (ctx, i) =>
                                           _buildConvTile(conversations[i]),
@@ -254,6 +253,17 @@ class _MessagesScreenState extends State<MessagesScreen> {
               'Create a free account to chat with detailers before and after your booking.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.5),
+            ),
+            const SizedBox(height: 18),
+            ElevatedButton(
+              onPressed: () => AuthModal.show(context, repository: widget.repository),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('Sign In or Register', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
         ),

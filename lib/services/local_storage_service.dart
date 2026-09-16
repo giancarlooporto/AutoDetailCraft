@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_profile.dart';
 import '../models/booking_models.dart';
 import '../models/detail_job.dart';
+import '../models/message_model.dart';
 
 class LocalStorageService {
   static const String _userKeyPrefix = 'adc_user_state_v3_';
@@ -15,6 +16,8 @@ class LocalStorageService {
   static const String _activeTabKey = 'adc_active_tab_index_v1';
   static const String _isGuestKey = 'adc_is_guest_mode_v1';
   static const String _siteAccessUnlockedKey = 'adc_site_access_unlocked_v1';
+  static const String _conversationsKey = 'adc_conversations_v1';
+  static const String _messagesKeyPrefix = 'adc_messages_v1_';
 
   // Site Access Gate
   static Future<bool> isSiteUnlocked() async {
@@ -210,6 +213,50 @@ class LocalStorageService {
         print('[LocalStorageService] Error loading custom jobs: $e');
       }
     }
+    return [];
+  }
+
+  // Save conversations list locally
+  static Future<void> saveConversations(List<Conversation> conversations) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = conversations.map((c) => c.toJson()).toList();
+      await prefs.setString(_conversationsKey, jsonEncode(list));
+    } catch (_) {}
+  }
+
+  // Load conversations list locally
+  static Future<List<Conversation>> loadConversations() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_conversationsKey);
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(jsonStr);
+        return list.map((item) => Conversation.fromJson(item as Map<String, dynamic>)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  // Save messages for a conversation locally
+  static Future<void> saveMessages(String conversationId, List<DirectMessage> messages) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = messages.map((m) => m.toJson()).toList();
+      await prefs.setString('$_messagesKeyPrefix$conversationId', jsonEncode(list));
+    } catch (_) {}
+  }
+
+  // Load messages for a conversation locally
+  static Future<List<DirectMessage>> loadMessages(String conversationId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString('$_messagesKeyPrefix$conversationId');
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(jsonStr);
+        return list.map((item) => DirectMessage.fromJson(item as Map<String, dynamic>)).toList();
+      }
+    } catch (_) {}
     return [];
   }
 }

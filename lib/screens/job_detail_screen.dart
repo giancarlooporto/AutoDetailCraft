@@ -5,6 +5,7 @@ import '../widgets/paint_hardness_badge.dart';
 import '../widgets/split_slider_widget.dart';
 import '../services/job_repository.dart';
 import 'chat_screen.dart';
+import 'auth_modal.dart';
 
 class JobDetailScreen extends StatefulWidget {
   final DetailJob job;
@@ -48,9 +49,9 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     final repo = widget.repository;
     if (repo == null) return;
     if (repo.isGuestMode) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sign in to message detailers')),
-      );
+      AuthModal.show(context, repository: repo, onSuccess: () {
+        if (mounted) _messageDetailer();
+      });
       return;
     }
     setState(() => _messagingLoading = true);
@@ -61,7 +62,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     if (convId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Could not open conversation — try from their Studio page.'),
+          content: Text('Could not open conversation. Please try again.'),
           duration: Duration(seconds: 3),
         ),
       );
@@ -93,9 +94,9 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     if (text.isEmpty) return;
 
     if (repo != null && repo.isGuestMode) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sign in to join the discussion')),
-      );
+      AuthModal.show(context, repository: repo, onSuccess: () {
+        if (mounted) _handleAddComment();
+      });
       return;
     }
 
@@ -883,7 +884,6 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                 const Spacer(),
                 // Show Message button for other detailers' recipes (not your own)
                 if (widget.repository != null &&
-                    !widget.repository!.isGuestMode &&
                     widget.repository!.currentUser.id != _currentJob.author.id) ...[
                   ElevatedButton(
                     onPressed: _messagingLoading ? null : _messageDetailer,

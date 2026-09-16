@@ -59,10 +59,29 @@ class Conversation {
 
   factory Conversation.fromJson(Map<String, dynamic> json) => Conversation(
         id: json['id'] as String,
-        participantA: json['participant_a'] as String,
-        participantB: json['participant_b'] as String,
-        updatedAt: DateTime.parse(json['updated_at'] as String),
+        participantA: (json['participant_a'] ?? json['participantA']) as String,
+        participantB: (json['participant_b'] ?? json['participantB']) as String,
+        updatedAt: DateTime.parse(json['updated_at'] ?? json['updatedAt'] as String),
+        lastMessage: json['last_message'] != null
+            ? DirectMessage.fromJson(json['last_message'] as Map<String, dynamic>)
+            : (json['lastMessage'] != null
+                ? DirectMessage.fromJson(json['lastMessage'] as Map<String, dynamic>)
+                : null),
+        otherUserName: (json['other_user_name'] ?? json['otherUserName'] ?? '') as String,
+        otherUserAvatar: (json['other_user_avatar'] ?? json['otherUserAvatar'] ?? '') as String,
+        unreadCount: (json['unread_count'] ?? json['unreadCount'] ?? 0) as int,
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'participant_a': participantA,
+        'participant_b': participantB,
+        'updated_at': updatedAt.toIso8601String(),
+        if (lastMessage != null) 'last_message': lastMessage!.toJson(),
+        'other_user_name': otherUserName,
+        'other_user_avatar': otherUserAvatar,
+        'unread_count': unreadCount,
+      };
 
   Conversation copyWith({
     DirectMessage? lastMessage,

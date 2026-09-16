@@ -112,6 +112,9 @@ class JobRepository extends ChangeNotifier {
     // 6. Background fetch newest community jobs from Supabase if online
     _refreshJobsFromCloud();
 
+    // 7. Load persistent messages & conversations
+    loadConversations();
+
     _isInitialized = true;
     notifyListeners();
   }
@@ -641,52 +644,179 @@ class JobRepository extends ChangeNotifier {
   int get totalUnreadMessages =>
       _conversations.fold(0, (sum, c) => sum + c.unreadCount);
 
-  /// Loads conversations from Supabase and subscribes to realtime updates.
+  /// Loads conversations from local storage and Supabase, subscribing to realtime updates.
   Future<void> loadConversations() async {
-    if (!_isLoggedIn) return;
     try {
-      final convs = await SupabaseDbService.fetchConversations(_currentUser.id);
-      _conversations = convs;
+      // 1. Instant load from local cache
+      final localConvs = await LocalStorageService.loadConversations();
+      if (localConvs.isNotEmpty) {
+        _conversations = localConvs;
+        _enrichConversationProfiles();
+        notifyListeners();
+      }
+
+      // 2. Sync from Supabase if logged in
+      if (_isLoggedIn) {
+        final remoteConvs = await SupabaseDbService.fetchConversations(_currentUser.id);
+        if (remoteConvs.isNotEmpty) {
+          final Map<String, Conversation> convMap = {
+            for (final c in _conversations) c.id: c,
+          };
+          for (final rc in remoteConvs) {
+            convMap[rc.id] = rc;
+          }
+          _conversations = convMap.values.toList();
+        }
+        _subscribeToMessages();
+      }
+
+      _enrichConversationProfiles();
+      _conversations.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      await LocalStorageService.saveConversations(_conversations);
       notifyListeners();
-      _subscribeToMessages();
     } catch (e) {
       if (kDebugMode) print('[JobRepository] loadConversations error: $e');
     }
   }
 
+  void _enrichConversationProfiles() {
+    for (int i = 0; i < _conversations.length; i++) {
+      final c = _conversations[i];
+      if (c.otherUserName.isEmpty || c.otherUserName == 'User' || c.otherUserName == 'Unknown User') {
+        final otherId = c.participantA == _currentUser.id ? c.participantB : c.participantA;
+        final match = _publicDetailers.where((d) => d.id == otherId);
+        if (match.isNotEmpty) {
+          final detailer = match.first;
+          _conversations[i] = c.copyWith(
+            otherUserName: detailer.businessName.isNotEmpty ? detailer.businessName : detailer.displayName,
+            otherUserAvatar: detailer.avatarUrl,
+          );
+        }
+      }
+    }
+  }
+
   /// Opens (or creates) a DM conversation and returns the conversationId.
   Future<String?> openOrCreateConversation(String otherUserId) async {
-    if (!_isLoggedIn) return null;
-    return SupabaseDbService.createOrGetConversation(_currentUser.id, otherUserId);
+    String? convId;
+
+    // 1. Try Supabase cloud conversation if logged in
+    if (_isLoggedIn) {
+      try {
+        convId = await SupabaseDbService.createOrGetConversation(_currentUser.id, otherUserId);
+      } catch (_) {}
+    }
+
+    // 2. Reliable local/offline conversation ID fallback
+    if (convId == null || convId.isEmpty) {
+      convId = 'conv_${_currentUser.id}_$otherUserId';
+    }
+
+    // 3. Ensure conversation exists in local list
+    final existingIdx = _conversations.indexWhere((c) => c.id == convId);
+    if (existingIdx == -1) {
+      String name = 'Detailer';
+      String avatar = '';
+      final match = _publicDetailers.where((d) => d.id == otherUserId);
+      if (match.isNotEmpty) {
+        final d = match.first;
+        name = d.businessName.isNotEmpty ? d.businessName : d.displayName;
+        avatar = d.avatarUrl;
+      }
+      final newConv = Conversation(
+        id: convId,
+        participantA: _currentUser.id,
+        participantB: otherUserId,
+        updatedAt: DateTime.now(),
+        otherUserName: name,
+        otherUserAvatar: avatar,
+      );
+      _conversations.insert(0, newConv);
+      await LocalStorageService.saveConversations(_conversations);
+      notifyListeners();
+    }
+
+    return convId;
   }
 
   /// Fetches messages for a given conversation.
   Future<List<DirectMessage>> fetchMessages(String conversationId) async {
-    final messages = await SupabaseDbService.fetchMessages(conversationId);
-    // Mark as read
-    SupabaseDbService.markMessagesAsRead(conversationId, _currentUser.id);
+    final localMsgs = await LocalStorageService.loadMessages(conversationId);
+    List<DirectMessage> remoteMsgs = [];
+
+    if (_isLoggedIn) {
+      try {
+        remoteMsgs = await SupabaseDbService.fetchMessages(conversationId);
+        SupabaseDbService.markMessagesAsRead(conversationId, _currentUser.id);
+      } catch (_) {}
+    }
+
+    // Merge and deduplicate by id
+    final Map<String, DirectMessage> map = {};
+    for (final m in localMsgs) {
+      map[m.id] = m;
+    }
+    for (final m in remoteMsgs) {
+      map[m.id] = m;
+    }
+
+    final merged = map.values.toList()..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
     // Update unread badge
     final idx = _conversations.indexWhere((c) => c.id == conversationId);
     if (idx != -1) {
       _conversations[idx] = _conversations[idx].copyWith(unreadCount: 0);
+      LocalStorageService.saveConversations(_conversations);
       notifyListeners();
     }
-    return messages;
+    return merged;
   }
 
   /// Sends a DM message in a conversation.
   Future<DirectMessage?> sendMessage(String conversationId, String text) async {
-    if (!_isLoggedIn || text.trim().isEmpty) return null;
-    final msg = await SupabaseDbService.sendMessage(
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return null;
+
+    final localMsg = DirectMessage(
+      id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
       conversationId: conversationId,
       senderId: _currentUser.id,
-      text: text.trim(),
+      text: trimmed,
+      createdAt: DateTime.now(),
+      isRead: false,
     );
-    if (msg != null) {
-      // Refresh conversations to update last message preview
-      loadConversations();
+
+    // 1. Immediately store in local messages cache
+    final msgs = await LocalStorageService.loadMessages(conversationId);
+    msgs.add(localMsg);
+    await LocalStorageService.saveMessages(conversationId, msgs);
+
+    // 2. Update conversation preview and move to top
+    final idx = _conversations.indexWhere((c) => c.id == conversationId);
+    if (idx != -1) {
+      final updated = _conversations[idx].copyWith(
+        lastMessage: localMsg,
+        updatedAt: DateTime.now(),
+      );
+      _conversations.removeAt(idx);
+      _conversations.insert(0, updated);
+      await LocalStorageService.saveConversations(_conversations);
+      notifyListeners();
     }
-    return msg;
+
+    // 3. Sync to Supabase in background
+    if (_isLoggedIn) {
+      SupabaseDbService.sendMessage(
+        conversationId: conversationId,
+        senderId: _currentUser.id,
+        text: trimmed,
+      ).catchError((e) {
+        if (kDebugMode) print('[JobRepository] Supabase sendMessage background error: $e');
+        return null;
+      });
+    }
+
+    return localMsg;
   }
 
   /// Subscribes to Supabase Realtime on the messages table.

@@ -7,6 +7,7 @@ import '../services/job_repository.dart';
 import '../widgets/job_recipe_card.dart';
 import 'booking_flow_screen.dart';
 import 'chat_screen.dart';
+import 'auth_modal.dart';
 
 class PublicStudioScreen extends StatefulWidget {
   final UserProfile detailer;
@@ -544,9 +545,21 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                       ),
                       onPressed: () async {
                         if (widget.repository.isGuestMode) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Sign in to message detailers')),
-                          );
+                          AuthModal.show(context, repository: widget.repository, onSuccess: () async {
+                            if (!context.mounted) return;
+                            final convId = await widget.repository.openOrCreateConversation(widget.detailer.id);
+                            if (convId != null && context.mounted) {
+                              ChatScreen.open(
+                                context,
+                                conversationId: convId,
+                                otherUserName: widget.detailer.businessName.isNotEmpty
+                                    ? widget.detailer.businessName
+                                    : widget.detailer.displayName,
+                                otherUserAvatar: widget.detailer.avatarUrl,
+                                repository: widget.repository,
+                              );
+                            }
+                          });
                           return;
                         }
                         final convId = await widget.repository.openOrCreateConversation(widget.detailer.id);
