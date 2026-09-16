@@ -669,146 +669,123 @@ class _FeedScreenState extends State<FeedScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Desktop: Single Unified Turo-style Search & Filter Pill (Unlayered)
-                        // Mobile: Clean Side-by-Side Location & Service Dropdown Bar
+                        // Desktop: Side-by-Side Search Bar, Location Dropdown & Service Dropdown (No Outer Oval / Not Layered)
                         if (isDesktop) ...[
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(24, 14, 24, 8),
+                            padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
                             child: Center(
                               child: ConstrainedBox(
-                                constraints: const BoxConstraints(maxWidth: 800),
-                                child: Container(
-                                  height: 48,
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.surface,
-                                    borderRadius: BorderRadius.circular(24),
-                                    border: Border.all(
-                                      color: (selectedCity != 'All Locations' ||
-                                              widget.repository.selectedServiceType != 'All Services' ||
-                                              _searchCtrl.text.isNotEmpty)
-                                          ? AppTheme.primary.withAlpha(120)
-                                          : AppTheme.border,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withAlpha(30),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      // Search Input Section
-                                      Expanded(
-                                        flex: 5,
-                                        child: Padding(
-                                          padding: const EdgeInsets.only(left: 14),
-                                          child: Row(
-                                            children: [
-                                              const Icon(Icons.search_rounded, color: AppTheme.primary, size: 20),
-                                              const SizedBox(width: 10),
-                                              Expanded(
-                                                child: TextField(
-                                                  controller: _searchCtrl,
-                                                  decoration: const InputDecoration(
-                                                    hintText: 'Search transformations, studios, cities...',
-                                                    border: InputBorder.none,
-                                                    isDense: true,
-                                                    contentPadding: EdgeInsets.symmetric(vertical: 12),
-                                                  ),
-                                                  onChanged: (v) => widget.repository.setSearchQuery(v),
-                                                ),
-                                              ),
-                                              if (_searchCtrl.text.isNotEmpty)
-                                                IconButton(
-                                                  icon: const Icon(Icons.clear_rounded, size: 18, color: AppTheme.textMuted),
-                                                  padding: EdgeInsets.zero,
-                                                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                                  onPressed: () {
-                                                    _searchCtrl.clear();
-                                                    widget.repository.setSearchQuery('');
-                                                    setState(() {});
-                                                  },
-                                                ),
-                                            ],
+                                constraints: const BoxConstraints(maxWidth: 880),
+                                child: Row(
+                                  children: [
+                                    // 1. Search Bar (Standalone, no outer oval)
+                                    Expanded(
+                                      child: Container(
+                                        height: 38,
+                                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.surface,
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(
+                                            color: _searchCtrl.text.isNotEmpty
+                                                ? AppTheme.primary
+                                                : AppTheme.border,
+                                            width: _searchCtrl.text.isNotEmpty ? 1.5 : 1,
                                           ),
                                         ),
-                                      ),
-
-                                      // Vertical Divider
-                                      Container(
-                                        height: 24,
-                                        width: 1,
-                                        color: AppTheme.border.withAlpha(120),
-                                      ),
-
-                                      // Location Dropdown (Embedded)
-                                      Flexible(
-                                        flex: 3,
-                                        child: _buildLocationDropdown(
-                                          context,
-                                          activeCities,
-                                          selectedCity,
-                                          isEmbedded: true,
-                                        ),
-                                      ),
-
-                                      // Vertical Divider
-                                      Container(
-                                        height: 24,
-                                        width: 1,
-                                        color: AppTheme.border.withAlpha(120),
-                                      ),
-
-                                      // Service Dropdown (Embedded)
-                                      Flexible(
-                                        flex: 3,
-                                        child: _buildServiceDropdown(
-                                          context,
-                                          AppConstants.serviceTypes,
-                                          widget.repository.selectedServiceType,
-                                          isEmbedded: true,
-                                        ),
-                                      ),
-
-                                      // Quick Reset Button
-                                      if (selectedCity != 'All Locations' ||
-                                          widget.repository.selectedServiceType != 'All Services' ||
-                                          _searchCtrl.text.isNotEmpty) ...[
-                                        Padding(
-                                          padding: const EdgeInsets.only(right: 8, left: 4),
-                                          child: Tooltip(
-                                            message: 'Reset Filters',
-                                            child: InkWell(
-                                              key: const Key('reset_filters_btn'),
-                                              onTap: () {
-                                                _searchCtrl.clear();
-                                                widget.repository.clearFilters();
-                                                setState(() {});
-                                              },
-                                              borderRadius: BorderRadius.circular(16),
-                                              child: Container(
-                                                height: 32,
-                                                width: 32,
-                                                decoration: BoxDecoration(
-                                                  color: AppTheme.surfaceLight,
-                                                  shape: BoxShape.circle,
-                                                  border: Border.all(color: AppTheme.primary.withAlpha(80)),
+                                        child: Row(
+                                          children: [
+                                            const Icon(Icons.search_rounded, color: AppTheme.primary, size: 18),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: TextField(
+                                                controller: _searchCtrl,
+                                                decoration: const InputDecoration(
+                                                  hintText: 'Search transformations, studios, cities...',
+                                                  hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                                                  border: InputBorder.none,
+                                                  enabledBorder: InputBorder.none,
+                                                  focusedBorder: InputBorder.none,
+                                                  filled: false,
+                                                  isDense: true,
+                                                  contentPadding: EdgeInsets.symmetric(vertical: 8),
                                                 ),
-                                                child: const Icon(
-                                                  Icons.filter_alt_off_rounded,
-                                                  size: 15,
-                                                  color: AppTheme.primary,
-                                                ),
+                                                onChanged: (v) => widget.repository.setSearchQuery(v),
                                               ),
+                                            ),
+                                            if (_searchCtrl.text.isNotEmpty)
+                                              IconButton(
+                                                icon: const Icon(Icons.clear_rounded, size: 16, color: AppTheme.textMuted),
+                                                padding: EdgeInsets.zero,
+                                                constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                                onPressed: () {
+                                                  _searchCtrl.clear();
+                                                  widget.repository.setSearchQuery('');
+                                                  setState(() {});
+                                                },
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+
+                                    // 2. All Locations Dropdown
+                                    ConstrainedBox(
+                                      constraints: const BoxConstraints(minWidth: 150, maxWidth: 190),
+                                      child: _buildLocationDropdown(
+                                        context,
+                                        activeCities,
+                                        selectedCity,
+                                        isEmbedded: false,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+
+                                    // 3. All Services Dropdown
+                                    ConstrainedBox(
+                                      constraints: const BoxConstraints(minWidth: 150, maxWidth: 190),
+                                      child: _buildServiceDropdown(
+                                        context,
+                                        AppConstants.serviceTypes,
+                                        widget.repository.selectedServiceType,
+                                        isEmbedded: false,
+                                      ),
+                                    ),
+
+                                    // 4. Quick Reset Button (if filters or search active)
+                                    if (selectedCity != 'All Locations' ||
+                                        widget.repository.selectedServiceType != 'All Services' ||
+                                        _searchCtrl.text.isNotEmpty) ...[
+                                      const SizedBox(width: 6),
+                                      Tooltip(
+                                        message: 'Reset Filters',
+                                        child: InkWell(
+                                          key: const Key('reset_filters_btn'),
+                                          onTap: () {
+                                            _searchCtrl.clear();
+                                            widget.repository.clearFilters();
+                                            setState(() {});
+                                          },
+                                          borderRadius: BorderRadius.circular(10),
+                                          child: Container(
+                                            height: 38,
+                                            width: 36,
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.surface,
+                                              borderRadius: BorderRadius.circular(10),
+                                              border: Border.all(color: AppTheme.primary.withAlpha(140)),
+                                            ),
+                                            child: const Icon(
+                                              Icons.filter_alt_off_rounded,
+                                              size: 16,
+                                              color: AppTheme.primary,
                                             ),
                                           ),
                                         ),
-                                      ] else
-                                        const SizedBox(width: 8),
+                                      ),
                                     ],
-                                  ),
+                                  ],
                                 ),
                               ),
                             ),
