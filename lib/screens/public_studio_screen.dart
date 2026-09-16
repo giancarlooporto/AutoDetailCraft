@@ -49,6 +49,28 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
     );
   }
 
+  Future<void> _openChatWithDetailer() async {
+    final repo = widget.repository;
+    if (repo.isGuestMode) {
+      AuthModal.show(context, repository: repo, onSuccess: () {
+        if (mounted) _openChatWithDetailer();
+      });
+      return;
+    }
+    final convId = await repo.openOrCreateConversation(widget.detailer.id);
+    if (convId != null && mounted) {
+      ChatScreen.open(
+        context,
+        conversationId: convId,
+        otherUserName: widget.detailer.businessName.isNotEmpty
+            ? widget.detailer.businessName
+            : widget.detailer.displayName,
+        otherUserAvatar: widget.detailer.avatarUrl,
+        repository: repo,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;

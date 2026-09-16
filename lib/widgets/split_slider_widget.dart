@@ -285,13 +285,18 @@ class _SplitSliderWidgetState extends State<SplitSliderWidget> {
                   ),
                 ),
 
-                // 7. Full-surface Drag Handler
+                // 7. Full-surface Drag & Tap Handler
                 Positioned.fill(
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
+                    onTapDown: (details) {
+                      setState(() {
+                        _position = (details.localPosition.dx / width).clamp(0.02, 0.98);
+                      });
+                    },
                     onHorizontalDragUpdate: (details) {
                       setState(() {
-                        _position = (_position + details.delta.dx / width).clamp(0.02, 0.98);
+                        _position = (details.localPosition.dx / width).clamp(0.02, 0.98);
                       });
                     },
                   ),

@@ -41,6 +41,7 @@ class _DilutionDialogState extends State<DilutionDialog> {
 
     return Dialog(
       backgroundColor: AppTheme.surface,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
         side: const BorderSide(color: AppTheme.border),
@@ -95,38 +96,43 @@ class _DilutionDialogState extends State<DilutionDialog> {
               const SizedBox(height: 16),
 
               // Unit Selector
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
                     'Volume Unit',
                     style: TextStyle(fontWeight: FontWeight.w600, color: AppTheme.textPrimary, fontSize: 13),
                   ),
-                  SegmentedButton<VolumeUnit>(
-                    segments: const [
-                      ButtonSegment(value: VolumeUnit.flOz, label: Text('Fluid Oz (oz)')),
-                      ButtonSegment(value: VolumeUnit.ml, label: Text('Milliliters (ml)')),
-                    ],
-                    selected: {_unit},
-                    onSelectionChanged: (set) {
-                      setState(() {
-                        _unit = set.first;
-                        _totalVolume = _unit == VolumeUnit.flOz ? 32.0 : 1000.0;
-                      });
-                    },
-                    style: ButtonStyle(
-                      backgroundColor: WidgetStateProperty.resolveWith((states) {
-                        if (states.contains(WidgetState.selected)) {
-                          return AppTheme.primary.withAlpha(40);
-                        }
-                        return AppTheme.surfaceLight;
-                      }),
-                      foregroundColor: WidgetStateProperty.resolveWith((states) {
-                        if (states.contains(WidgetState.selected)) {
-                          return AppTheme.primary;
-                        }
-                        return AppTheme.textSecondary;
-                      }),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<VolumeUnit>(
+                      segments: const [
+                        ButtonSegment(value: VolumeUnit.flOz, label: Text('fl oz')),
+                        ButtonSegment(value: VolumeUnit.ml, label: Text('ml')),
+                      ],
+                      selected: {_unit},
+                      onSelectionChanged: (set) {
+                        setState(() {
+                          _unit = set.first;
+                          _totalVolume = _unit == VolumeUnit.flOz ? 32.0 : 1000.0;
+                        });
+                      },
+                      style: ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        backgroundColor: WidgetStateProperty.resolveWith((states) {
+                          if (states.contains(WidgetState.selected)) {
+                            return AppTheme.primary.withAlpha(40);
+                          }
+                          return AppTheme.surfaceLight;
+                        }),
+                        foregroundColor: WidgetStateProperty.resolveWith((states) {
+                          if (states.contains(WidgetState.selected)) {
+                            return AppTheme.primary;
+                          }
+                          return AppTheme.textSecondary;
+                        }),
+                      ),
                     ),
                   ),
                 ],
@@ -164,6 +170,7 @@ class _DilutionDialogState extends State<DilutionDialog> {
               const SizedBox(height: 8),
               DropdownButtonFormField<double>(
                 initialValue: _waterParts,
+                isExpanded: true,
                 decoration: const InputDecoration(
                   contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 ),
@@ -171,7 +178,7 @@ class _DilutionDialogState extends State<DilutionDialog> {
                 items: _ratioPresets.entries.map((e) {
                   return DropdownMenuItem(
                     value: e.value,
-                    child: Text(e.key, style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary)),
+                    child: Text(e.key, style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary), overflow: TextOverflow.ellipsis),
                   );
                 }).toList(),
                 onChanged: (val) {
@@ -244,7 +251,13 @@ class _DilutionDialogState extends State<DilutionDialog> {
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  const Text('Chemical Concentrate:', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                                  const Expanded(
+                                    child: Text(
+                                      'Chemical Concentrate:',
+                                      style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
                                 ],
                               ),
                               Padding(
@@ -272,7 +285,13 @@ class _DilutionDialogState extends State<DilutionDialog> {
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  const Text('Water / Distilled:', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                                  const Expanded(
+                                    child: Text(
+                                      'Water / Distilled:',
+                                      style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
                                 ],
                               ),
                               Padding(

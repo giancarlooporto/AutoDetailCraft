@@ -6,6 +6,7 @@ import '../services/job_repository.dart';
 import '../widgets/job_recipe_card.dart';
 import 'booking_flow_screen.dart';
 import 'public_studio_screen.dart';
+import '../widgets/dilution_dialog.dart';
 
 class FeedScreen extends StatefulWidget {
   final JobRepository repository;
@@ -550,6 +551,16 @@ class _FeedScreenState extends State<FeedScreen> {
                               ],
                             ),
                       actions: [
+                        IconButton(
+                          icon: const Icon(Icons.calculate_outlined, color: AppTheme.primary, size: 20),
+                          tooltip: 'Chemical Dilution Calculator',
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (_) => const DilutionDialog(),
+                            );
+                          },
+                        ),
                         IconButton(
                           icon: Icon(_isSearching ? Icons.close : Icons.search_rounded),
                           onPressed: () {

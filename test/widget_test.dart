@@ -1,5 +1,9 @@
 import 'package:detail_craft/screens/public_studio_screen.dart';
 import 'package:detail_craft/screens/feed_screen.dart';
+import 'package:detail_craft/screens/job_detail_screen.dart';
+import 'package:detail_craft/models/detail_job.dart';
+import 'package:detail_craft/models/booking_models.dart';
+import 'package:detail_craft/widgets/dilution_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:detail_craft/core/theme/app_theme.dart';
@@ -264,5 +268,139 @@ void main() {
     expect(find.byKey(const Key('toggle_featured_detailers_btn')), findsNothing);
 
     debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('Dilution Calculator dialog opens from AppBar calculator button on mobile', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: FeedScreen(repository: repository),
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Tap the calculate icon button
+    final calcBtn = find.byIcon(Icons.calculate_outlined);
+    expect(calcBtn, findsOneWidget);
+    await tester.tap(calcBtn);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify DilutionDialog is opened
+    expect(find.byType(DilutionDialog), findsOneWidget);
+    expect(find.text('Dilution Calculator'), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('JobDetailScreen supports Twitter-style threaded replies and reply banner', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    final sampleJob = repository.jobs.first.copyWith(
+      comments: [
+        JobComment(
+          id: 'cmt_root_1',
+          authorName: 'Alex Detailer',
+          authorAvatar: '',
+          text: 'What pad did you use on the hood?',
+          createdAt: DateTime.now(),
+          isVerifiedPro: true,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      home: JobDetailScreen(job: sampleJob, repository: repository),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify Discussion section exists
+    expect(find.textContaining('Discussion'), findsOneWidget);
+
+    // Scroll until reply button is visible
+    await tester.ensureVisible(find.text('Reply').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Tap first reply button to trigger Twitter-style reply mode
+    await tester.tap(find.text('Reply').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify "Replying to @" banner appears
+    expect(find.textContaining('Replying to @Alex Detailer'), findsOneWidget);
+
+    // Type a reply into the comment box
+    final textField = find.byType(TextField).last;
+    await tester.ensureVisible(textField);
+    await tester.pump();
+    await tester.enterText(textField, 'Great info on this polish!');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Send the reply
+    final sendBtn = find.byIcon(Icons.send_rounded);
+    await tester.ensureVisible(sendBtn);
+    await tester.pump();
+    await tester.tap(sendBtn);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify comment is now visible in the discussion thread
+    expect(find.text('Great info on this polish!'), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('JobRepository updateBookingStatus updates booking state properly', (WidgetTester tester) async {
+    final repository = JobRepository();
+    final booking = BookingAppointment(
+      id: 'bk_test_1',
+      detailerId: 'usr_marcus',
+      detailerName: 'Marcus Vance',
+      detailerBusinessName: 'Apex Precision Detailing',
+      detailerAvatar: '',
+      clientName: 'Test Client',
+      clientPhone: '(512) 555-0199',
+      clientEmail: 'test@example.com',
+      vehicleYearMakeModel: '2023 BMW M3',
+      vehicleSize: VehicleSize.coupeSedan,
+      package: repository.currentUser.servicePackages.first,
+      locationType: ServiceLocationType.mobile,
+      clientAddress: 'Austin, TX',
+      scheduledDate: DateTime.now().add(const Duration(days: 2)),
+      scheduledTimeSlot: '9:00 AM - 12:00 PM',
+      totalPrice: 450,
+      depositAmount: 100,
+      status: BookingStatus.pending,
+    );
+
+    repository.addBooking(booking);
+    expect(repository.bookings.first.status, BookingStatus.pending);
+
+    repository.updateBookingStatus(booking.id, BookingStatus.completed);
+    final updated = repository.bookings.firstWhere((b) => b.id == booking.id);
+    expect(updated.status, BookingStatus.completed);
   });
 }

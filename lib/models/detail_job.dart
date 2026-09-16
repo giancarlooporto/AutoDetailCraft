@@ -57,6 +57,8 @@ class JobComment {
   final String text;
   final DateTime createdAt;
   final bool isVerifiedPro;
+  final String? parentId;
+  final String? replyToAuthorName;
 
   const JobComment({
     required this.id,
@@ -65,6 +67,8 @@ class JobComment {
     required this.text,
     required this.createdAt,
     this.isVerifiedPro = false,
+    this.parentId,
+    this.replyToAuthorName,
   });
 
   Map<String, dynamic> toJson() => {
@@ -74,6 +78,8 @@ class JobComment {
     'text': text,
     'createdAt': createdAt.toIso8601String(),
     'isVerifiedPro': isVerifiedPro,
+    if (parentId != null) 'parentId': parentId,
+    if (replyToAuthorName != null) 'replyToAuthorName': replyToAuthorName,
   };
 
   factory JobComment.fromJson(Map<String, dynamic> json) => JobComment(
@@ -83,6 +89,8 @@ class JobComment {
     text: json['text'] as String? ?? '',
     createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
     isVerifiedPro: json['isVerifiedPro'] as bool? ?? false,
+    parentId: json['parentId'] as String?,
+    replyToAuthorName: json['replyToAuthorName'] as String?,
   );
 }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../core/theme/app_theme.dart';
 import '../models/booking_models.dart';
@@ -107,7 +108,53 @@ class BookingsListScreen extends StatelessWidget {
                   ),
                 ),
               ],
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
+              // Status Management Actions
+              if (booking.status == BookingStatus.pending) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00E676),
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.check_circle_outline, size: 18),
+                    label: const Text('Confirm & Accept Booking', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () {
+                      repository.updateBookingStatus(booking.id, BookingStatus.confirmed);
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Booking confirmed & added to schedule!')),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ] else if (booking.status == BookingStatus.confirmed) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2979FF),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.task_alt_rounded, size: 18),
+                    label: const Text('Complete Service & Release Escrow', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () {
+                      repository.updateBookingStatus(booking.id, BookingStatus.completed);
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Service marked as completed & escrow released!')),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
               Row(
                 children: [
                   Expanded(
@@ -119,7 +166,16 @@ class BookingsListScreen extends StatelessWidget {
                       ),
                       icon: const Icon(Icons.phone_outlined, size: 16),
                       label: const Text('Call Host'),
-                      onPressed: () {},
+                      onPressed: () {
+                        final phone = booking.clientPhone.isNotEmpty ? booking.clientPhone : '(512) 555-0199';
+                        Clipboard.setData(ClipboardData(text: phone));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Detailer phone number ($phone) copied to clipboard!'),
+                            action: SnackBarAction(label: 'Call', onPressed: () {}),
+                          ),
+                        );
+                      },
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -133,11 +189,37 @@ class BookingsListScreen extends StatelessWidget {
                       ),
                       icon: const Icon(Icons.directions_rounded, size: 16),
                       label: const Text('Directions / Map', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () {},
+                      onPressed: () {
+                        final address = booking.clientAddress.isNotEmpty ? booking.clientAddress : 'Austin, TX';
+                        final mapsUrl = 'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(address)}';
+                        Clipboard.setData(ClipboardData(text: mapsUrl));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Service location address copied: $address'),
+                            action: SnackBarAction(label: 'OK', onPressed: () {}),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ],
               ),
+              if (booking.status != BookingStatus.cancelled && booking.status != BookingStatus.completed) ...[
+                const SizedBox(height: 12),
+                Center(
+                  child: TextButton.icon(
+                    onPressed: () {
+                      repository.updateBookingStatus(booking.id, BookingStatus.cancelled);
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Booking has been cancelled.')),
+                      );
+                    },
+                    icon: const Icon(Icons.cancel_outlined, size: 14, color: Color(0xFFFF5252)),
+                    label: const Text('Cancel Reservation', style: TextStyle(color: Color(0xFFFF5252), fontSize: 12)),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

@@ -34,11 +34,11 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   TeamMember? _selectedTeamMember; // Delegated / preferred detailer
 
   // Input Controllers
-  final _vehicleModelCtrl = TextEditingController(text: '2024 Porsche 911 GT3');
-  final _addressCtrl = TextEditingController(text: '742 Evergreen Terrace, Austin, TX');
-  final _nameCtrl = TextEditingController(text: 'Giancarlo Oporto');
-  final _phoneCtrl = TextEditingController(text: '(512) 555-0199');
-  final _emailCtrl = TextEditingController(text: 'giancarlo@example.com');
+  final _vehicleModelCtrl = TextEditingController();
+  final _addressCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
 
   final List<String> _timeSlots = [
@@ -51,6 +51,26 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   @override
   void initState() {
     super.initState();
+    final user = widget.repository.currentUser;
+    if (user.displayName.isNotEmpty) {
+      _nameCtrl.text = user.displayName;
+    }
+    if (user.phone.isNotEmpty) {
+      _phoneCtrl.text = user.phone;
+    }
+    if (user.username.isNotEmpty) {
+      _emailCtrl.text = user.username.contains('@') ? user.username : '${user.username}@example.com';
+    }
+    if (user.location.isNotEmpty) {
+      _addressCtrl.text = user.location;
+    }
+    if (user.myGarage.isNotEmpty) {
+      final v = user.myGarage.first;
+      _vehicleModelCtrl.text = '${v.year} ${v.make} ${v.model}'.trim();
+    } else {
+      _vehicleModelCtrl.text = '2024 Porsche 911 GT3';
+    }
+
     _selectedPackage = widget.initialPackage ??
         (widget.detailer.servicePackages.isNotEmpty
             ? widget.detailer.servicePackages.first
@@ -703,11 +723,13 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
               ),
               TextButton(
                 onPressed: () async {
+                  final now = DateUtils.dateOnly(DateTime.now());
+                  final initial = _selectedDate.isBefore(now) ? now : DateUtils.dateOnly(_selectedDate);
                   final picked = await showDatePicker(
                     context: context,
-                    initialDate: _selectedDate,
-                    firstDate: DateTime.now(),
-                    lastDate: DateTime.now().add(const Duration(days: 60)),
+                    initialDate: initial,
+                    firstDate: now,
+                    lastDate: now.add(const Duration(days: 60)),
                   );
                   if (picked != null) {
                     setState(() {

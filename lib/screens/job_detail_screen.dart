@@ -33,6 +33,8 @@ class JobDetailScreen extends StatefulWidget {
 
 class _JobDetailScreenState extends State<JobDetailScreen> {
   final TextEditingController _commentController = TextEditingController();
+  final FocusNode _commentFocusNode = FocusNode();
+  JobComment? _replyingToComment;
   late DetailJob _currentJob;
   bool _messagingLoading = false;
 
@@ -45,7 +47,21 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   @override
   void dispose() {
     _commentController.dispose();
+    _commentFocusNode.dispose();
     super.dispose();
+  }
+
+  void _setReplyTo(JobComment comment) {
+    setState(() {
+      _replyingToComment = comment;
+    });
+    _commentFocusNode.requestFocus();
+  }
+
+  void _cancelReply() {
+    setState(() {
+      _replyingToComment = null;
+    });
   }
 
   Future<void> _messageDetailer() async {
@@ -126,13 +142,19 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     }
 
     final user = repo?.currentUser;
+    final authorName = user?.displayName.isNotEmpty == true ? user!.displayName : 'Anonymous';
+    final parentId = _replyingToComment?.parentId ?? _replyingToComment?.id;
+    final replyToName = _replyingToComment != null ? '@${_replyingToComment!.authorName}' : null;
+
     final newComment = JobComment(
       id: 'c_${DateTime.now().millisecondsSinceEpoch}',
-      authorName: user?.displayName ?? 'Anonymous',
+      authorName: authorName,
       authorAvatar: user?.avatarUrl ?? '',
       text: text,
       createdAt: DateTime.now(),
       isVerifiedPro: user?.isIdaCertified ?? false,
+      parentId: parentId,
+      replyToAuthorName: replyToName,
     );
 
     setState(() {
@@ -140,29 +162,18 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         comments: [..._currentJob.comments, newComment],
       );
       _commentController.clear();
+      _replyingToComment = null;
     });
 
     // Persist comment to Supabase
     repo?.addComment(_currentJob.id, newComment);
 
-    // Ping the detailer in Messages (only for other people's recipes)
-    final isMyOwnJob = repo != null && repo.currentUser.id == _currentJob.author.id;
-    if (repo != null && !isMyOwnJob) {
-      final convId = await repo.openOrCreateConversation(_currentJob.author.id);
-      if (convId != null) {
-        await repo.sendMessage(
-          convId,
-          '💬 ${user?.displayName ?? 'Someone'} commented on your recipe "${_currentJob.title}":\n"$text"',
-        );
-      }
-    }
-
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Comment posted & detailer notified!'),
+        SnackBar(
+          content: Text(replyToName != null ? 'Reply posted to $replyToName!' : 'Comment posted to discussion thread!'),
           backgroundColor: AppTheme.surfaceLight,
-          duration: Duration(seconds: 2),
+          duration: const Duration(seconds: 2),
         ),
       );
     }
@@ -426,6 +437,173 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     );
   }
 
+  List<Widget> _buildThreadedComments() {
+    final rootComments = _currentJob.comments.where((c) => c.parentId == null || c.parentId!.isEmpty).toList();
+    final allReplies = _currentJob.comments.where((c) => c.parentId != null && c.parentId!.isNotEmpty).toList();
+    final List<Widget> items = [];
+
+    for (final root in rootComments) {
+      final childReplies = allReplies.where((r) => r.parentId == root.id).toList();
+
+      items.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildCommentCard(root, isReply: false),
+              if (childReplies.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Padding(
+                  padding: const EdgeInsets.only(left: 18),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border(
+                        left: BorderSide(
+                          color: AppTheme.border.withAlpha(140),
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                    padding: const EdgeInsets.only(left: 10),
+                    child: Column(
+                      children: childReplies.map((reply) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: _buildCommentCard(reply, isReply: true),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    final rootIds = rootComments.map((r) => r.id).toSet();
+    final orphanReplies = allReplies.where((r) => !rootIds.contains(r.parentId)).toList();
+    for (final orphan in orphanReplies) {
+      items.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: _buildCommentCard(orphan, isReply: false),
+        ),
+      );
+    }
+
+    return items;
+  }
+
+  Widget _buildCommentCard(JobComment c, {required bool isReply}) {
+    final isSelectedForReply = _replyingToComment?.id == c.id;
+
+    return Container(
+      padding: EdgeInsets.all(isReply ? 10 : 12),
+      decoration: BoxDecoration(
+        color: isReply ? AppTheme.surface.withAlpha(160) : AppTheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isSelectedForReply ? AppTheme.primary : AppTheme.border,
+          width: isSelectedForReply ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                radius: isReply ? 14 : 16,
+                backgroundColor: AppTheme.surfaceLight,
+                backgroundImage: c.authorAvatar.isNotEmpty ? NetworkImage(c.authorAvatar) : null,
+                onBackgroundImageError: c.authorAvatar.isNotEmpty ? (_, _) {} : null,
+                child: Text(
+                  c.authorName.isNotEmpty ? c.authorName[0].toUpperCase() : '?',
+                  style: TextStyle(fontSize: isReply ? 10 : 11, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            c.authorName,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: isReply ? 12 : 13,
+                              color: AppTheme.textPrimary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (c.isVerifiedPro) ...[
+                          const SizedBox(width: 4),
+                          const Icon(Icons.verified_rounded, size: 13, color: AppTheme.primary),
+                        ],
+                      ],
+                    ),
+                    if (c.replyToAuthorName != null && c.replyToAuthorName!.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Replying to ${c.replyToAuthorName}',
+                        style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                    const SizedBox(height: 4),
+                    Text(
+                      c.text,
+                      style: TextStyle(fontSize: isReply ? 12 : 12.5, color: AppTheme.textSecondary, height: 1.35),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              InkWell(
+                onTap: () => _setReplyTo(c),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.reply_rounded,
+                        size: 13,
+                        color: isSelectedForReply ? AppTheme.primary : AppTheme.textMuted,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Reply',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: isSelectedForReply ? AppTheme.primary : AppTheme.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final beforeList = _currentJob.allBeforePhotos;
@@ -543,9 +721,9 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                             CircleAvatar(
                               radius: 22,
                               backgroundColor: AppTheme.surfaceLight,
-                              backgroundImage: NetworkImage(_currentJob.author.avatarUrl),
-                              onBackgroundImageError: (_, _) {},
-                              child: Text(_currentJob.author.displayName[0]),
+                              backgroundImage: _currentJob.author.avatarUrl.isNotEmpty ? NetworkImage(_currentJob.author.avatarUrl) : null,
+                              onBackgroundImageError: _currentJob.author.avatarUrl.isNotEmpty ? (_, _) {} : null,
+                              child: Text(_currentJob.author.displayName.isNotEmpty ? _currentJob.author.displayName[0].toUpperCase() : '?'),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -811,15 +989,51 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   ),
                   const SizedBox(height: 12),
 
+                  // Active Replying-To Banner (Twitter-style)
+                  if (_replyingToComment != null)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withAlpha(20),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.primary.withAlpha(80)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.reply_rounded, size: 15, color: AppTheme.primary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Replying to @${_replyingToComment!.authorName}',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          InkWell(
+                            onTap: _cancelReply,
+                            borderRadius: BorderRadius.circular(12),
+                            child: const Padding(
+                              padding: EdgeInsets.all(2),
+                              child: Icon(Icons.close_rounded, size: 16, color: AppTheme.textMuted),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
                   // Comment Input
                   Row(
                     children: [
                       Expanded(
                         child: TextField(
                           controller: _commentController,
-                          decoration: const InputDecoration(
-                            hintText: 'Ask about compound, pad, or flash time...',
-                            contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          focusNode: _commentFocusNode,
+                          decoration: InputDecoration(
+                            hintText: _replyingToComment != null
+                                ? 'Write a reply to @${_replyingToComment!.authorName}...'
+                                : 'Ask about compound, pad, or flash time...',
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                           ),
                         ),
                       ),
@@ -836,57 +1050,21 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Comments List
-                  Column(
-                    children: _currentJob.comments.map((c) {
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppTheme.surface,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppTheme.border),
+                  // Comments List (Twitter-style Threaded)
+                  if (_currentJob.comments.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(
+                        child: Text(
+                          'No comments yet. Be the first to ask about the recipe!',
+                          style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
                         ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            CircleAvatar(
-                              radius: 16,
-                              backgroundColor: AppTheme.surfaceLight,
-                              backgroundImage: NetworkImage(c.authorAvatar),
-                              onBackgroundImageError: (context, error) {},
-                              child: Text(c.authorName[0], style: const TextStyle(fontSize: 11)),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Text(
-                                        c.authorName,
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                                      ),
-                                      if (c.isVerifiedPro) ...[
-                                        const SizedBox(width: 4),
-                                        const Icon(Icons.verified_rounded, size: 13, color: AppTheme.primary),
-                                      ],
-                                    ],
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    c.text,
-                                    style: const TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  ),
+                      ),
+                    )
+                  else
+                    Column(
+                      children: _buildThreadedComments(),
+                    ),
                 ],
               ),
             ),
