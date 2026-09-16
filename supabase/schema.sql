@@ -119,3 +119,69 @@ create policy "Users can update their uploaded photos"
 create policy "Users can delete their uploaded photos"
   on storage.objects for delete
   using ( bucket_id = 'vehicle-photos' and auth.role() = 'authenticated' );
+
+-- 5. CONVERSATIONS TABLE (Direct Messages threads)
+create table if not exists public.conversations (
+  id uuid primary key default gen_random_uuid(),
+  participant_a uuid not null,
+  participant_b uuid not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique (participant_a, participant_b)
+);
+
+alter table public.conversations enable row level security;
+
+create policy "Users can view their own conversations."
+  on public.conversations for select
+  using ( auth.uid() = participant_a or auth.uid() = participant_b );
+
+create policy "Authenticated users can create conversations."
+  on public.conversations for insert
+  with check ( auth.uid() = participant_a or auth.uid() = participant_b );
+
+create policy "Participants can update conversation timestamp."
+  on public.conversations for update
+  using ( auth.uid() = participant_a or auth.uid() = participant_b );
+
+-- 6. MESSAGES TABLE (Individual DMs)
+create table if not exists public.messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid references public.conversations(id) on delete cascade not null,
+  sender_id uuid not null,
+  text text not null,
+  is_read boolean default false,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.messages enable row level security;
+
+create policy "Conversation participants can view messages."
+  on public.messages for select
+  using (
+    exists (
+      select 1 from public.conversations c
+      where c.id = conversation_id
+        and (c.participant_a = auth.uid() or c.participant_b = auth.uid())
+    )
+  );
+
+create policy "Authenticated users can send messages."
+  on public.messages for insert
+  with check (
+    auth.uid() = sender_id
+    and exists (
+      select 1 from public.conversations c
+      where c.id = conversation_id
+        and (c.participant_a = auth.uid() or c.participant_b = auth.uid())
+    )
+  );
+
+create policy "Recipients can mark messages as read."
+  on public.messages for update
+  using (
+    exists (
+      select 1 from public.conversations c
+      where c.id = conversation_id
+        and (c.participant_a = auth.uid() or c.participant_b = auth.uid())
+    )
+  );
