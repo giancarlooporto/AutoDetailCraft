@@ -469,24 +469,30 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           child: Container(height: 1, color: AppTheme.border.withAlpha(120)),
         ),
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 880),
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 120),
-            children: [
-              // 1. Strictly ONE Single 50/50 Comparative Hero Slider with true resolution containment
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: SplitSliderWidget(
-                  beforeImageUrl: _currentJob.beforeImageUrl,
-                  afterImageUrl: _currentJob.afterImageUrl,
-                  defectBadge: _currentJob.defectBadge,
-                      height: 420,
-                      fit: BoxFit.contain,
-                      zoomScale: 1.18,
-                    ),
-                  ),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 880),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 1. Strictly ONE Single 50/50 Comparative Hero Slider with true resolution containment
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: SplitSliderWidget(
+                          beforeImageUrl: _currentJob.beforeImageUrl,
+                          afterImageUrl: _currentJob.afterImageUrl,
+                          defectBadge: _currentJob.defectBadge,
+                          height: 420,
+                          fit: BoxFit.contain,
+                          zoomScale: 1.18,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
 
             // 2. Inspection Photo Containers (View All Before & After)
             Padding(
@@ -696,12 +702,10 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   ),
                   const SizedBox(height: 12),
 
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _currentJob.recipeStages.length,
-                    itemBuilder: (context, idx) {
-                      final stage = _currentJob.recipeStages[idx];
+                  Column(
+                    children: _currentJob.recipeStages.asMap().entries.map((entry) {
+                      final idx = entry.key;
+                      final stage = entry.value;
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(14),
@@ -781,7 +785,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                           ],
                         ),
                       );
-                    },
+                    }).toList(),
                   ),
                 ],
               ),
@@ -833,12 +837,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   const SizedBox(height: 16),
 
                   // Comments List
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _currentJob.comments.length,
-                    itemBuilder: (context, idx) {
-                      final c = _currentJob.comments[idx];
+                  Column(
+                    children: _currentJob.comments.map((c) {
                       return Container(
                         margin: const EdgeInsets.only(bottom: 10),
                         padding: const EdgeInsets.all(12),
@@ -885,7 +885,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                           ],
                         ),
                       );
-                    },
+                    }).toList(),
                   ),
                 ],
               ),
@@ -896,13 +896,17 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               ),
             ),
           ),
-      bottomNavigationBar: Container(
+        ),
+      ),
+      // Docked Bottom Action Bar (inside outer body Column, avoids web ScaffoldLayout bug)
+      Container(
         decoration: BoxDecoration(
           color: AppTheme.surface,
           border: Border(top: BorderSide(color: AppTheme.border.withAlpha(150), width: 1)),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: SafeArea(
+          top: false,
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 880),
@@ -968,6 +972,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           ),
         ),
       ),
+    ],
+  ),
     );
   }
 }
