@@ -20,10 +20,9 @@ class JobDetailScreen extends StatefulWidget {
     required DetailJob job,
     JobRepository? repository,
   }) {
-    return Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => JobDetailScreen(job: job, repository: repository),
-      ),
+    return showDialog(
+      context: context,
+      builder: (context) => JobDetailScreen(job: job, repository: repository),
     );
   }
 
@@ -77,7 +76,9 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         : widget.job.author.displayName;
     final otherUserAvatar = widget.job.author.avatarUrl;
 
-    Navigator.of(context).push(MaterialPageRoute(
+    final nav = Navigator.of(context, rootNavigator: true);
+    nav.pop();
+    nav.push(MaterialPageRoute(
       builder: (_) => ChatScreen(
         conversationId: convId,
         otherUserName: otherUserName,
@@ -89,7 +90,9 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
   void _openPublicStudio() {
     if (widget.repository == null) return;
-    Navigator.of(context).push(
+    final nav = Navigator.of(context, rootNavigator: true);
+    nav.pop();
+    nav.push(
       MaterialPageRoute(
         builder: (_) => PublicStudioScreen(
           detailer: _currentJob.author,
@@ -101,7 +104,9 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
   void _openBookingFlow() {
     if (widget.repository == null) return;
-    Navigator.of(context).push(
+    final nav = Navigator.of(context, rootNavigator: true);
+    nav.pop();
+    nav.push(
       MaterialPageRoute(
         builder: (_) => BookingFlowScreen(
           detailer: _currentJob.author,
@@ -431,49 +436,82 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     final beforeList = _currentJob.allBeforePhotos;
     final afterList = _currentJob.allAfterPhotos;
 
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        backgroundColor: AppTheme.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Column(
+    return Dialog(
+      backgroundColor: AppTheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppTheme.border),
+      ),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 860, maxHeight: 880),
+        padding: const EdgeInsets.all(24),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              _currentJob.vehicleFullName,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-              overflow: TextOverflow.ellipsis,
+            // Universal Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withAlpha(30),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.receipt_long_rounded, color: AppTheme.primary, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _currentJob.vehicleFullName,
+                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const Text(
+                              'Transformation Recipe & Inspection Details',
+                              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      onPressed: _showExportSuccess,
+                      icon: const Icon(Icons.share_outlined, color: AppTheme.primary, size: 20),
+                      tooltip: 'Share Client Report',
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded, color: AppTheme.textMuted),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            const Text(
-              'Transformation Recipe & Inspection Details',
-              style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            onPressed: _showExportSuccess,
-            icon: const Icon(Icons.share_outlined, color: AppTheme.primary, size: 20),
-            tooltip: 'Share Client Report',
-          ),
-          const SizedBox(width: 8),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: AppTheme.border),
-        ),
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 860),
-          child: ListView(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            children: [
-              // 1. Strictly ONE Single 50/50 Comparative Hero Slider with true resolution containment
+            const SizedBox(height: 16),
+            const Divider(color: AppTheme.border, height: 1),
+            const SizedBox(height: 16),
+
+            // Scrollable Content
+            Expanded(
+              child: ListView(
+                children: [
+                  // 1. Strictly ONE Single 50/50 Comparative Hero Slider with true resolution containment
                   Padding(
                     padding: const EdgeInsets.only(bottom: 16),
                     child: SplitSliderWidget(
@@ -889,81 +927,86 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               ),
             ),
 
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 20),
                 ],
               ),
             ),
-          ),
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: AppTheme.surface,
-          border: Border(top: BorderSide(color: AppTheme.border)),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        child: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 860),
-              child: Row(
-                children: [
-                  TextButton.icon(
-                    onPressed: _showExportSuccess,
-                    icon: const Icon(Icons.share_rounded, color: AppTheme.primary, size: 18),
-                    label: const Text('Share Report', style: TextStyle(color: AppTheme.primary)),
-                  ),
-                  const Spacer(),
-                  // Show Message and Book Service buttons for other detailers' recipes
-                  if (widget.repository != null &&
-                      widget.repository!.currentUser.id != _currentJob.author.id) ...[
-                    ElevatedButton(
-                      onPressed: _messagingLoading ? null : _messageDetailer,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.surfaceLight,
-                        foregroundColor: AppTheme.textPrimary,
-                        side: const BorderSide(color: AppTheme.border),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        elevation: 0,
-                      ),
-                      child: _messagingLoading
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppTheme.primary,
-                              ),
-                            )
-                          : const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.chat_rounded, size: 16),
-                                SizedBox(width: 6),
-                                Text('Message', style: TextStyle(fontWeight: FontWeight.bold)),
-                              ],
+
+            const SizedBox(height: 16),
+            const Divider(color: AppTheme.border, height: 1),
+            const SizedBox(height: 16),
+
+            // Bottom Action Bar (Universal UX)
+            Row(
+              children: [
+                TextButton.icon(
+                  onPressed: _showExportSuccess,
+                  icon: const Icon(Icons.share_rounded, color: AppTheme.primary, size: 18),
+                  label: const Text('Share Report', style: TextStyle(color: AppTheme.primary)),
+                ),
+                const Spacer(),
+                // Show Message and Book Service buttons for other detailers' recipes
+                if (widget.repository != null &&
+                    widget.repository!.currentUser.id != _currentJob.author.id) ...[
+                  ElevatedButton(
+                    onPressed: _messagingLoading ? null : _messageDetailer,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.surfaceLight,
+                      foregroundColor: AppTheme.textPrimary,
+                      side: const BorderSide(color: AppTheme.border),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      elevation: 0,
+                    ),
+                    child: _messagingLoading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppTheme.primary,
                             ),
+                          )
+                        : const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.chat_rounded, size: 16),
+                              SizedBox(width: 6),
+                              Text('Message', style: TextStyle(fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: _openBookingFlow,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      elevation: 0,
                     ),
-                    const SizedBox(width: 10),
-                    ElevatedButton.icon(
-                      onPressed: _openBookingFlow,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primary,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        elevation: 0,
-                      ),
-                      icon: const Icon(Icons.bolt_rounded, size: 16, color: Colors.black),
-                      label: const Text(
-                        'Book Service',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
-                      ),
+                    icon: const Icon(Icons.bolt_rounded, size: 16, color: Colors.black),
+                    label: const Text(
+                      'Book Service',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
                     ),
-                  ],
+                  ),
+                  const SizedBox(width: 8),
                 ],
-              ),
+                OutlinedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.textSecondary,
+                    side: const BorderSide(color: AppTheme.border),
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('Close'),
+                ),
+              ],
             ),
-          ),
+          ],
         ),
       ),
     );
