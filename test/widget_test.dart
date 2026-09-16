@@ -1,4 +1,5 @@
 import 'package:detail_craft/screens/public_studio_screen.dart';
+import 'package:detail_craft/screens/feed_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:detail_craft/core/theme/app_theme.dart';
@@ -165,5 +166,103 @@ void main() {
     debugNetworkImageHttpClientProvider = null;
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
+  });
+
+  testWidgets('iPhone 13 mini small screen: side-by-side dropdowns and collapsible featured detailers', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final repository = JobRepository();
+    // iPhone 13 mini screen dimensions: 375 x 812
+    tester.view.physicalSize = const Size(375, 812);
+    tester.view.devicePixelRatio = 1.0;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: FeedScreen(repository: repository),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Verify side-by-side dropdown buttons exist
+    expect(find.byKey(const Key('location_dropdown_btn')), findsOneWidget);
+    expect(find.byKey(const Key('service_dropdown_btn')), findsOneWidget);
+    expect(find.text('All Locations'), findsOneWidget);
+    expect(find.text('All Services'), findsOneWidget);
+
+    // Verify featured detailers strip exists and starts collapsed on mobile
+    expect(find.byKey(const Key('toggle_featured_detailers_btn')), findsOneWidget);
+    // Detailer cards are not shown when collapsed
+    expect(find.byKey(const Key('detailer_card_usr_marcus')), findsNothing);
+
+    // Tap to expand featured detailers
+    await tester.tap(find.byKey(const Key('toggle_featured_detailers_btn')));
+    await tester.pumpAndSettle();
+
+    // Detailer cards are now visible
+    expect(find.byKey(const Key('detailer_card_usr_marcus')), findsOneWidget);
+
+    // Tap again to collapse and save screen space
+    await tester.tap(find.byKey(const Key('toggle_featured_detailers_btn')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('detailer_card_usr_marcus')), findsNothing);
+
+    // Tap location dropdown button to open menu
+    await tester.tap(find.byKey(const Key('location_dropdown_btn')));
+    await tester.pumpAndSettle();
+
+    // Select Austin, Texas
+    final austinItem = find.text('Austin, Texas');
+    expect(austinItem, findsWidgets);
+    await tester.tap(austinItem.last);
+    await tester.pumpAndSettle();
+
+    // Verify location is updated
+    expect(repository.selectedLocationCity, 'Austin, Texas');
+
+    // Verify quick reset filter button is now visible
+    expect(find.byIcon(Icons.filter_alt_off_rounded), findsOneWidget);
+
+    // Tap quick reset filter button
+    await tester.tap(find.byIcon(Icons.filter_alt_off_rounded));
+    await tester.pumpAndSettle();
+
+    // Verify filter is reset
+    expect(repository.selectedLocationCity, 'All Locations');
+    expect(repository.selectedServiceType, 'All Services');
+
+    // Tap service dropdown button to open menu
+    await tester.tap(find.byKey(const Key('service_dropdown_btn')));
+    await tester.pumpAndSettle();
+
+    // Select Ceramic Coating
+    final ceramicItem = find.text('Ceramic Coating');
+    expect(ceramicItem, findsWidgets);
+    await tester.tap(ceramicItem.last);
+    await tester.pumpAndSettle();
+
+    // Verify service filter is updated
+    expect(repository.selectedServiceType, 'Ceramic Coating');
+
+    // Verify reset button appears again
+    expect(find.byIcon(Icons.filter_alt_off_rounded), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.filter_alt_off_rounded));
+    await tester.pumpAndSettle();
+    expect(repository.selectedServiceType, 'All Services');
+
+    // Verify that scrolling the feed scrolls featured detailers off screen on small mobile screens
+    expect(find.byKey(const Key('toggle_featured_detailers_btn')), findsOneWidget);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -350));
+    await tester.pumpAndSettle();
+
+    // After scrolling down, the strip is scrolled out of the viewport, giving full screen to cards
+    expect(find.byKey(const Key('toggle_featured_detailers_btn')), findsNothing);
+
+    debugNetworkImageHttpClientProvider = null;
   });
 }
