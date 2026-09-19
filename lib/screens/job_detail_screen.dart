@@ -3,6 +3,7 @@ import '../core/theme/app_theme.dart';
 import '../models/detail_job.dart';
 import '../widgets/paint_hardness_badge.dart';
 import '../widgets/split_slider_widget.dart';
+import '../widgets/fullscreen_image_viewer.dart';
 import '../services/job_repository.dart';
 import 'chat_screen.dart';
 import 'auth_modal.dart';
@@ -181,54 +182,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
 
 
-  void _showImageZoomModal(BuildContext context, String imageUrl, String label) {
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(12),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            InteractiveViewer(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  imageUrl,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    color: AppTheme.surfaceLight,
-                    height: 250,
-                    child: const Center(child: Icon(Icons.broken_image_rounded, color: AppTheme.textMuted)),
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 8,
-              right: 8,
-              child: IconButton(
-                icon: const Icon(Icons.close_rounded, color: Colors.white),
-                style: IconButton.styleFrom(backgroundColor: Colors.black54),
-                onPressed: () => Navigator.pop(ctx),
-              ),
-            ),
-            Positioned(
-              bottom: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black87,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+
 
   void _showExportSuccess() {
     showDialog(
@@ -362,7 +316,12 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   return Padding(
                     padding: const EdgeInsets.only(right: 10),
                     child: InkWell(
-                      onTap: () => _showImageZoomModal(context, url, '$title #${idx + 1}'),
+                      onTap: () => FullscreenImageViewer.open(
+                        context,
+                        images: photos,
+                        initialIndex: idx,
+                        title: '$title (${idx + 1}/${photos.length})',
+                      ),
                       borderRadius: BorderRadius.circular(10),
                       child: Stack(
                         children: [

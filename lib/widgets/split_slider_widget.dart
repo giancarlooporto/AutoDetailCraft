@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
+import 'fullscreen_image_viewer.dart';
 
 class SplitSliderWidget extends StatefulWidget {
   final String beforeImageUrl;
@@ -11,6 +12,8 @@ class SplitSliderWidget extends StatefulWidget {
   final double initialPosition;
   final BoxFit fit;
   final double zoomScale;
+  final VoidCallback? onTapBefore;
+  final VoidCallback? onTapAfter;
 
   const SplitSliderWidget({
     super.key,
@@ -22,6 +25,8 @@ class SplitSliderWidget extends StatefulWidget {
     this.initialPosition = 0.5,
     this.fit = BoxFit.cover,
     this.zoomScale = 1.0,
+    this.onTapBefore,
+    this.onTapAfter,
   });
 
   @override
@@ -166,24 +171,45 @@ class _SplitSliderWidgetState extends State<SplitSliderWidget> {
                   ),
                 ),
 
-                // 3. Floating Indicator Labels
+                // 3. Floating Indicator Labels (Clickable to open Fullscreen Lightbox)
                 Positioned(
                   top: 12,
                   left: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withAlpha(180),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: AppTheme.hardnessSoft.withAlpha(120), width: 1),
-                    ),
-                    child: const Text(
-                      'BEFORE',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.0,
-                        color: AppTheme.hardnessSoft,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      if (widget.onTapBefore != null) {
+                        widget.onTapBefore!();
+                      } else {
+                        FullscreenImageViewer.open(
+                          context,
+                          images: [widget.beforeImageUrl],
+                          title: 'Before Inspection',
+                        );
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withAlpha(200),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: AppTheme.hardnessSoft.withAlpha(180), width: 1),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.zoom_in_rounded, size: 12, color: AppTheme.hardnessSoft),
+                          SizedBox(width: 4),
+                          Text(
+                            'BEFORE',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.0,
+                              color: AppTheme.hardnessSoft,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -191,20 +217,41 @@ class _SplitSliderWidgetState extends State<SplitSliderWidget> {
                 Positioned(
                   top: 12,
                   right: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withAlpha(180),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: AppTheme.primary.withAlpha(120), width: 1),
-                    ),
-                    child: const Text(
-                      'AFTER',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.0,
-                        color: AppTheme.primary,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      if (widget.onTapAfter != null) {
+                        widget.onTapAfter!();
+                      } else {
+                        FullscreenImageViewer.open(
+                          context,
+                          images: [widget.afterImageUrl],
+                          title: 'After Transformation',
+                        );
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withAlpha(200),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: AppTheme.primary.withAlpha(180), width: 1),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.zoom_in_rounded, size: 12, color: AppTheme.primary),
+                          SizedBox(width: 4),
+                          Text(
+                            'AFTER',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.0,
+                              color: AppTheme.primary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -302,50 +349,92 @@ class _SplitSliderWidgetState extends State<SplitSliderWidget> {
                   ),
                 ),
 
-                // 8. Interactive Zoom Toggle Pill
-                if (widget.zoomScale > 1.0)
-                  Positioned(
-                    bottom: 10,
-                    right: 10,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () {
-                        setState(() {
-                          _currentZoom = (_currentZoom > 1.05) ? 1.0 : widget.zoomScale;
-                        });
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withAlpha(200),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _currentZoom > 1.05 ? AppTheme.primary : AppTheme.border,
-                            width: 1,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.zoom_in_rounded,
-                              size: 13,
-                              color: _currentZoom > 1.05 ? AppTheme.primary : Colors.white70,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${_currentZoom.toStringAsFixed(1)}x',
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.bold,
-                                color: _currentZoom > 1.05 ? AppTheme.primary : Colors.white70,
+                // 8. Interactive Zoom & Fullscreen Lightbox Controls
+                Positioned(
+                  bottom: 10,
+                  right: 10,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (widget.zoomScale > 1.0) ...[
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            setState(() {
+                              _currentZoom = (_currentZoom > 1.05) ? 1.0 : widget.zoomScale;
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withAlpha(200),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: _currentZoom > 1.05 ? AppTheme.primary : AppTheme.border,
+                                width: 1,
                               ),
                             ),
-                          ],
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.zoom_in_rounded,
+                                  size: 13,
+                                  color: _currentZoom > 1.05 ? AppTheme.primary : Colors.white70,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${_currentZoom.toStringAsFixed(1)}x',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: _currentZoom > 1.05 ? AppTheme.primary : Colors.white70,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          // Open both Before & After in lightbox viewer for comprehensive comparison
+                          FullscreenImageViewer.open(
+                            context,
+                            images: [widget.beforeImageUrl, widget.afterImageUrl],
+                            initialIndex: 0,
+                            title: '50/50 Transformation Comparison',
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withAlpha(200),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppTheme.border, width: 1),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              Icon(Icons.fullscreen_rounded, size: 14, color: Colors.white),
+                              SizedBox(width: 4),
+                              Text(
+                                'Inspect',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
+                ),
               ],
             ),
           ),

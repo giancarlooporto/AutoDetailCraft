@@ -7,6 +7,7 @@ import '../screens/public_studio_screen.dart';
 import '../screens/create_job_screen.dart';
 import '../services/job_repository.dart';
 import 'split_slider_widget.dart';
+import 'fullscreen_image_viewer.dart';
 
 class JobRecipeCard extends StatelessWidget {
   final DetailJob job;
@@ -158,37 +159,60 @@ class JobRecipeCard extends StatelessWidget {
                               itemCount: imageUrls.length,
                               itemBuilder: (context, idx) {
                                 final url = imageUrls[idx];
-                                return ClipRRect(
+                                return InkWell(
                                   borderRadius: BorderRadius.circular(10),
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      Image.network(
-                                        url,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (context, error, stackTrace) => Container(
-                                          color: AppTheme.surfaceLight,
-                                          child: const Center(
-                                            child: Icon(Icons.broken_image_rounded, color: AppTheme.textMuted),
+                                  onTap: () {
+                                    FullscreenImageViewer.open(
+                                      context,
+                                      images: imageUrls,
+                                      initialIndex: idx,
+                                      title: '$title (${idx + 1}/${imageUrls.length})',
+                                    );
+                                  },
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        Image.network(
+                                          url,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) => Container(
+                                            color: AppTheme.surfaceLight,
+                                            child: const Center(
+                                              child: Icon(Icons.broken_image_rounded, color: AppTheme.textMuted),
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                      Positioned(
-                                        left: 6,
-                                        bottom: 6,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black.withAlpha(180),
-                                            borderRadius: BorderRadius.circular(4),
-                                          ),
-                                          child: Text(
-                                            '#${idx + 1}',
-                                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                                        Positioned(
+                                          left: 6,
+                                          bottom: 6,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withAlpha(180),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              '#${idx + 1}',
+                                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ],
+                                        Positioned(
+                                          right: 6,
+                                          top: 6,
+                                          child: Container(
+                                            padding: const EdgeInsets.all(4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withAlpha(160),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(Icons.zoom_in_rounded, size: 12, color: Colors.white),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 );
                               },

@@ -9,6 +9,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:detail_craft/core/theme/app_theme.dart';
 import 'package:detail_craft/screens/main_navigation_screen.dart';
 import 'package:detail_craft/services/job_repository.dart';
+import 'package:detail_craft/widgets/fullscreen_image_viewer.dart';
+import 'package:detail_craft/core/constants/detailing_presets.dart';
 
 import 'dart:async';
 import 'dart:io';
@@ -447,5 +449,39 @@ void main() {
 
     expect(repository.searchQuery, isEmpty);
     debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('FullscreenImageViewer renders interactive viewer and controls', (WidgetTester tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: FullscreenImageViewer(
+          images: const [
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+          ],
+          initialIndex: 0,
+          title: 'Defect Inspection',
+        ),
+      ),
+    ));
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.byType(FullscreenImageViewer), findsOneWidget);
+    expect(find.byType(InteractiveViewer), findsWidgets);
+    expect(find.text('Defect Inspection'), findsOneWidget);
+    expect(find.text('1 / 2'), findsOneWidget);
+    expect(find.byIcon(Icons.center_focus_strong_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.close_rounded), findsOneWidget);
+
+    // Verify detailing presets have required options
+    expect(DetailingPresets.defectSeverities.length, 4);
+    expect(DetailingPresets.paintGaugePresets.length, 3);
+    expect(DetailingPresets.recipePresets.length, 3);
+    expect(DetailingPresets.toolOptions.isNotEmpty, true);
+    expect(DetailingPresets.padOptions.isNotEmpty, true);
+    expect(DetailingPresets.compoundOptions.isNotEmpty, true);
+    expect(DetailingPresets.protectionOptions.isNotEmpty, true);
   });
 }

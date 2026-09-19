@@ -565,38 +565,7 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                           side: const BorderSide(color: AppTheme.border),
                         ),
                       ),
-                      onPressed: () async {
-                        if (widget.repository.isGuestMode) {
-                          AuthModal.show(context, repository: widget.repository, onSuccess: () async {
-                            if (!context.mounted) return;
-                            final convId = await widget.repository.openOrCreateConversation(widget.detailer.id);
-                            if (convId != null && context.mounted) {
-                              ChatScreen.open(
-                                context,
-                                conversationId: convId,
-                                otherUserName: widget.detailer.businessName.isNotEmpty
-                                    ? widget.detailer.businessName
-                                    : widget.detailer.displayName,
-                                otherUserAvatar: widget.detailer.avatarUrl,
-                                repository: widget.repository,
-                              );
-                            }
-                          });
-                          return;
-                        }
-                        final convId = await widget.repository.openOrCreateConversation(widget.detailer.id);
-                        if (convId != null && context.mounted) {
-                          ChatScreen.open(
-                            context,
-                            conversationId: convId,
-                            otherUserName: widget.detailer.businessName.isNotEmpty
-                                ? widget.detailer.businessName
-                                : widget.detailer.displayName,
-                            otherUserAvatar: widget.detailer.avatarUrl,
-                            repository: widget.repository,
-                          );
-                        }
-                      },
+                      onPressed: _openChatWithDetailer,
                       icon: const Icon(Icons.chat_rounded, size: 16),
                       label: const Text(
                         'Message',
