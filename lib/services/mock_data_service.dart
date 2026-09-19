@@ -224,7 +224,9 @@ class MockDataService {
         paintHardness: PaintHardness.soft,
         initialPaintThicknessMicrons: 112.0,
         finalPaintThicknessMicrons: 108.5,
-        defectSeverity: 8,
+        defectSeverity: 3,
+        defectStage: DefectStage.stage3,
+        correctionPercentage: 92,
         serviceType: 'Ceramic Coating',
         recipeStages: const [
           RecipeStage(
@@ -256,7 +258,7 @@ class MockDataService {
         ],
         beforeImageUrl: 'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?w=900&auto=format&fit=crop&q=80',
         afterImageUrl: 'https://images.unsplash.com/photo-1614162692292-7ac56d7f7f1e?w=900&auto=format&fit=crop&q=80',
-        defectBadge: 'Heavy Brush Swirls',
+        defectBadge: 'Stage 3: Heavy Brush Swirls',
         likesCount: 142,
         savesCount: 67,
       ),
@@ -275,7 +277,9 @@ class MockDataService {
         paintHardness: PaintHardness.hard,
         initialPaintThicknessMicrons: 145.0,
         finalPaintThicknessMicrons: 139.0,
-        defectSeverity: 9,
+        defectSeverity: 3,
+        defectStage: DefectStage.stage3,
+        correctionPercentage: 90,
         serviceType: 'Paint Correction',
         recipeStages: const [
           RecipeStage(
@@ -302,7 +306,7 @@ class MockDataService {
         ],
         beforeImageUrl: 'https://images.unsplash.com/photo-1520340356584-f9917d1eea6f?w=900&auto=format&fit=crop&q=80',
         afterImageUrl: 'https://images.unsplash.com/photo-1563720223185-11003d516935?w=900&auto=format&fit=crop&q=80',
-        defectBadge: 'Water Spot Acid Etch',
+        defectBadge: 'Stage 3: Water Spot Acid Etch',
         likesCount: 98,
         savesCount: 45,
       ),
@@ -321,7 +325,9 @@ class MockDataService {
         paintHardness: PaintHardness.singleStage,
         initialPaintThicknessMicrons: 95.0,
         finalPaintThicknessMicrons: 93.0,
-        defectSeverity: 7,
+        defectSeverity: 2,
+        defectStage: DefectStage.stage2,
+        correctionPercentage: 85,
         serviceType: 'Paint Correction',
         recipeStages: const [
           RecipeStage(

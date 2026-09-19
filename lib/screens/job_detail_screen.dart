@@ -795,8 +795,16 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Defect Severity:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-                        Text('${_currentJob.defectSeverity} / 10', style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.hardnessSoft, fontSize: 13)),
+                        const Text('Defect Stage:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                        Text(_currentJob.defectStage.label, style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.hardnessSoft, fontSize: 13)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Correction Achieved:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                        Text('${_currentJob.correctionPercentage}% Correction', style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.primary, fontSize: 13)),
                       ],
                     ),
 

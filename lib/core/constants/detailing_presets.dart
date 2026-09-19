@@ -2,15 +2,31 @@ import '../../models/detail_job.dart';
 
 class PaintInspectionOption {
   final int severity;
+  final DefectStage stage;
   final String label;
   final String shortLabel;
   final String description;
 
   const PaintInspectionOption({
     required this.severity,
+    required this.stage,
     required this.label,
     required this.shortLabel,
     required this.description,
+  });
+}
+
+class CorrectionPercentageOption {
+  final int percentage;
+  final String label;
+  final String processLabel;
+  final String recommendation;
+
+  const CorrectionPercentageOption({
+    required this.percentage,
+    required this.label,
+    required this.processLabel,
+    required this.recommendation,
   });
 }
 
@@ -51,31 +67,69 @@ class StudioRecipePreset {
 }
 
 class DetailingPresets {
-  // Simplified Defect Severity Options (1-Tap)
+  // Industry Standard Defect Stages (IDA / Rupes / Meguiar's / Sonax Standard)
   static const List<PaintInspectionOption> defectSeverities = [
     PaintInspectionOption(
+      severity: 1,
+      stage: DefectStage.stage1,
+      label: 'Stage 1: Light',
+      shortLabel: 'Stage 1 Light',
+      description: 'Wash Marring, Light Holograms/Spider-Webbing',
+    ),
+    PaintInspectionOption(
+      severity: 2,
+      stage: DefectStage.stage2,
+      label: 'Stage 2: Moderate',
+      shortLabel: 'Stage 2 Moderate',
+      description: 'Swirl Marks, Light Water Spot/Etching',
+    ),
+    PaintInspectionOption(
       severity: 3,
-      label: 'Light Swirls',
-      shortLabel: 'Light Swirls',
-      description: 'Minor wash marring, towel scratches, light hazing',
+      stage: DefectStage.stage3,
+      label: 'Stage 3: Severe RIDS',
+      shortLabel: 'Stage 3 Severe',
+      description: 'RIDS (Random Isolated Deep Scratches), Heavy Oxidation',
     ),
     PaintInspectionOption(
-      severity: 6,
-      label: 'Moderate Defects',
-      shortLabel: 'Moderate Defects',
-      description: 'Standard swirl halos, medium scratch marks, water spots',
+      severity: 4,
+      stage: DefectStage.stage4,
+      label: 'Stage 4: Paint Failure',
+      shortLabel: 'Stage 4 Failure',
+      description: 'Crow\'s Feet, Clear Coat Peeling / Strike-Through',
     ),
-    PaintInspectionOption(
-      severity: 8,
-      label: 'Heavy Oxidation / RIDS',
-      shortLabel: 'Heavy Oxidation / RIDS',
-      description: 'Deep random scratches, sun fading, bird etching',
+  ];
+
+  // Industry Standard Correction Percentages (%)
+  static const List<CorrectionPercentageOption> correctionPercentages = [
+    CorrectionPercentageOption(
+      percentage: 70,
+      label: '70% Correction',
+      processLabel: '1-Stage Gloss Enhancement',
+      recommendation: 'Daily driver refresh. Removes light marring while preserving maximum clear coat.',
     ),
-    PaintInspectionOption(
-      severity: 10,
-      label: 'Clear Coat Failure / Sanding',
-      shortLabel: 'Clear Coat Failure',
-      description: 'Severe micro-cracking, crow’s feet, 1000-grit wet sanding',
+    CorrectionPercentageOption(
+      percentage: 80,
+      label: '80% Correction',
+      processLabel: '1-Stage / AIO Enhancement',
+      recommendation: 'High-gloss single-step. Clears standard wash marring and medium halos.',
+    ),
+    CorrectionPercentageOption(
+      percentage: 85,
+      label: '85% Correction',
+      processLabel: '2-Stage Compound & Polish',
+      recommendation: 'Industry sweet spot. Removes majority of swirls without risking paint longevity.',
+    ),
+    CorrectionPercentageOption(
+      percentage: 90,
+      label: '90% Correction',
+      processLabel: 'Multi-Stage Deep Correction',
+      recommendation: 'Enthusiast multi-stage. Eliminates deep swirl trails and moderate water etchings.',
+    ),
+    CorrectionPercentageOption(
+      percentage: 95,
+      label: '95%+ Correction',
+      processLabel: 'Concours / Restoration Multi-Stage',
+      recommendation: 'Show car restoration. Near-perfection (never 100% promised to preserve clear coat).',
     ),
   ];
 

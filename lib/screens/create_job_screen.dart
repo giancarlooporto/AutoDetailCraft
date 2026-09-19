@@ -72,9 +72,11 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
   String _selectedService = AppConstants.serviceTypes[1]; // Ceramic Coating
   PaintHardness _hardness = PaintHardness.soft;
 
-  // Simplified Paint Inspection State
-  int _defectSeverity = 6;
-  String _defectBadge = 'Moderate Defects';
+  // Simplified Paint Inspection State (Industry Standard Stages & Correction %)
+  int _defectSeverity = 2;
+  DefectStage _defectStage = DefectStage.stage2;
+  int _correctionPercentage = 85;
+  String _defectBadge = 'Stage 2: Moderate (Swirl Marks)';
   String _paintGaugeHealthId = 'factory_healthy';
   double _initialMicrons = 122.0;
   double _finalMicrons = 119.0;
@@ -117,6 +119,8 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       _hardness = edit.paintHardness;
 
       _defectSeverity = edit.defectSeverity;
+      _defectStage = edit.defectStage;
+      _correctionPercentage = edit.correctionPercentage;
       _defectBadge = edit.defectBadge;
       _initialMicrons = edit.initialPaintThicknessMicrons;
       _finalMicrons = edit.finalPaintThicknessMicrons;
@@ -352,6 +356,8 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
         initialPaintThicknessMicrons: _initialMicrons,
         finalPaintThicknessMicrons: _finalMicrons,
         defectSeverity: _defectSeverity,
+        defectStage: _defectStage,
+        correctionPercentage: _correctionPercentage,
         defectBadge: _defectBadge,
         serviceType: _selectedService,
         recipeStages: _recipeStages,
@@ -391,6 +397,8 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
         initialPaintThicknessMicrons: _initialMicrons,
         finalPaintThicknessMicrons: _finalMicrons,
         defectSeverity: _defectSeverity,
+        defectStage: _defectStage,
+        correctionPercentage: _correctionPercentage,
         serviceType: _selectedService,
         recipeStages: _recipeStages,
         beforeImageUrl: heroBeforeUrl,
@@ -877,7 +885,10 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Container(
                 padding: const EdgeInsets.all(6),
@@ -887,12 +898,10 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                 ),
                 child: const Icon(Icons.lens_blur_rounded, color: AppTheme.hardnessSoft, size: 18),
               ),
-              const SizedBox(width: 8),
               const Text(
-                'Paint Defect Severity',
+                'Paint Defect & Correction Assessment',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
               ),
-              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
@@ -901,7 +910,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                   border: Border.all(color: AppTheme.hardnessSoft.withAlpha(80)),
                 ),
                 child: Text(
-                  'Severity $_defectSeverity/10 • $_defectBadge',
+                  '${_defectStage.label} • $_correctionPercentage% Correction',
                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.hardnessSoft),
                 ),
               ),
@@ -909,10 +918,16 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            '1-Tap Defect Assessment: Quickly select initial paint condition for prospective clients and pro peers.',
+            'Industry Standard Assessment (IDA / Rupes / Meguiar\'s): Select initial defect stage and target correction percentage.',
             style: TextStyle(fontSize: 11.5, color: AppTheme.textSecondary),
           ),
           const SizedBox(height: 12),
+          // Defect Stages (Stage 1 to 4)
+          const Text(
+            'INITIAL DEFECT STAGE',
+            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, letterSpacing: 0.8, color: AppTheme.textMuted),
+          ),
+          const SizedBox(height: 8),
           LayoutBuilder(
             builder: (context, constraints) {
               final isNarrow = constraints.maxWidth < 600;
@@ -923,7 +938,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                   crossAxisCount: isNarrow ? 1 : 2,
                   crossAxisSpacing: 10,
                   mainAxisSpacing: 10,
-                  mainAxisExtent: isNarrow ? 76 : 82,
+                  mainAxisExtent: isNarrow ? 78 : 84,
                 ),
                 itemCount: DetailingPresets.defectSeverities.length,
                 itemBuilder: (context, index) {
@@ -933,6 +948,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                     onTap: () {
                       setState(() {
                         _defectSeverity = opt.severity;
+                        _defectStage = opt.stage;
                         _defectBadge = opt.label;
                       });
                     },
@@ -951,18 +967,18 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                       child: Row(
                         children: [
                           Container(
-                            width: 32,
-                            height: 32,
+                            width: 34,
+                            height: 34,
                             decoration: BoxDecoration(
                               color: isSelected ? AppTheme.hardnessSoft : Colors.white10,
                               shape: BoxShape.circle,
                             ),
                             child: Center(
                               child: Text(
-                                '${opt.severity}',
+                                'S${opt.severity}',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 13,
+                                  fontSize: 12,
                                   color: isSelected ? Colors.black : Colors.white,
                                 ),
                               ),
@@ -994,6 +1010,111 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                           ),
                           if (isSelected)
                             const Icon(Icons.check_circle_rounded, color: AppTheme.hardnessSoft, size: 18),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          // Correction Achieved (%)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'TARGET / ACHIEVED CORRECTION (%)',
+                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, letterSpacing: 0.8, color: AppTheme.textMuted),
+              ),
+              Text(
+                '$_correctionPercentage% Correction',
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 600;
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: isNarrow ? 1 : 2,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  mainAxisExtent: isNarrow ? 76 : 80,
+                ),
+                itemCount: DetailingPresets.correctionPercentages.length,
+                itemBuilder: (context, index) {
+                  final opt = DetailingPresets.correctionPercentages[index];
+                  final isSelected = _correctionPercentage == opt.percentage;
+                  return InkWell(
+                    onTap: () {
+                      setState(() {
+                        _correctionPercentage = opt.percentage;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(10),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppTheme.primary.withAlpha(25) : AppTheme.surfaceLight,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isSelected ? AppTheme.primary : AppTheme.border,
+                          width: isSelected ? 1.8 : 1.0,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: isSelected ? AppTheme.primary : Colors.white10,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Center(
+                              child: Text(
+                                '${opt.percentage}%',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: isSelected ? Colors.black : Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  opt.processLabel,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: isSelected ? AppTheme.primary : Colors.white,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  opt.recommendation,
+                                  style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (isSelected)
+                            const Icon(Icons.check_circle_rounded, color: AppTheme.primary, size: 18),
                         ],
                       ),
                     ),
@@ -1103,14 +1224,19 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(
-                                opt.label,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                  color: isSelected ? badgeColor : Colors.white,
+                              Expanded(
+                                child: Text(
+                                  opt.label,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: isSelected ? badgeColor : Colors.white,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
+                              const SizedBox(width: 4),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                                 decoration: BoxDecoration(
@@ -1654,10 +1780,18 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: DropdownButtonFormField<PaintHardness>(
+                    isExpanded: true,
                     initialValue: _hardness,
                     decoration: const InputDecoration(labelText: 'Clearcoat Hardness'),
                     items: PaintHardness.values.map((h) {
-                      return DropdownMenuItem(value: h, child: Text(h.label, style: const TextStyle(fontSize: 13)));
+                      return DropdownMenuItem(
+                        value: h,
+                        child: Text(
+                          h.label,
+                          style: const TextStyle(fontSize: 13),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
                     }).toList(),
                     onChanged: (v) {
                       if (v != null) setState(() => _hardness = v);

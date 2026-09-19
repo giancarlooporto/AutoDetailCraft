@@ -9,8 +9,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:detail_craft/core/theme/app_theme.dart';
 import 'package:detail_craft/screens/main_navigation_screen.dart';
 import 'package:detail_craft/services/job_repository.dart';
-import 'package:detail_craft/widgets/fullscreen_image_viewer.dart';
 import 'package:detail_craft/core/constants/detailing_presets.dart';
+import 'package:detail_craft/widgets/fullscreen_image_viewer.dart';
+import 'package:detail_craft/screens/create_job_screen.dart';
 
 import 'dart:async';
 import 'dart:io';
@@ -477,11 +478,148 @@ void main() {
 
     // Verify detailing presets have required options
     expect(DetailingPresets.defectSeverities.length, 4);
+    expect(DetailingPresets.correctionPercentages.length, 5);
     expect(DetailingPresets.paintGaugePresets.length, 3);
     expect(DetailingPresets.recipePresets.length, 3);
     expect(DetailingPresets.toolOptions.isNotEmpty, true);
     expect(DetailingPresets.padOptions.isNotEmpty, true);
     expect(DetailingPresets.compoundOptions.isNotEmpty, true);
     expect(DetailingPresets.protectionOptions.isNotEmpty, true);
+  });
+
+  test('DetailJob DefectStage & Correction Percentage industry standard mappings', () {
+    expect(DefectStage.fromStageNumber(1), DefectStage.stage1);
+    expect(DefectStage.fromStageNumber(2), DefectStage.stage2);
+    expect(DefectStage.fromStageNumber(3), DefectStage.stage3);
+    expect(DefectStage.fromStageNumber(4), DefectStage.stage4);
+    // Backward compatibility for legacy 1-10 scores
+    expect(DefectStage.fromStageNumber(7), DefectStage.stage3);
+    expect(DefectStage.fromStageNumber(9), DefectStage.stage4);
+
+    expect(DefectStage.fromString('stage1'), DefectStage.stage1);
+    expect(DefectStage.fromString('stage3'), DefectStage.stage3);
+    expect(DefectStage.fromString('2'), DefectStage.stage2);
+
+    final job = DetailJob(
+      id: 'test_job',
+      author: JobRepository().currentUser,
+      createdAt: DateTime.now(),
+      title: 'Test Job',
+      description: 'Testing stages',
+      vehicleYear: 2024,
+      vehicleMake: 'BMW',
+      vehicleModel: 'M3',
+      paintColorName: 'Isle of Man Green',
+      paintCode: 'C4G',
+      paintHardness: PaintHardness.hard,
+      initialPaintThicknessMicrons: 130.0,
+      finalPaintThicknessMicrons: 126.0,
+      defectSeverity: 2,
+      defectStage: DefectStage.stage2,
+      correctionPercentage: 85,
+      serviceType: 'Paint Correction',
+      recipeStages: const [],
+      beforeImageUrl: 'https://example.com/b.jpg',
+      afterImageUrl: 'https://example.com/a.jpg',
+    );
+
+    expect(job.defectStage, DefectStage.stage2);
+    expect(job.defectStageLabel, 'Stage 2: Moderate');
+    expect(job.correctionPercentage, 85);
+    expect(job.correctionPercentageLabel, '85% Correction');
+
+    // Test JSON round trip
+    final json = job.toJson();
+    expect(json['defectStage'], 'stage2');
+    expect(json['correctionPercentage'], 85);
+
+    final fromJson = DetailJob.fromJson(json);
+    expect(fromJson.defectStage, DefectStage.stage2);
+    expect(fromJson.correctionPercentage, 85);
+  });
+
+  testWidgets('JobDetailScreen renders industry standard Defect Stage and Correction Achieved', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    final sampleJob = repository.jobs.first;
+
+    await tester.pumpWidget(MaterialApp(
+      home: JobDetailScreen(job: sampleJob, repository: repository),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify Defect Stage and Correction Achieved are rendered
+    expect(find.text('Defect Stage:'), findsOneWidget);
+    expect(find.text(sampleJob.defectStage.label), findsWidgets);
+    expect(find.text('Correction Achieved:'), findsOneWidget);
+    expect(find.text('${sampleJob.correctionPercentage}% Correction'), findsWidgets);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('CreateJobScreen allows selecting DefectStage and CorrectionPercentage', (WidgetTester tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: CreateJobScreen(
+          repository: repository,
+          onJobCreated: () {},
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Scroll down to make defect stage section visible
+    await tester.scrollUntilVisible(
+      find.text('INITIAL DEFECT STAGE'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    // Verify presence of Defect Stage options
+    expect(find.text('INITIAL DEFECT STAGE'), findsOneWidget);
+    expect(find.text('Stage 1: Light'), findsOneWidget);
+    expect(find.text('Stage 2: Moderate'), findsOneWidget);
+    expect(find.text('Stage 3: Severe RIDS'), findsOneWidget);
+    expect(find.text('Stage 4: Paint Failure'), findsOneWidget);
+
+    // Verify presence of Correction Percentage options
+    expect(find.text('TARGET / ACHIEVED CORRECTION (%)'), findsOneWidget);
+    expect(find.text('70%'), findsOneWidget);
+    expect(find.text('80%'), findsOneWidget);
+    expect(find.text('85%'), findsOneWidget);
+    expect(find.text('90%'), findsOneWidget);
+    expect(find.text('95%'), findsOneWidget);
+
+    // Tap on Stage 3
+    await tester.tap(find.text('Stage 3: Severe RIDS'));
+    await tester.pumpAndSettle();
+
+    // Tap on 90% correction
+    await tester.tap(find.text('90%'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Stage 3: Severe RIDS • 90% Correction'), findsOneWidget);
   });
 }

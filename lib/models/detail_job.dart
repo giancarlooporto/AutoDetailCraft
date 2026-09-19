@@ -1,5 +1,59 @@
 import 'user_profile.dart';
 
+enum DefectStage {
+  stage1('Stage 1: Light', 'Wash Marring, Light Holograms/Spider-Webbing', 1),
+  stage2('Stage 2: Moderate', 'Swirl Marks, Light Water Spot/Etching', 2),
+  stage3('Stage 3: Severe RIDS', 'RIDS - Deep Scratches, Heavy Oxidation', 3),
+  stage4('Stage 4: Paint Failure', 'Crow\'s Feet, Clear Coat Peeling / Strike-Through', 4);
+
+  final String label;
+  final String description;
+  final int stageNumber;
+  const DefectStage(this.label, this.description, this.stageNumber);
+
+  String get shortLabel {
+    switch (this) {
+      case DefectStage.stage1:
+        return 'Stage 1 Light';
+      case DefectStage.stage2:
+        return 'Stage 2 Moderate';
+      case DefectStage.stage3:
+        return 'Stage 3 Severe';
+      case DefectStage.stage4:
+        return 'Stage 4 Failure';
+    }
+  }
+
+  static DefectStage fromStageNumber(int stage) {
+    switch (stage) {
+      case 1:
+        return DefectStage.stage1;
+      case 2:
+        return DefectStage.stage2;
+      case 3:
+        return DefectStage.stage3;
+      case 4:
+        return DefectStage.stage4;
+      default:
+        if (stage <= 3) return DefectStage.stage1;
+        if (stage <= 6) return DefectStage.stage2;
+        if (stage <= 8) return DefectStage.stage3;
+        return DefectStage.stage4;
+    }
+  }
+
+  static DefectStage fromString(String? name) {
+    if (name == null) return DefectStage.stage2;
+    for (final val in DefectStage.values) {
+      if (val.name.toLowerCase() == name.toLowerCase()) return val;
+    }
+    // Handle numeric strings e.g. "1", "2"
+    final num = int.tryParse(name);
+    if (num != null) return fromStageNumber(num);
+    return DefectStage.stage2;
+  }
+}
+
 enum PaintHardness {
   soft('Soft (Tesla, Subaru, Mazda)'),
   medium('Medium (Ford, Chevy, Toyota)'),
@@ -152,7 +206,9 @@ class DetailJob {
   // Paint inspection metrics
   final double initialPaintThicknessMicrons;
   final double finalPaintThicknessMicrons;
-  final int defectSeverity; // 1 to 10
+  final int defectSeverity; // Legacy numeric stage (1 to 4)
+  final DefectStage defectStage; // Industry standard defect stage
+  final int correctionPercentage; // e.g. 70%, 80%, 85%, 90%, 95%
   final String serviceType;
   
   // Recipe
@@ -161,7 +217,7 @@ class DetailJob {
   // Media for 50/50 Slider (Primary Hero Pair)
   final String beforeImageUrl;
   final String afterImageUrl;
-  final String defectBadge; // e.g. 'Heavy Swirls & Bird Etchings', '800-Grit Wet Sand Scratches'
+  final String defectBadge; // e.g. 'Stage 2 Moderate Defects', 'Stage 3 Severe RIDS'
 
   // Full Inspection Photo Containers
   final List<String> beforePhotos;
@@ -196,11 +252,13 @@ class DetailJob {
     required this.initialPaintThicknessMicrons,
     required this.finalPaintThicknessMicrons,
     required this.defectSeverity,
+    DefectStage? defectStage,
+    this.correctionPercentage = 85,
     required this.serviceType,
     required this.recipeStages,
     required this.beforeImageUrl,
     required this.afterImageUrl,
-    this.defectBadge = 'Swirl Marks & Micro-Marring',
+    this.defectBadge = 'Stage 2: Moderate (Swirl Marks)',
     this.beforePhotos = const [],
     this.afterPhotos = const [],
     this.mediaZones = const [],
@@ -211,11 +269,30 @@ class DetailJob {
     this.savesCount = 0,
     this.isSaved = false,
     this.comments = const [],
-  });
+  }) : defectStage = defectStage ??
+            (defectSeverity <= 1
+                ? DefectStage.stage1
+                : defectSeverity == 2
+                    ? DefectStage.stage2
+                    : defectSeverity == 3
+                        ? DefectStage.stage3
+                        : defectSeverity == 4
+                            ? DefectStage.stage4
+                            : defectSeverity <= 6
+                                ? DefectStage.stage2
+                                : defectSeverity <= 8
+                                    ? DefectStage.stage3
+                                    : DefectStage.stage4);
 
   double get micronsRemoved => (initialPaintThicknessMicrons - finalPaintThicknessMicrons).clamp(0.0, 99.0);
 
   String get vehicleFullName => '$vehicleYear $vehicleMake $vehicleModel';
+
+  /// Formatted defect summary string according to detailing industry standard
+  String get defectStageLabel => defectStage.label;
+
+  /// Correction achieved percentage badge string e.g. '85% Correction'
+  String get correctionPercentageLabel => '$correctionPercentage% Correction';
 
   /// All before photos, guaranteeing at least the hero before image is included.
   List<String> get allBeforePhotos {
@@ -265,6 +342,8 @@ class DetailJob {
     double? initialPaintThicknessMicrons,
     double? finalPaintThicknessMicrons,
     int? defectSeverity,
+    DefectStage? defectStage,
+    int? correctionPercentage,
     String? serviceType,
     List<RecipeStage>? recipeStages,
     String? beforeImageUrl,
@@ -281,6 +360,7 @@ class DetailJob {
     bool? isSaved,
     List<JobComment>? comments,
   }) {
+    final newDefectStage = defectStage ?? (defectSeverity != null ? DefectStage.fromStageNumber(defectSeverity) : this.defectStage);
     return DetailJob(
       id: id ?? this.id,
       author: author ?? this.author,
@@ -295,7 +375,9 @@ class DetailJob {
       paintHardness: paintHardness ?? this.paintHardness,
       initialPaintThicknessMicrons: initialPaintThicknessMicrons ?? this.initialPaintThicknessMicrons,
       finalPaintThicknessMicrons: finalPaintThicknessMicrons ?? this.finalPaintThicknessMicrons,
-      defectSeverity: defectSeverity ?? this.defectSeverity,
+      defectSeverity: defectSeverity ?? newDefectStage.stageNumber,
+      defectStage: newDefectStage,
+      correctionPercentage: correctionPercentage ?? this.correctionPercentage,
       serviceType: serviceType ?? this.serviceType,
       recipeStages: recipeStages ?? this.recipeStages,
       beforeImageUrl: beforeImageUrl ?? this.beforeImageUrl,
@@ -329,6 +411,8 @@ class DetailJob {
     'initialPaintThicknessMicrons': initialPaintThicknessMicrons,
     'finalPaintThicknessMicrons': finalPaintThicknessMicrons,
     'defectSeverity': defectSeverity,
+    'defectStage': defectStage.name,
+    'correctionPercentage': correctionPercentage,
     'serviceType': serviceType,
     'recipeStages': recipeStages.map((s) => s.toJson()).toList(),
     'beforeImageUrl': beforeImageUrl,
@@ -347,6 +431,13 @@ class DetailJob {
   };
 
   factory DetailJob.fromJson(Map<String, dynamic> json) {
+    final rawSeverity = json['defectSeverity'] as int? ?? 2;
+    final stageStr = json['defectStage'] as String?;
+    final resolvedStage = stageStr != null
+        ? DefectStage.fromString(stageStr)
+        : DefectStage.fromStageNumber(rawSeverity);
+    final resolvedSeverity = resolvedStage.stageNumber;
+
     return DetailJob(
       id: json['id'] as String? ?? 'job_${DateTime.now().millisecondsSinceEpoch}',
       author: json['author'] != null ? UserProfile.fromJson(json['author'] as Map<String, dynamic>) : UserProfile(
@@ -372,14 +463,16 @@ class DetailJob {
       ),
       initialPaintThicknessMicrons: (json['initialPaintThicknessMicrons'] as num?)?.toDouble() ?? 120.0,
       finalPaintThicknessMicrons: (json['finalPaintThicknessMicrons'] as num?)?.toDouble() ?? 116.0,
-      defectSeverity: json['defectSeverity'] as int? ?? 5,
+      defectSeverity: resolvedSeverity,
+      defectStage: resolvedStage,
+      correctionPercentage: (json['correctionPercentage'] as int?) ?? 85,
       serviceType: json['serviceType'] as String? ?? 'Paint Correction',
       recipeStages: (json['recipeStages'] as List<dynamic>?)
           ?.map((s) => RecipeStage.fromJson(s as Map<String, dynamic>))
           .toList() ?? [],
       beforeImageUrl: json['beforeImageUrl'] as String? ?? '',
       afterImageUrl: json['afterImageUrl'] as String? ?? '',
-      defectBadge: json['defectBadge'] as String? ?? 'Swirl Marks & Micro-Marring',
+      defectBadge: json['defectBadge'] as String? ?? 'Stage 2: Moderate (Swirl Marks)',
       beforePhotos: (json['beforePhotos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       afterPhotos: (json['afterPhotos'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       mediaZones: (json['mediaZones'] as List<dynamic>?)

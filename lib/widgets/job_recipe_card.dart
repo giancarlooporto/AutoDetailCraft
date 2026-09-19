@@ -451,7 +451,38 @@ class JobRecipeCard extends StatelessWidget {
                   job.title,
                   style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppTheme.hardnessSoft.withAlpha(25),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: AppTheme.hardnessSoft.withAlpha(100), width: 0.8),
+                      ),
+                      child: Text(
+                        job.defectStage.shortLabel,
+                        style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppTheme.hardnessSoft),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withAlpha(20),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: AppTheme.primary.withAlpha(100), width: 0.8),
+                      ),
+                      child: Text(
+                        '${job.correctionPercentage}% Correction',
+                        style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
 
                 // Recipe Pills: Compound, Pad, Ceramic
                 if (cutStage != null)
