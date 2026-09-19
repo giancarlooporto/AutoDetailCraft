@@ -662,7 +662,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                           constraints: const BoxConstraints(maxWidth: 1280),
                           child: Column(
                         children: [
-                          // Studio Portfolio Header Bar with Upload CTA & Tier Indicator
+                          // Studio Portfolio Header Bar with Upload CTA
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                             child: Row(
@@ -671,49 +671,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Row(
-                                        children: [
-                                          const Text(
-                                            'Transformations',
-                                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: user.subscriptionTier == SubscriptionTier.free
-                                                  ? Colors.grey.withAlpha(40)
-                                                  : (user.subscriptionTier == SubscriptionTier.pro
-                                                      ? AppTheme.primary.withAlpha(30)
-                                                      : Colors.purpleAccent.withAlpha(30)),
-                                              borderRadius: BorderRadius.circular(6),
-                                              border: Border.all(
-                                                color: user.subscriptionTier == SubscriptionTier.free
-                                                    ? AppTheme.border
-                                                    : (user.subscriptionTier == SubscriptionTier.pro
-                                                        ? AppTheme.primary
-                                                        : Colors.purpleAccent),
-                                                width: 0.8,
-                                              ),
-                                            ),
-                                            child: Text(
-                                              user.subscriptionTier.label,
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.bold,
-                                                color: user.subscriptionTier == SubscriptionTier.free
-                                                    ? AppTheme.textSecondary
-                                                    : (user.subscriptionTier == SubscriptionTier.pro
-                                                        ? AppTheme.primary
-                                                        : Colors.purpleAccent),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
+                                      const Text(
+                                        'Transformations',
+                                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        '${myJobs.length} published • Tier allows ${user.subscriptionTier == SubscriptionTier.enterprise ? "unlimited" : "${user.subscriptionTier.maxZones} zones (${user.subscriptionTier.maxZones * 2} photos)"} per post',
+                                        '${myJobs.length} published',
                                         style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
                                       ),
                                     ],

@@ -1,4 +1,5 @@
 /// Data models for direct messaging between users.
+library;
 
 class DirectMessage {
   final String id;

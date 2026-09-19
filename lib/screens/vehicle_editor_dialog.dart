@@ -380,7 +380,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
               const SizedBox(height: 6),
               if (!_isManualMake)
                 DropdownButtonFormField<int>(
-                  value: VehicleDatabase.allStandardYears.contains(_selectedYear) ? _selectedYear : VehicleDatabase.allStandardYears.first,
+                  initialValue: VehicleDatabase.allStandardYears.contains(_selectedYear) ? _selectedYear : VehicleDatabase.allStandardYears.first,
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.calendar_today_rounded, size: 16),
                     contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -438,7 +438,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
               const SizedBox(height: 6),
               if (!_isManualMake)
                 DropdownButtonFormField<String>(
-                  value: availableMakes.contains(_selectedMake) ? _selectedMake : (availableMakes.isNotEmpty ? availableMakes.first : VehicleDatabase.allMakes.first),
+                  initialValue: availableMakes.contains(_selectedMake) ? _selectedMake : (availableMakes.isNotEmpty ? availableMakes.first : VehicleDatabase.allMakes.first),
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.business_rounded, size: 16),
                     contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -492,7 +492,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
               const SizedBox(height: 6),
               if (!_isManualMake && !_isManualModel && models.isNotEmpty)
                 DropdownButtonFormField<String>(
-                  value: models.contains(_selectedModel) ? _selectedModel : models.first,
+                  initialValue: models.contains(_selectedModel) ? _selectedModel : models.first,
                   decoration: InputDecoration(
                     prefixIcon: const Icon(Icons.directions_car_rounded, size: 16),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -533,7 +533,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
               const SizedBox(height: 6),
               if (!_isCustomColor && !_isManualMake)
                 DropdownButtonFormField<String>(
-                  value: colors.contains(_selectedColor) ? _selectedColor : (colors.isNotEmpty ? colors.first : 'Gloss Black'),
+                  initialValue: colors.contains(_selectedColor) ? _selectedColor : (colors.isNotEmpty ? colors.first : 'Gloss Black'),
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.palette_outlined, size: 16),
                     contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),

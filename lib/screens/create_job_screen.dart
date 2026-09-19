@@ -5,7 +5,6 @@ import '../core/theme/app_theme.dart';
 import '../core/constants/app_constants.dart';
 import '../core/constants/detailing_presets.dart';
 import '../models/detail_job.dart';
-import '../models/user_profile.dart';
 import '../services/job_repository.dart';
 import '../services/image_picker_service.dart';
 import '../services/r2_storage_service.dart';
@@ -185,9 +184,6 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
     super.dispose();
   }
 
-  SubscriptionTier get _tier => widget.repository.currentUser.subscriptionTier;
-  int get _maxPhotosPerContainer => _tier.maxZones;
-
   Future<void> _pickAndUploadBulk({required bool isBefore}) async {
     setState(() {
       if (isBefore) {
@@ -202,16 +198,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       if (pickedFiles.isEmpty) return;
 
       final currentList = isBefore ? _beforePhotos : _afterPhotos;
-      final remainingSlots = _tier == SubscriptionTier.enterprise
-          ? pickedFiles.length
-          : (_maxPhotosPerContainer - currentList.length).clamp(0, pickedFiles.length);
-
-      if (remainingSlots <= 0) {
-        _showUpgradeDialog();
-        return;
-      }
-
-      final filesToUpload = pickedFiles.take(remainingSlots).toList();
+      final filesToUpload = pickedFiles;
       final user = widget.repository.currentUser;
 
       for (var i = 0; i < filesToUpload.length; i++) {
@@ -306,115 +293,6 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
         }
       }
     });
-  }
-
-  void _showUpgradeDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withAlpha(40),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.workspace_premium_rounded, color: AppTheme.primary, size: 20),
-            ),
-            const SizedBox(width: 10),
-            const Text('Upgrade Your Studio', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'You have reached the ${_tier.label} tier limit of $_maxPhotosPerContainer photos per container.',
-              style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
-            ),
-            const SizedBox(height: 14),
-            _buildUpgradeTierCard(
-              title: 'Pro Studio (\$29/mo)',
-              desc: 'Up to 15 Before & 15 After photos per transformation, verified badge & priority placement.',
-              onSelect: () {
-                widget.repository.updateSubscriptionTier(SubscriptionTier.pro);
-                Navigator.of(ctx).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Upgraded to Pro Studio Tier! You can now post up to 15 photos per container.'),
-                    backgroundColor: AppTheme.surface,
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 10),
-            _buildUpgradeTierCard(
-              title: 'Enterprise / Shop (\$79/mo)',
-              desc: 'Unlimited photos in both containers, multi-tech team management & white-label PDF audit reports.',
-              onSelect: () {
-                widget.repository.updateSubscriptionTier(SubscriptionTier.enterprise);
-                Navigator.of(ctx).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Upgraded to Enterprise Tier! Unlimited transformation photos enabled.'),
-                    backgroundColor: AppTheme.surface,
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUpgradeTierCard({
-    required String title,
-    required String desc,
-    required VoidCallback onSelect,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceLight,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.primary.withAlpha(100)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  minimumSize: const Size(60, 26),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                ),
-                onPressed: onSelect,
-                child: const Text('Select', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(desc, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-        ],
-      ),
-    );
   }
 
   void _publishTransformation() {
@@ -1612,8 +1490,6 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final totalUploaded = _beforePhotos.length + _afterPhotos.length;
-
     return Dialog(
       backgroundColor: AppTheme.surface,
       shape: RoundedRectangleBorder(
@@ -1668,69 +1544,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
               Expanded(
                 child: ListView(
                   children: [
-            // Tier Usage Header Bar
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppTheme.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.border),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    _tier == SubscriptionTier.free
-                        ? Icons.cloud_queue_rounded
-                        : (_tier == SubscriptionTier.pro ? Icons.star_rounded : Icons.diamond_rounded),
-                    color: AppTheme.primary,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              '${_tier.label} Tier',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '($totalUploaded photos loaded)',
-                              style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _tier == SubscriptionTier.free
-                              ? 'Free tier: up to 3 Before & 3 After photos. Hosted on Cloudflare R2.'
-                              : (_tier == SubscriptionTier.pro
-                                  ? 'Pro tier: up to 15 Before & 15 After photos on Cloudflare R2.'
-                                  : 'Enterprise tier: Unlimited inspection photos on Cloudflare R2.'),
-                          style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (_tier != SubscriptionTier.enterprise)
-                    TextButton(
-                      style: TextButton.styleFrom(
-                        foregroundColor: AppTheme.primary,
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      ),
-                      onPressed: _showUpgradeDialog,
-                      child: const Text('Upgrade', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                    ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 18),
-
-            // Step 1: Bulk Before Photos Container
+                    // Step 1: Bulk Before Photos Container
             _buildUploadBox(
               title: 'Before Photos Container',
               subtitle: 'Inspection photos showing swirls, scratches, oxidation',

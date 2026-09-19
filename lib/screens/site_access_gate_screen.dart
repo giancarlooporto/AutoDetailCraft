@@ -101,7 +101,7 @@ class _SiteAccessGateScreenState extends State<SiteAccessGateScreen> {
               border: Border.all(color: AppTheme.border),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.4),
+                  color: Colors.black.withValues(alpha: 0.4),
                   blurRadius: 30,
                   offset: const Offset(0, 10),
                 ),
@@ -113,7 +113,7 @@ class _SiteAccessGateScreenState extends State<SiteAccessGateScreen> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: AppTheme.primary.withOpacity(0.15),
+                    color: AppTheme.primary.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -137,7 +137,7 @@ class _SiteAccessGateScreenState extends State<SiteAccessGateScreen> {
                   'Private Preview • Development Mode',
                   style: TextStyle(
                     fontSize: 13,
-                    color: Colors.white.withOpacity(0.6),
+                    color: Colors.white.withValues(alpha: 0.6),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -166,7 +166,7 @@ class _SiteAccessGateScreenState extends State<SiteAccessGateScreen> {
                   decoration: InputDecoration(
                     hintText: '••••',
                     hintStyle: TextStyle(
-                      color: Colors.white.withOpacity(0.3),
+                      color: Colors.white.withValues(alpha: 0.3),
                       letterSpacing: 6,
                     ),
                     filled: true,

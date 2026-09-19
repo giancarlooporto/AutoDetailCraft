@@ -1,5 +1,5 @@
 // Web implementation — uses dart:html FileUploadInputElement with client-side downscaling
-// ignore: avoid_web_libraries_in_flutter
+// ignore: avoid_web_libraries_in_flutter, deprecated_member_use
 import 'dart:html' as html;
 import 'dart:typed_data';
 import 'dart:async';

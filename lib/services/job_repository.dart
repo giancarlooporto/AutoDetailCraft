@@ -282,7 +282,7 @@ class JobRepository extends ChangeNotifier {
   }
 
   /// Calculates a detailer's Weighted Composite Rank Score for Explore Feed ranking.
-  /// Combines: Rating (40%), Activity/Recency (20%), Verification (15%), Certifications (10%), Subscription Tier (15%).
+  /// Combines: Rating (45%), Activity/Recency (25%), Verification (20%), Certifications (10%).
   double calculateDetailerCompositeScore(UserProfile detailer) {
     double score = 0.0;
 
@@ -311,19 +311,6 @@ class JobRepository extends ChangeNotifier {
       } else if (daysAgo <= 30) {
         score += 1.0;
       }
-    }
-
-    // 5. Subscription Tier Bonus (+2.5 pts for Pro, +4.0 pts for Enterprise)
-    switch (detailer.subscriptionTier) {
-      case SubscriptionTier.enterprise:
-        score += 4.0;
-        break;
-      case SubscriptionTier.pro:
-        score += 2.5;
-        break;
-      case SubscriptionTier.free:
-        score += 0.0;
-        break;
     }
 
     return score;
@@ -393,13 +380,6 @@ class JobRepository extends ChangeNotifier {
       role: isNowHost ? UserRole.detailer : UserRole.client,
       isVerifiedHost: isNowHost,
     );
-    _persistUser();
-    notifyListeners();
-  }
-
-  // Update subscription tier (free, pro, enterprise)
-  void updateSubscriptionTier(SubscriptionTier tier) {
-    _currentUser = _currentUser.copyWith(subscriptionTier: tier);
     _persistUser();
     notifyListeners();
   }
