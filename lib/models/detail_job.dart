@@ -83,6 +83,24 @@ class RecipeStage {
     this.notes,
   });
 
+  RecipeStage copyWith({
+    String? stageName,
+    String? machine,
+    String? pad,
+    String? chemical,
+    String? technique,
+    String? dilution,
+    String? notes,
+  }) => RecipeStage(
+    stageName: stageName ?? this.stageName,
+    machine: machine ?? this.machine,
+    pad: pad ?? this.pad,
+    chemical: chemical ?? this.chemical,
+    technique: technique ?? this.technique,
+    dilution: dilution ?? this.dilution,
+    notes: notes ?? this.notes,
+  );
+
   Map<String, dynamic> toJson() => {
     'stageName': stageName,
     'machine': machine,

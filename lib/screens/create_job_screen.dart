@@ -80,13 +80,12 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
   String _paintGaugeHealthId = 'factory_healthy';
   double _initialMicrons = 122.0;
   double _finalMicrons = 119.0;
-  String _gaugePanelNote = 'Hood & Driver Door Flagged';
   late final TextEditingController _initialMicronsCtrl;
   late final TextEditingController _finalMicronsCtrl;
-  late final TextEditingController _gaugePanelNoteCtrl;
 
   // Simplified Studio Recipe Builder State
   List<RecipeStage> _recipeStages = [];
+  int _activeStageIndex = 0;
   String _selectedPresetId = 'preset_2_stage';
 
   final List<PhotoItem> _beforePhotos = [];
@@ -170,7 +169,6 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
 
     _initialMicronsCtrl = TextEditingController(text: _initialMicrons.toStringAsFixed(1));
     _finalMicronsCtrl = TextEditingController(text: _finalMicrons.toStringAsFixed(1));
-    _gaugePanelNoteCtrl = TextEditingController(text: _gaugePanelNote);
   }
 
   @override
@@ -184,7 +182,6 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
     _priceCtrl.dispose();
     _initialMicronsCtrl.dispose();
     _finalMicronsCtrl.dispose();
-    _gaugePanelNoteCtrl.dispose();
     super.dispose();
   }
 
@@ -1282,7 +1279,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
 
           const SizedBox(height: 12),
 
-          // Custom Micron Adjuster & Optional Panel Tagging
+          // Custom Micron Adjuster
           Row(
             children: [
               Expanded(
@@ -1299,7 +1296,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                   },
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
                 child: TextFormField(
                   controller: _finalMicronsCtrl,
@@ -1314,17 +1311,6 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                   },
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextFormField(
-                  controller: _gaugePanelNoteCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Flagged Panels / Zone',
-                    prefixIcon: Icon(Icons.flag_outlined, size: 16),
-                  ),
-                  onChanged: (v) => _gaugePanelNote = v,
-                ),
-              ),
             ],
           ),
         ],
@@ -1332,7 +1318,66 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
     );
   }
 
+  void _applyChipToActiveStage({
+    String? machine,
+    String? pad,
+    String? chemical,
+    String? technique,
+    String? notes,
+    String? stageName,
+    bool alwaysCreateNew = false,
+  }) {
+    setState(() {
+      if (alwaysCreateNew || _recipeStages.isEmpty || _activeStageIndex < 0 || _activeStageIndex >= _recipeStages.length) {
+        final newIndex = _recipeStages.length;
+        _recipeStages.add(RecipeStage(
+          stageName: stageName ?? 'Step ${newIndex + 1}',
+          machine: machine ?? '',
+          pad: pad ?? '',
+          chemical: chemical ?? '',
+          technique: technique ?? '',
+          notes: notes,
+        ));
+        _activeStageIndex = newIndex;
+      } else {
+        final current = _recipeStages[_activeStageIndex];
+        _recipeStages[_activeStageIndex] = current.copyWith(
+          stageName: stageName ?? current.stageName,
+          machine: machine ?? current.machine,
+          pad: pad ?? current.pad,
+          chemical: chemical ?? current.chemical,
+          technique: technique ?? current.technique,
+          notes: notes ?? current.notes,
+        );
+      }
+    });
+
+    final targetName = (_recipeStages.isNotEmpty && _activeStageIndex >= 0 && _activeStageIndex < _recipeStages.length)
+        ? _recipeStages[_activeStageIndex].stageName
+        : 'Recipe';
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Updated $targetName'),
+        duration: const Duration(milliseconds: 1400),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   Widget _buildRecipeBuilderSection() {
+    // Ensure _activeStageIndex is valid if stages exist
+    if (_recipeStages.isNotEmpty) {
+      if (_activeStageIndex < 0 || _activeStageIndex >= _recipeStages.length) {
+        _activeStageIndex = _recipeStages.length - 1;
+      }
+    } else {
+      _activeStageIndex = 0;
+    }
+
+    final hasStages = _recipeStages.isNotEmpty;
+    final activeStageName = hasStages ? _recipeStages[_activeStageIndex].stageName : null;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1363,30 +1408,42 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                   ),
                 ],
               ),
-              TextButton.icon(
-                style: TextButton.styleFrom(
+              FilledButton.tonalIcon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppTheme.primary.withAlpha(40),
                   foregroundColor: AppTheme.primary,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  visualDensity: VisualDensity.compact,
                 ),
                 icon: const Icon(Icons.add_rounded, size: 16),
                 label: const Text('Add Step', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                 onPressed: () {
                   setState(() {
+                    final newIdx = _recipeStages.length;
                     _recipeStages.add(RecipeStage(
-                      stageName: '${_recipeStages.length + 1}. Polishing Stage',
-                      chemical: 'Koch Chemie Micro Cut M3.02',
-                      machine: 'Rupes LHR15 Mark III (15mm)',
-                      pad: 'Rupes Yellow Fine Foam Pad',
-                      technique: '3 passes @ speed 3.5',
+                      stageName: 'Step ${newIdx + 1}: Polishing Stage',
+                      chemical: '',
+                      machine: '',
+                      pad: '',
+                      technique: '',
                     ));
+                    _activeStageIndex = newIdx;
                   });
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Added Step ${_recipeStages.length} - tap chips below to populate'),
+                      duration: const Duration(milliseconds: 1400),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
                 },
               ),
             ],
           ),
           const SizedBox(height: 6),
           const Text(
-            '1-Tap Studio Presets: Auto-populate your machine, pad, chemical, and technique steps or customize with quick-chips.',
+            '1-Tap Studio Presets: Auto-populate standard procedures, or select an active step and tap quick-chips.',
             style: TextStyle(fontSize: 11.5, color: AppTheme.textSecondary),
           ),
           const SizedBox(height: 12),
@@ -1425,6 +1482,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                         setState(() {
                           _selectedPresetId = preset.id;
                           _recipeStages = List.from(preset.stages);
+                          _activeStageIndex = 0;
                           _selectedService = preset.serviceType;
                         });
                       }
@@ -1437,85 +1495,77 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
 
           const SizedBox(height: 16),
 
-          // Quick-Select Chip Bubbles Header
-          const Text(
-            'Tap chips to auto-append into active stage:',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textMuted),
+          // Active Stage Indicator Banner & Quick Chips Instruction
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceLight,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppTheme.border.withAlpha(120)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.touch_app_rounded, size: 16, color: AppTheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        const TextSpan(
+                          text: 'Auto-appending to: ',
+                          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                        ),
+                        TextSpan(
+                          text: hasStages
+                              ? 'Step ${_activeStageIndex + 1} ($activeStageName)'
+                              : 'New Step 1 (will be created)',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
 
           // Chips Carousel / Wrap
           Wrap(
             spacing: 6,
             runSpacing: 6,
             children: [
-              ...DetailingPresets.toolOptions.take(4).map((tool) => _buildAppendChip(tool, Icons.build_rounded, (t) {
-                if (_recipeStages.isNotEmpty) {
-                  final last = _recipeStages.removeLast();
-                  setState(() => _recipeStages.add(RecipeStage(
-                    stageName: last.stageName,
-                    machine: t,
-                    pad: last.pad,
-                    chemical: last.chemical,
-                    technique: last.technique,
-                    dilution: last.dilution,
-                    notes: last.notes,
-                  )));
-                } else {
-                  setState(() => _recipeStages.add(RecipeStage(
-                    stageName: '1. Machine Polishing',
-                    machine: t,
-                    chemical: 'Compound / Polish',
-                  )));
-                }
-              })),
-              ...DetailingPresets.padOptions.take(4).map((pad) => _buildAppendChip(pad, Icons.lens_outlined, (p) {
-                if (_recipeStages.isNotEmpty) {
-                  final last = _recipeStages.removeLast();
-                  setState(() => _recipeStages.add(RecipeStage(
-                    stageName: last.stageName,
-                    machine: last.machine,
-                    pad: p,
-                    chemical: last.chemical,
-                    technique: last.technique,
-                    dilution: last.dilution,
-                    notes: last.notes,
-                  )));
-                } else {
-                  setState(() => _recipeStages.add(RecipeStage(
-                    stageName: '1. Machine Polishing',
-                    pad: p,
-                    chemical: 'Compound / Polish',
-                  )));
-                }
-              })),
-              ...DetailingPresets.compoundOptions.take(4).map((comp) => _buildAppendChip(comp, Icons.science_rounded, (c) {
-                if (_recipeStages.isNotEmpty) {
-                  final last = _recipeStages.removeLast();
-                  setState(() => _recipeStages.add(RecipeStage(
-                    stageName: last.stageName,
-                    machine: last.machine,
-                    pad: last.pad,
-                    chemical: c,
-                    technique: last.technique,
-                    dilution: last.dilution,
-                    notes: last.notes,
-                  )));
-                } else {
-                  setState(() => _recipeStages.add(RecipeStage(
-                    stageName: '1. Correction Stage',
-                    chemical: c,
-                  )));
-                }
-              })),
-              ...DetailingPresets.protectionOptions.take(3).map((prot) => _buildAppendChip(prot, Icons.shield_outlined, (p) {
-                setState(() => _recipeStages.add(RecipeStage(
-                  stageName: '${_recipeStages.length + 1}. Ceramic Protection',
+              ...DetailingPresets.toolOptions.take(4).map((tool) => _buildAppendChip(
+                tool,
+                Icons.build_rounded,
+                (t) => _applyChipToActiveStage(machine: t),
+              )),
+              ...DetailingPresets.padOptions.take(4).map((pad) => _buildAppendChip(
+                pad,
+                Icons.lens_outlined,
+                (p) => _applyChipToActiveStage(pad: p),
+              )),
+              ...DetailingPresets.compoundOptions.take(4).map((comp) => _buildAppendChip(
+                comp,
+                Icons.science_rounded,
+                (c) => _applyChipToActiveStage(chemical: c),
+              )),
+              ...DetailingPresets.protectionOptions.take(3).map((prot) => _buildAppendChip(
+                prot,
+                Icons.shield_outlined,
+                (p) => _applyChipToActiveStage(
+                  stageName: 'Step ${_recipeStages.length + 1}: Ceramic Protection',
                   chemical: p,
                   technique: 'Cross-hatch application, 2-minute flash time, level with edgeless microfiber',
                   notes: 'Allow 12-hour dry cure before exposure to moisture',
-                )));
-              })),
+                  alwaysCreateNew: true,
+                ),
+              )),
             ],
           ),
 
@@ -1530,7 +1580,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Center(
-                child: Text('No stages added. Tap a preset above to load a proven recipe.',
+                child: Text('No stages added. Tap "+ Add Step" or a preset above to begin.',
                     style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
               ),
             )
@@ -1541,59 +1591,111 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
               itemCount: _recipeStages.length,
               itemBuilder: (context, idx) {
                 final stage = _recipeStages[idx];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surfaceLight,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppTheme.border.withAlpha(120)),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      CircleAvatar(
-                        radius: 12,
-                        backgroundColor: AppTheme.primary.withAlpha(30),
-                        child: Text('${idx + 1}',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                final isCurrentActive = idx == _activeStageIndex;
+
+                return InkWell(
+                  onTap: () {
+                    setState(() => _activeStageIndex = idx);
+                  },
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isCurrentActive ? AppTheme.primary.withAlpha(20) : AppTheme.surfaceLight,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isCurrentActive ? AppTheme.primary : AppTheme.border.withAlpha(120),
+                        width: isCurrentActive ? 1.6 : 1.0,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              stage.stageName,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        CircleAvatar(
+                          radius: 12,
+                          backgroundColor: isCurrentActive ? AppTheme.primary : AppTheme.primary.withAlpha(30),
+                          child: Text(
+                            '${idx + 1}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: isCurrentActive ? Colors.black : AppTheme.primary,
                             ),
-                            const SizedBox(height: 3),
-                            if (stage.machine.isNotEmpty)
-                              Text('Tool: ${stage.machine}',
-                                  style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                            if (stage.pad.isNotEmpty)
-                              Text('Pad: ${stage.pad}',
-                                  style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                            Text('Chemical: ${stage.chemical}',
-                                style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600)),
-                            if (stage.technique.isNotEmpty)
-                              Text('Technique: ${stage.technique}',
-                                  style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted)),
-                            if (stage.notes != null && stage.notes!.isNotEmpty)
-                              Text('Note: ${stage.notes}',
-                                  style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted, fontStyle: FontStyle.italic)),
-                          ],
+                          ),
                         ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent),
-                        onPressed: () {
-                          setState(() {
-                            _recipeStages.removeAt(idx);
-                          });
-                        },
-                      ),
-                    ],
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      stage.stageName,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: isCurrentActive ? AppTheme.primary : Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                  if (isCurrentActive)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.primary,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Text(
+                                        'ACTIVE STEP',
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              if (stage.machine.isNotEmpty)
+                                Text('Tool: ${stage.machine}',
+                                    style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                              if (stage.pad.isNotEmpty)
+                                Text('Pad: ${stage.pad}',
+                                    style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                              if (stage.chemical.isNotEmpty)
+                                Text('Chemical: ${stage.chemical}',
+                                    style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600))
+                              else
+                                const Text('(No chemical selected - tap a compound chip above)',
+                                    style: TextStyle(fontSize: 11, color: AppTheme.textMuted, fontStyle: FontStyle.italic)),
+                              if (stage.technique.isNotEmpty)
+                                Text('Technique: ${stage.technique}',
+                                    style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted)),
+                              if (stage.notes != null && stage.notes!.isNotEmpty)
+                                Text('Note: ${stage.notes}',
+                                    style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted, fontStyle: FontStyle.italic)),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent),
+                          onPressed: () {
+                            setState(() {
+                              _recipeStages.removeAt(idx);
+                              if (_recipeStages.isEmpty) {
+                                _activeStageIndex = 0;
+                              } else if (_activeStageIndex >= _recipeStages.length) {
+                                _activeStageIndex = _recipeStages.length - 1;
+                              }
+                            });
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },

@@ -99,37 +99,25 @@ class DetailingPresets {
     ),
   ];
 
-  // Industry Standard Correction Percentages (%)
+  // Industry Standard Correction Percentages (%) - Simplified 3 Selections
   static const List<CorrectionPercentageOption> correctionPercentages = [
     CorrectionPercentageOption(
-      percentage: 70,
-      label: '70% Correction',
-      processLabel: '1-Stage Gloss Enhancement',
-      recommendation: 'Daily driver refresh. Removes light marring while preserving maximum clear coat.',
-    ),
-    CorrectionPercentageOption(
-      percentage: 80,
-      label: '80% Correction',
-      processLabel: '1-Stage / AIO Enhancement',
-      recommendation: 'High-gloss single-step. Clears standard wash marring and medium halos.',
+      percentage: 75,
+      label: '75% Correction',
+      processLabel: '1-Stage Enhancement',
+      recommendation: 'Daily driver refresh. Removes light marring and swirls while preserving clear coat.',
     ),
     CorrectionPercentageOption(
       percentage: 85,
       label: '85% Correction',
-      processLabel: '2-Stage Compound & Polish',
-      recommendation: 'Industry sweet spot. Removes majority of swirls without risking paint longevity.',
-    ),
-    CorrectionPercentageOption(
-      percentage: 90,
-      label: '90% Correction',
-      processLabel: 'Multi-Stage Deep Correction',
-      recommendation: 'Enthusiast multi-stage. Eliminates deep swirl trails and moderate water etchings.',
+      processLabel: '2-Stage Correction',
+      recommendation: 'Sweet spot. Compound cut + fine jeweling polish eliminating 85%+ swirls.',
     ),
     CorrectionPercentageOption(
       percentage: 95,
       label: '95%+ Correction',
-      processLabel: 'Concours / Restoration Multi-Stage',
-      recommendation: 'Show car restoration. Near-perfection (never 100% promised to preserve clear coat).',
+      processLabel: 'Concours Restoration',
+      recommendation: 'Show car restoration. Multi-stage near-perfection while preserving safe paint boundaries.',
     ),
   ];
 
@@ -155,7 +143,7 @@ class DetailingPresets {
     ),
     PaintGaugeOption(
       id: 'repainted',
-      label: 'Repainted / Inconsistent',
+      label: 'Re-spray / Heavy',
       rangeLabel: '> 200 µm',
       defaultInitialMicrons: 235.0,
       defaultFinalMicrons: 230.5,

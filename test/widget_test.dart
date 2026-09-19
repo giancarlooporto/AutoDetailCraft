@@ -478,7 +478,7 @@ void main() {
 
     // Verify detailing presets have required options
     expect(DetailingPresets.defectSeverities.length, 4);
-    expect(DetailingPresets.correctionPercentages.length, 5);
+    expect(DetailingPresets.correctionPercentages.length, 3);
     expect(DetailingPresets.paintGaugePresets.length, 3);
     expect(DetailingPresets.recipePresets.length, 3);
     expect(DetailingPresets.toolOptions.isNotEmpty, true);
@@ -578,15 +578,17 @@ void main() {
 
     final repository = JobRepository();
 
-    await tester.pumpWidget(MaterialApp(
-      theme: AppTheme.darkTheme,
-      home: Scaffold(
-        body: CreateJobScreen(
-          repository: repository,
-          onJobCreated: () {},
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: CreateJobScreen(
+            repository: repository,
+            onJobCreated: () {},
+          ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     // Scroll down to make defect stage section visible
@@ -604,22 +606,85 @@ void main() {
     expect(find.text('Stage 3: Severe RIDS'), findsOneWidget);
     expect(find.text('Stage 4: Paint Failure'), findsOneWidget);
 
-    // Verify presence of Correction Percentage options
+    // Verify presence of Simplified 3 Correction Percentage options
     expect(find.text('TARGET / ACHIEVED CORRECTION (%)'), findsOneWidget);
-    expect(find.text('70%'), findsOneWidget);
-    expect(find.text('80%'), findsOneWidget);
+    expect(find.text('75%'), findsOneWidget);
     expect(find.text('85%'), findsOneWidget);
-    expect(find.text('90%'), findsOneWidget);
     expect(find.text('95%'), findsOneWidget);
 
     // Tap on Stage 3
     await tester.tap(find.text('Stage 3: Severe RIDS'));
     await tester.pumpAndSettle();
 
-    // Tap on 90% correction
-    await tester.tap(find.text('90%'));
+    // Tap on 95% correction
+    await tester.tap(find.text('95%'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Stage 3: Severe RIDS • 90% Correction'), findsOneWidget);
+    expect(find.text('Stage 3: Severe RIDS • 95% Correction'), findsOneWidget);
+
+    // Scroll down to recipe builder
+    await tester.scrollUntilVisible(
+      find.text('Studio Detailing Recipe'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Studio Detailing Recipe'), findsOneWidget);
+    expect(find.text('Add Step'), findsOneWidget);
+
+    // Tap Add Step
+    await tester.tap(find.text('Add Step'));
+    await tester.pumpAndSettle();
+
+    // Verify active step indicator and newly added step exists
+    expect(find.textContaining('ACTIVE STEP'), findsWidgets);
+
+    // Tap a compound chip (Menzerna Heavy Cut 400)
+    await tester.tap(find.text('Menzerna Heavy Cut 400'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Chemical: Menzerna Heavy Cut 400'), findsOneWidget);
+
+    // Tap a tool chip and pad chip into active step
+    await tester.tap(find.text('Rupes LHR15 Mark III (15mm)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Tool: Rupes LHR15 Mark III (15mm)'), findsWidgets);
+
+    await tester.tap(find.text('Lake Country Microfiber Cutting Pad'));
+    await tester.pumpAndSettle();
+    expect(find.text('Pad: Lake Country Microfiber Cutting Pad'), findsWidgets);
+
+    // Tap a protection chip (creates dedicated ceramic protection step)
+    final initialStepCount = find.byIcon(Icons.delete_outline_rounded).evaluate().length;
+    await tester.tap(find.text('Gtechniq Crystal Serum Ultra (9H)'));
+    await tester.pumpAndSettle();
+
+    final newStepCount = find.byIcon(Icons.delete_outline_rounded).evaluate().length;
+    expect(newStepCount, initialStepCount + 1);
+    expect(find.text('Chemical: Gtechniq Crystal Serum Ultra (9H)'), findsOneWidget);
+
+    // Delete a step (scroll to ensure visible in modal dialog)
+    final lastDeleteFinder = find.byIcon(Icons.delete_outline_rounded).last;
+    await tester.scrollUntilVisible(
+      lastDeleteFinder,
+      100,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(lastDeleteFinder);
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.delete_outline_rounded).evaluate().length, initialStepCount);
+
+    // Scroll up to presets and test 1-Tap preset switching
+    await tester.scrollUntilVisible(
+      find.text('1-Stage Gloss Enhancement'),
+      -100,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1-Stage Gloss Enhancement'));
+    await tester.pumpAndSettle();
+    expect(find.text('1. Chemical & Clay Decontamination'), findsOneWidget);
   });
 }
