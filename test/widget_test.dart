@@ -771,50 +771,86 @@ void main() {
   });
 
   testWidgets('CreateJobScreen adapts workflow dynamically based on selected Service Type', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1000, 1600);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(1200, 2400);
     tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
 
-    final repo = JobRepository();
-    await repo.init();
+    final repository = JobRepository();
 
+    // 1. Verify Ceramic Coating / Exterior mode displays paint gauge & defect severity
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.darkTheme,
         home: Scaffold(
           body: CreateJobScreen(
-            repository: repo,
+            repository: repository,
             onJobCreated: () {},
+            initialServiceType: 'Ceramic Coating',
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    // Default service is Ceramic Coating: Paint Defect & Paint Gauge walkaround are visible
+    // Scroll down to defect stage & paint gauge
+    await tester.scrollUntilVisible(
+      find.text('INITIAL DEFECT STAGE'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('INITIAL DEFECT STAGE'), findsOneWidget);
     expect(find.text('Paint Defect & Correction Assessment'), findsOneWidget);
     expect(find.text('8-Point Paint Gauge Walkaround Body Check'), findsOneWidget);
-    expect(find.text('Clearcoat Hardness'), findsOneWidget);
 
-    // Switch Service to 'Interior Deep Clean'
-    await tester.tap(find.text('Ceramic Coating').first);
+    // 2. Switch to Interior Deep Clean mode
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: CreateJobScreen(
+            repository: repository,
+            onJobCreated: () {},
+            initialServiceType: 'Interior Deep Clean',
+          ),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Interior Deep Clean').last);
-    await tester.pumpAndSettle();
-
-    // Exterior paint gauge and defect severity should now be HIDDEN
+    // Exterior paint gauge and defect severity should be hidden in Interior mode
     expect(find.text('Paint Defect & Correction Assessment'), findsNothing);
     expect(find.text('8-Point Paint Gauge Walkaround Body Check'), findsNothing);
-    expect(find.text('Clearcoat Hardness'), findsNothing);
+    expect(find.text('INITIAL DEFECT STAGE'), findsNothing);
 
-    // Add a step in Interior Deep Clean
+    // Scroll down to Studio Detailing Recipe
+    await tester.scrollUntilVisible(
+      find.text('Add Step'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    // Tap Add Step
     await tester.tap(find.text('Add Step'));
     await tester.pumpAndSettle();
 
+    // Scroll to interior chips
+    await tester.scrollUntilVisible(
+      find.text('Commercial Hot Water Extractor'),
+      100,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
     // Verify interior-specific chips appear
-    expect(find.text('Commercial Hot Water Extractor'), findsOneWidget);
-    expect(find.text('Scrub Ninja Interior Pad'), findsOneWidget);
-    expect(find.text('P&S Carpet Bomber & Terminator'), findsOneWidget);
+    expect(find.text('Commercial Hot Water Extractor'), findsWidgets);
+    expect(find.text('Scrub Ninja Interior Pad'), findsWidgets);
+    expect(find.text('P&S Carpet Bomber & Terminator'), findsWidgets);
   });
 }

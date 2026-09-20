@@ -32,11 +32,14 @@ class CreateJobScreen extends StatefulWidget {
   final VoidCallback onJobCreated;
   final DetailJob? jobToEdit;
 
+  final String? initialServiceType;
+
   const CreateJobScreen({
     super.key,
     required this.repository,
     required this.onJobCreated,
     this.jobToEdit,
+    this.initialServiceType,
   });
 
   static Future<void> show(
@@ -147,6 +150,9 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       final afterHeroIdx = afters.indexOf(edit.afterImageUrl);
       if (afterHeroIdx != -1) _selectedHeroAfterIndex = afterHeroIdx;
     } else {
+      if (widget.initialServiceType != null) {
+        _selectedService = widget.initialServiceType!;
+      }
       // Default initial demonstration photos
       _beforePhotos.add(PhotoItem(
         id: 'before_init_1',
@@ -167,6 +173,16 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
 
     _initialMicronsCtrl = TextEditingController(text: _initialMicrons.toStringAsFixed(1));
     _finalMicronsCtrl = TextEditingController(text: _finalMicrons.toStringAsFixed(1));
+  }
+
+  @override
+  void didUpdateWidget(covariant CreateJobScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialServiceType != null && widget.initialServiceType != oldWidget.initialServiceType) {
+      setState(() {
+        _selectedService = widget.initialServiceType!;
+      });
+    }
   }
 
   @override
@@ -1647,6 +1663,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
               // Scrollable Form Content
               Expanded(
                 child: ListView(
+                  key: const Key('create_job_scroll_view'),
                   children: [
                     // Step 1: Bulk Before Photos Container
             _buildUploadBox(
@@ -1745,6 +1762,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
+                    key: const Key('service_package_dropdown'),
                     initialValue: _selectedService,
                     decoration: const InputDecoration(labelText: 'Service Package Provided'),
                     items: AppConstants.serviceTypes.skip(1).map((s) {

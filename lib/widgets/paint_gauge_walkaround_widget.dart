@@ -493,9 +493,8 @@ class _PaintGaugeWalkaroundWidgetState extends State<PaintGaugeWalkaroundWidget>
                             ],
                           ),
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Flexible(
+                              Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisSize: MainAxisSize.min,
@@ -503,7 +502,7 @@ class _PaintGaugeWalkaroundWidgetState extends State<PaintGaugeWalkaroundWidget>
                                     Text(
                                       _formatReading(point.initialMicrons),
                                       style: TextStyle(
-                                        fontSize: 11.5,
+                                        fontSize: 11,
                                         fontWeight: FontWeight.bold,
                                         color: statusColor,
                                       ),
@@ -515,10 +514,10 @@ class _PaintGaugeWalkaroundWidgetState extends State<PaintGaugeWalkaroundWidget>
                                 ),
                               ),
                               const Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 2),
-                                child: Icon(Icons.arrow_forward_rounded, size: 9, color: AppTheme.textMuted),
+                                padding: EdgeInsets.symmetric(horizontal: 1),
+                                child: Icon(Icons.arrow_forward_rounded, size: 8, color: AppTheme.textMuted),
                               ),
-                              Flexible(
+                              Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   mainAxisSize: MainAxisSize.min,
@@ -526,7 +525,7 @@ class _PaintGaugeWalkaroundWidgetState extends State<PaintGaugeWalkaroundWidget>
                                     Text(
                                       _formatReading(point.postPolishMicrons),
                                       style: const TextStyle(
-                                        fontSize: 11.5,
+                                        fontSize: 11,
                                         fontWeight: FontWeight.bold,
                                         color: AppTheme.primary,
                                       ),
