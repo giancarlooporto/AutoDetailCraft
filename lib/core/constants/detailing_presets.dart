@@ -152,7 +152,7 @@ class DetailingPresets {
     ),
   ];
 
-  // Quick-select Chip Options for Recipe Builder
+  // Quick-select Chip Options for Recipe Builder (General / Polishing)
   static const List<String> toolOptions = [
     'Rupes LHR15 Mark III (15mm)',
     'Rupes LHR21 Mark III (21mm)',
@@ -195,6 +195,117 @@ class DetailingPresets {
     'IGL Kenzo Graphene 10H',
     'Koch Chemie Ceramic Allround C0.02',
     'Jescar Power Lock Plus Sealant',
+  ];
+
+  // Interior-specific Recipe Chips
+  static const List<String> interiorToolOptions = [
+    'Commercial Hot Water Extractor',
+    'Tornador Black Blowout Tool',
+    'Optima Steamer SE',
+    'Drill Brush Set (Soft/Medium)',
+    'Ozone Generator Machine',
+    'HEPA Detail Vacuum',
+  ];
+
+  static const List<String> interiorPadOptions = [
+    'Scrub Ninja Interior Pad',
+    'Horsehair Leather Brush',
+    'Microfiber Extraction Mitt',
+    'Foam Applicator Sponge',
+    'Ultra-Soft Boar Hair Detail Brush',
+    'Melamine Eraser Pad',
+  ];
+
+  static const List<String> interiorChemicalOptions = [
+    'P&S Carpet Bomber & Terminator',
+    'Koch Chemie Pol Star Leather/Textile',
+    'Colourlock Mild Leather Cleaner',
+    'P&S Xpress Interior Cleaner',
+    'CarPro MultiX All Purpose Cleaner',
+    'Meguiar\'s D101 APC',
+  ];
+
+  static const List<String> interiorProtectionOptions = [
+    'Gtechniq L1 Leather Guard',
+    'Gtechniq I1 Smart Fabric Shield',
+    'CarPro CQuartz Fabric 2.0',
+    'Koch Chemie Top Star Interior Matte',
+    'Colourlock Leather Shield',
+    '303 Aerospace UV Protectant',
+  ];
+
+  // PPF & Clear Bra Recipe Chips
+  static const List<String> ppfToolOptions = [
+    'Graphtec FC9000 Plotter Cut',
+    'Steamer for Film Stretching',
+    'Heat Gun Digital Temp',
+    'Olfa 30-Degree Stainless Blade',
+    'Pressurized Slip Spray Tank',
+    'Tack Solution Hand Sprayer',
+  ];
+
+  static const List<String> ppfPadOptions = [
+    'Fusion Red Squeegee (Firm)',
+    'Yellow Turbo Squeegee',
+    'Soft Green Contour Squeegee',
+    'Clay Towel Fine Decon',
+    'Microfiber Installation Glove',
+    'Hard Card Teflon Edger',
+  ];
+
+  static const List<String> ppfChemicalOptions = [
+    'XPEL Slip Solution Gel',
+    'STEK Fusion Installation Gel',
+    'Isopropyl Alcohol (IPA 15%) Tack',
+    'Johnson\'s Baby Shampoo Slip',
+    'XPEL Film Sealant & Polish',
+    'CarPro Eraser Pre-Install Wipe',
+  ];
+
+  static const List<String> ppfProtectionOptions = [
+    'XPEL Ultimate Plus 8mil (Self-Healing)',
+    'STEK DYNOshield Hydrophobic Film',
+    'SunTek Reaction Ceramic PPF',
+    '3M Scotchgard Pro Series',
+    'Gtechniq HALO Ceramic PPF Coating',
+    'CarPro Skin PPF Ceramic Topcoat',
+  ];
+
+  // Gloss & Decon Wash Recipe Chips
+  static const List<String> washToolOptions = [
+    'MTM Hydro PF22.2 Foam Cannon',
+    'Kranzle K1122TST Pressure Washer',
+    'Detail Factory Ultra Soft Brushes',
+    'BigBoi BlowR Mini Pro Car Dryer',
+    'Wheel Woolies 3-Piece Set',
+    'Grit Guard Dual-Bucket System',
+  ];
+
+  static const List<String> washPadOptions = [
+    'CarPro Merino Wool Wash Mitt',
+    'The Rag Company Cyclone Microfiber Mitt',
+    'Microfiber Madness Incredipad',
+    'Synthetic Clay Mitt / Towel',
+    'Wheel Barrel Microfiber Wand',
+    'Gauntlet 70/30 Twist Loop Towel',
+  ];
+
+  static const List<String> washChemicalOptions = [
+    'Koch Chemie Green Star APC',
+    'CarPro IronX Fallout Remover',
+    'CarPro TarX Adhesive Dissolver',
+    'Bilt Hamber Auto-Foam Touchless',
+    'Koch Chemie Gsf Gentle Snow Foam',
+    'Optimum No Rinse (ONR) Clay Lube',
+  ];
+
+  static const List<String> washProtectionOptions = [
+    'CarPro Reload 2.0 SiO2 Spray',
+    'Koch Chemie S0.02 Hydro Foam Sealant',
+    'Gyeon Q2M WetCoat Hydrophobic',
+    'Turtle Wax Hybrid Solutions Ceramic Spray',
+    'Sonax Ceramic Ultra Slick Detailer',
+    'P&S Bead Maker Paint Gloss',
   ];
 
   // Quick 1-Tap Studio Recipe Presets
@@ -293,6 +404,71 @@ class DetailingPresets {
           technique: 'Even wipe with foam applicator, buff off transfer with low-pile microfiber',
           dilution: 'Neat',
           notes: 'Leaves 100% matte OEM non-greasy finish with UV50+ sun protection and anti-dye transfer',
+        ),
+      ],
+    ),
+    StudioRecipePreset(
+      id: 'preset_ppf',
+      name: 'Full Front PPF & Ceramic Topcoat',
+      serviceType: 'PPF & Clear Bra',
+      description: 'Precision computer-cut self-healing film installation with ceramic PPF slick topcoat.',
+      stages: [
+        RecipeStage(
+          stageName: '1. Film Edge Prep & Slip Setup',
+          machine: 'Graphtec FC9000 Plotter Cut',
+          pad: 'Clay Towel Fine Decon',
+          chemical: 'XPEL Slip Solution Gel',
+          technique: 'Thorough edge degrease with 15% IPA tack, lubricate hood and fenders with slip gel',
+          dilution: '1 oz per 32 oz water',
+          notes: 'Ensure zero dust particles under film during float alignment',
+        ),
+        RecipeStage(
+          stageName: '2. Film Squeegee Floating & Tacking',
+          machine: 'Heat Gun Digital Temp',
+          pad: 'Yellow Turbo Squeegee',
+          chemical: 'STEK DYNOshield Hydrophobic Film',
+          technique: 'Lock center seam, squeegee outward at 45-degree angle with firm overlapping strokes',
+          notes: 'Wrap all rolled edges into panel crevices for seamless invisible finish',
+        ),
+        RecipeStage(
+          stageName: '3. Ceramic PPF Protection Topcoat',
+          chemical: 'Gtechniq HALO Ceramic PPF Coating',
+          technique: 'Even crosshatch wipe with microfiber applicator pad, buff off after 2 minutes',
+          dilution: 'Neat',
+          notes: 'Prevents film yellowing, enhances water beading, and protects against bug splatter etch',
+        ),
+      ],
+    ),
+    StudioRecipePreset(
+      id: 'preset_wash',
+      name: 'Gloss & Decon Wash Protocol',
+      serviceType: 'Gloss & Decon Wash',
+      description: 'Touchless snow foam, chemical iron/tar decontamination, and SiO2 ceramic spray sealant.',
+      stages: [
+        RecipeStage(
+          stageName: '1. Touchless Foam & Fallout Decon',
+          machine: 'MTM Hydro PF22.2 Foam Cannon',
+          pad: 'Wheel Barrel Microfiber Wand',
+          chemical: 'Bilt Hamber Auto-Foam Touchless + CarPro IronX',
+          technique: 'Pre-foam soak dwell 5 minutes, rinse 1500 PSI, apply iron fallout dissolver to paint and wheels',
+          notes: 'Dissolves road grime and brake dust before contact wash',
+        ),
+        RecipeStage(
+          stageName: '2. Two-Bucket Contact Wash & Clay Towel',
+          machine: 'Grit Guard Dual-Bucket System',
+          pad: 'CarPro Merino Wool Wash Mitt',
+          chemical: 'Koch Chemie Gsf Gentle Snow Foam',
+          technique: 'Straight-line contact wash top to bottom, clay towel lubricated with ONR',
+          notes: 'Eliminates embedded grit to restore silky smooth paint surface',
+        ),
+        RecipeStage(
+          stageName: '3. SiO2 Ceramic Spray Sealant Cure',
+          machine: 'BigBoi BlowR Mini Pro Car Dryer',
+          pad: 'Gauntlet 70/30 Twist Loop Towel',
+          chemical: 'CarPro Reload 2.0 SiO2 Spray',
+          technique: 'Blow dry crevices, mist 2 sprays per panel and buff with 450gsm plush microfiber',
+          dilution: 'Neat',
+          notes: '6 months hydrophobic protection with extreme gloss enhancement',
         ),
       ],
     ),

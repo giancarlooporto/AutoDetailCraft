@@ -1,4 +1,5 @@
 import 'user_profile.dart';
+import 'paint_gauge_point.dart';
 
 enum DefectStage {
   stage1('Stage 1: Light', 'Wash Marring, Light Holograms/Spider-Webbing', 1),
@@ -224,6 +225,7 @@ class DetailJob {
   // Paint inspection metrics
   final double initialPaintThicknessMicrons;
   final double finalPaintThicknessMicrons;
+  final List<PaintGaugePoint> paintGaugePoints;
   final int defectSeverity; // Legacy numeric stage (1 to 4)
   final DefectStage defectStage; // Industry standard defect stage
   final int correctionPercentage; // e.g. 70%, 80%, 85%, 90%, 95%
@@ -255,7 +257,7 @@ class DetailJob {
   final bool isSaved;
   final List<JobComment> comments;
 
-  const DetailJob({
+  DetailJob({
     required this.id,
     required this.author,
     required this.createdAt,
@@ -269,6 +271,7 @@ class DetailJob {
     required this.paintHardness,
     required this.initialPaintThicknessMicrons,
     required this.finalPaintThicknessMicrons,
+    List<PaintGaugePoint>? paintGaugePoints,
     required this.defectSeverity,
     DefectStage? defectStage,
     this.correctionPercentage = 85,
@@ -287,7 +290,10 @@ class DetailJob {
     this.savesCount = 0,
     this.isSaved = false,
     this.comments = const [],
-  }) : defectStage = defectStage ??
+  }) : paintGaugePoints = paintGaugePoints != null && paintGaugePoints.isNotEmpty
+            ? paintGaugePoints
+            : PaintGaugePoint.default8Points(initial: initialPaintThicknessMicrons, post: finalPaintThicknessMicrons),
+       defectStage = defectStage ??
             (defectSeverity <= 1
                 ? DefectStage.stage1
                 : defectSeverity == 2
@@ -302,7 +308,15 @@ class DetailJob {
                                     ? DefectStage.stage3
                                     : DefectStage.stage4);
 
-  double get micronsRemoved => (initialPaintThicknessMicrons - finalPaintThicknessMicrons).clamp(0.0, 99.0);
+  double get overallInitialAverage => paintGaugePoints.isNotEmpty
+      ? paintGaugePoints.map((p) => p.initialMicrons).reduce((a, b) => a + b) / paintGaugePoints.length
+      : initialPaintThicknessMicrons;
+
+  double get overallPostPolishAverage => paintGaugePoints.isNotEmpty
+      ? paintGaugePoints.map((p) => p.postPolishMicrons).reduce((a, b) => a + b) / paintGaugePoints.length
+      : finalPaintThicknessMicrons;
+
+  double get micronsRemoved => (overallInitialAverage - overallPostPolishAverage).clamp(0.0, 99.0);
 
   String get vehicleFullName => '$vehicleYear $vehicleMake $vehicleModel';
 
@@ -359,6 +373,7 @@ class DetailJob {
     PaintHardness? paintHardness,
     double? initialPaintThicknessMicrons,
     double? finalPaintThicknessMicrons,
+    List<PaintGaugePoint>? paintGaugePoints,
     int? defectSeverity,
     DefectStage? defectStage,
     int? correctionPercentage,
@@ -393,6 +408,7 @@ class DetailJob {
       paintHardness: paintHardness ?? this.paintHardness,
       initialPaintThicknessMicrons: initialPaintThicknessMicrons ?? this.initialPaintThicknessMicrons,
       finalPaintThicknessMicrons: finalPaintThicknessMicrons ?? this.finalPaintThicknessMicrons,
+      paintGaugePoints: paintGaugePoints ?? this.paintGaugePoints,
       defectSeverity: defectSeverity ?? newDefectStage.stageNumber,
       defectStage: newDefectStage,
       correctionPercentage: correctionPercentage ?? this.correctionPercentage,
@@ -428,6 +444,7 @@ class DetailJob {
     'paintHardness': paintHardness.name,
     'initialPaintThicknessMicrons': initialPaintThicknessMicrons,
     'finalPaintThicknessMicrons': finalPaintThicknessMicrons,
+    'paintGaugePoints': paintGaugePoints.map((p) => p.toJson()).toList(),
     'defectSeverity': defectSeverity,
     'defectStage': defectStage.name,
     'correctionPercentage': correctionPercentage,
@@ -455,6 +472,8 @@ class DetailJob {
         ? DefectStage.fromString(stageStr)
         : DefectStage.fromStageNumber(rawSeverity);
     final resolvedSeverity = resolvedStage.stageNumber;
+    final initialMicrons = (json['initialPaintThicknessMicrons'] as num?)?.toDouble() ?? 120.0;
+    final finalMicrons = (json['finalPaintThicknessMicrons'] as num?)?.toDouble() ?? 116.0;
 
     return DetailJob(
       id: json['id'] as String? ?? 'job_${DateTime.now().millisecondsSinceEpoch}',
@@ -479,8 +498,11 @@ class DetailJob {
         (h) => h.name == (json['paintHardness'] as String?),
         orElse: () => PaintHardness.medium,
       ),
-      initialPaintThicknessMicrons: (json['initialPaintThicknessMicrons'] as num?)?.toDouble() ?? 120.0,
-      finalPaintThicknessMicrons: (json['finalPaintThicknessMicrons'] as num?)?.toDouble() ?? 116.0,
+      initialPaintThicknessMicrons: initialMicrons,
+      finalPaintThicknessMicrons: finalMicrons,
+      paintGaugePoints: (json['paintGaugePoints'] as List<dynamic>?)
+          ?.map((p) => PaintGaugePoint.fromJson(p as Map<String, dynamic>))
+          .toList(),
       defectSeverity: resolvedSeverity,
       defectStage: resolvedStage,
       correctionPercentage: (json['correctionPercentage'] as int?) ?? 85,

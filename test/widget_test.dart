@@ -7,11 +7,13 @@ import 'package:detail_craft/widgets/dilution_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:detail_craft/core/theme/app_theme.dart';
+import 'package:detail_craft/core/constants/detailing_presets.dart';
 import 'package:detail_craft/screens/main_navigation_screen.dart';
 import 'package:detail_craft/services/job_repository.dart';
-import 'package:detail_craft/core/constants/detailing_presets.dart';
 import 'package:detail_craft/widgets/fullscreen_image_viewer.dart';
 import 'package:detail_craft/screens/create_job_screen.dart';
+import 'package:detail_craft/models/paint_gauge_point.dart';
+import 'package:detail_craft/widgets/paint_gauge_walkaround_widget.dart';
 
 import 'dart:async';
 import 'dart:io';
@@ -480,7 +482,7 @@ void main() {
     expect(DetailingPresets.defectSeverities.length, 4);
     expect(DetailingPresets.correctionPercentages.length, 3);
     expect(DetailingPresets.paintGaugePresets.length, 3);
-    expect(DetailingPresets.recipePresets.length, 3);
+    expect(DetailingPresets.recipePresets.length, 5);
     expect(DetailingPresets.toolOptions.isNotEmpty, true);
     expect(DetailingPresets.padOptions.isNotEmpty, true);
     expect(DetailingPresets.compoundOptions.isNotEmpty, true);
@@ -640,6 +642,14 @@ void main() {
     // Verify active step indicator and newly added step exists
     expect(find.textContaining('ACTIVE STEP'), findsWidgets);
 
+    // Scroll to Menzerna Heavy Cut 400 chip if needed and tap
+    await tester.scrollUntilVisible(
+      find.text('Menzerna Heavy Cut 400'),
+      100,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
     // Tap a compound chip (Menzerna Heavy Cut 400)
     await tester.tap(find.text('Menzerna Heavy Cut 400'));
     await tester.pumpAndSettle();
@@ -686,5 +696,125 @@ void main() {
     await tester.tap(find.text('1-Stage Gloss Enhancement'));
     await tester.pumpAndSettle();
     expect(find.text('1. Chemical & Clay Decontamination'), findsOneWidget);
+  });
+
+  testWidgets('PaintGaugeWalkaroundWidget calculates Overall Vehicle Average and supports unit toggle & presets', (WidgetTester tester) async {
+    List<PaintGaugePoint> points = PaintGaugePoint.default8Points(initial: 120.0, post: 115.0);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                return PaintGaugeWalkaroundWidget(
+                  points: points,
+                  onPointsChanged: (newPts) {
+                    setState(() => points = newPts);
+                  },
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify 8-point walkaround inspection renders
+    expect(find.text('8-Point Paint Gauge Walkaround Body Check'), findsOneWidget);
+    expect(find.text('Overall Vehicle Average'), findsOneWidget);
+
+    // Initial avg should be 120 µm, post 115 µm, removed -5 µm
+    expect(find.text('120 µm'), findsWidgets);
+    expect(find.text('115 µm'), findsWidgets);
+    expect(find.text('-5 µm'), findsOneWidget);
+
+    // Verify 8 vehicle zones render
+    expect(find.text('Hood'), findsWidgets);
+    expect(find.text('Roof'), findsWidgets);
+    expect(find.text('Trunk'), findsWidgets);
+
+    // Tap on mil toggle
+    await tester.tap(find.text('mils'));
+    await tester.pumpAndSettle();
+
+    // Verify mil unit display (120 µm / 25.4 = ~4.7 mil)
+    expect(find.text('4.7 mil'), findsWidgets);
+
+    // Switch back to µm
+    await tester.tap(find.text('µm'));
+    await tester.pumpAndSettle();
+
+    // Tap on a panel (Hood) to open dialog editor
+    await tester.tap(find.text('Hood').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Hood Reading'), findsOneWidget);
+    expect(find.text('Quick Presets (1-Tap):'), findsOneWidget);
+    expect(find.text('Factory Healthy ~120µm'), findsOneWidget);
+    expect(find.text('Thin ~80µm'), findsOneWidget);
+    expect(find.text('Re-spray ~200µm'), findsOneWidget);
+
+    // Tap Thin preset (sets initial to 82, post to 80)
+    await tester.tap(find.text('Thin ~80µm'));
+    await tester.pumpAndSettle();
+
+    // Apply dialog
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+
+    // Point was updated to 82 µm initial, 80 µm post. Overall initial average recalculated:
+    // (7 * 120 + 82) / 8 = 115.25 -> 115 µm
+    expect(find.text('115 µm'), findsWidgets);
+  });
+
+  testWidgets('CreateJobScreen adapts workflow dynamically based on selected Service Type', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1000, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final repo = JobRepository();
+    await repo.init();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: CreateJobScreen(
+            repository: repo,
+            onJobCreated: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Default service is Ceramic Coating: Paint Defect & Paint Gauge walkaround are visible
+    expect(find.text('Paint Defect & Correction Assessment'), findsOneWidget);
+    expect(find.text('8-Point Paint Gauge Walkaround Body Check'), findsOneWidget);
+    expect(find.text('Clearcoat Hardness'), findsOneWidget);
+
+    // Switch Service to 'Interior Deep Clean'
+    await tester.tap(find.text('Ceramic Coating').first);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Interior Deep Clean').last);
+    await tester.pumpAndSettle();
+
+    // Exterior paint gauge and defect severity should now be HIDDEN
+    expect(find.text('Paint Defect & Correction Assessment'), findsNothing);
+    expect(find.text('8-Point Paint Gauge Walkaround Body Check'), findsNothing);
+    expect(find.text('Clearcoat Hardness'), findsNothing);
+
+    // Add a step in Interior Deep Clean
+    await tester.tap(find.text('Add Step'));
+    await tester.pumpAndSettle();
+
+    // Verify interior-specific chips appear
+    expect(find.text('Commercial Hot Water Extractor'), findsOneWidget);
+    expect(find.text('Scrub Ninja Interior Pad'), findsOneWidget);
+    expect(find.text('P&S Carpet Bomber & Terminator'), findsOneWidget);
   });
 }

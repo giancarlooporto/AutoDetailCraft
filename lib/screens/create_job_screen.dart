@@ -5,11 +5,13 @@ import '../core/theme/app_theme.dart';
 import '../core/constants/app_constants.dart';
 import '../core/constants/detailing_presets.dart';
 import '../models/detail_job.dart';
+import '../models/paint_gauge_point.dart';
 import '../services/job_repository.dart';
 import '../services/image_picker_service.dart';
 import '../services/r2_storage_service.dart';
 import '../widgets/split_slider_widget.dart';
 import '../widgets/fullscreen_image_viewer.dart';
+import '../widgets/paint_gauge_walkaround_widget.dart';
 
 class PhotoItem {
   String id;
@@ -77,9 +79,9 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
   DefectStage _defectStage = DefectStage.stage2;
   int _correctionPercentage = 85;
   String _defectBadge = 'Stage 2: Moderate (Swirl Marks)';
-  String _paintGaugeHealthId = 'factory_healthy';
   double _initialMicrons = 122.0;
   double _finalMicrons = 119.0;
+  List<PaintGaugePoint> _paintGaugePoints = PaintGaugePoint.default8Points(initial: 122.0, post: 119.0);
   late final TextEditingController _initialMicronsCtrl;
   late final TextEditingController _finalMicronsCtrl;
 
@@ -123,13 +125,9 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       _defectBadge = edit.defectBadge;
       _initialMicrons = edit.initialPaintThicknessMicrons;
       _finalMicrons = edit.finalPaintThicknessMicrons;
-      if (_initialMicrons < 100) {
-        _paintGaugeHealthId = 'thin_clear';
-      } else if (_initialMicrons > 180) {
-        _paintGaugeHealthId = 'repainted';
-      } else {
-        _paintGaugeHealthId = 'factory_healthy';
-      }
+      _paintGaugePoints = edit.paintGaugePoints.isNotEmpty
+          ? List.from(edit.paintGaugePoints)
+          : PaintGaugePoint.default8Points(initial: _initialMicrons, post: _finalMicrons);
 
       _recipeStages = List.from(edit.recipeStages);
 
@@ -352,6 +350,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
         paintHardness: _hardness,
         initialPaintThicknessMicrons: _initialMicrons,
         finalPaintThicknessMicrons: _finalMicrons,
+        paintGaugePoints: _paintGaugePoints,
         defectSeverity: _defectSeverity,
         defectStage: _defectStage,
         correctionPercentage: _correctionPercentage,
@@ -393,6 +392,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
         paintHardness: _hardness,
         initialPaintThicknessMicrons: _initialMicrons,
         finalPaintThicknessMicrons: _finalMicrons,
+        paintGaugePoints: _paintGaugePoints,
         defectSeverity: _defectSeverity,
         defectStage: _defectStage,
         correctionPercentage: _correctionPercentage,
@@ -1126,195 +1126,21 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
   }
 
   Widget _buildPaintGaugeHealthSection() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: AppTheme.primary.withAlpha(30),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.straighten_rounded, color: AppTheme.primary, size: 18),
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'Paint Gauge & Clear Coat Health',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppTheme.primary.withAlpha(20),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppTheme.primary.withAlpha(80)),
-                ),
-                child: Text(
-                  '${_initialMicrons.toStringAsFixed(0)}µm → ${_finalMicrons.toStringAsFixed(0)}µm (-${(_initialMicrons - _finalMicrons).clamp(0.0, 99.0).toStringAsFixed(1)}µm)',
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            '1-Tap Thickness Preset: Select overall clear coat health or customize initial / post-correction microns.',
-            style: TextStyle(fontSize: 11.5, color: AppTheme.textSecondary),
-          ),
-          const SizedBox(height: 12),
-
-          // 3 Preset Cards
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final isNarrow = constraints.maxWidth < 650;
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: isNarrow ? 1 : 3,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
-                  mainAxisExtent: isNarrow ? 80 : 96,
-                ),
-                itemCount: DetailingPresets.paintGaugePresets.length,
-                itemBuilder: (context, index) {
-                  final opt = DetailingPresets.paintGaugePresets[index];
-                  final isSelected = _paintGaugeHealthId == opt.id;
-                  final badgeColor = Color(int.parse(opt.badgeColorHex));
-
-                  return InkWell(
-                    onTap: () {
-                      setState(() {
-                        _paintGaugeHealthId = opt.id;
-                        _initialMicrons = opt.defaultInitialMicrons;
-                        _finalMicrons = opt.defaultFinalMicrons;
-                        _initialMicronsCtrl.text = _initialMicrons.toStringAsFixed(1);
-                        _finalMicronsCtrl.text = _finalMicrons.toStringAsFixed(1);
-                      });
-                    },
-                    borderRadius: BorderRadius.circular(10),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: isSelected ? badgeColor.withAlpha(25) : AppTheme.surfaceLight,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: isSelected ? badgeColor : AppTheme.border,
-                          width: isSelected ? 1.8 : 1.0,
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  opt.label,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                    color: isSelected ? badgeColor : Colors.white,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: badgeColor.withAlpha(30),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  opt.rangeLabel,
-                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: badgeColor),
-                                ),
-                              ),
-                            ],
-                          ),
-                          Text(
-                            opt.status,
-                            style: const TextStyle(fontSize: 10, color: AppTheme.textMuted),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Row(
-                            children: [
-                              Icon(isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-                                  size: 13, color: isSelected ? badgeColor : AppTheme.textMuted),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${opt.defaultInitialMicrons.toStringAsFixed(0)}µm → ${opt.defaultFinalMicrons.toStringAsFixed(0)}µm',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  color: isSelected ? badgeColor : AppTheme.textSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-
-          const SizedBox(height: 12),
-
-          // Custom Micron Adjuster
-          Row(
-            children: [
-              Expanded(
-                child: TextFormField(
-                  controller: _initialMicronsCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Initial Microns (µm)',
-                    prefixIcon: Icon(Icons.straighten, size: 16),
-                  ),
-                  onChanged: (v) {
-                    final d = double.tryParse(v);
-                    if (d != null) setState(() => _initialMicrons = d);
-                  },
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextFormField(
-                  controller: _finalMicronsCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Post-Polish (µm)',
-                    prefixIcon: Icon(Icons.check_rounded, size: 16),
-                  ),
-                  onChanged: (v) {
-                    final d = double.tryParse(v);
-                    if (d != null) setState(() => _finalMicrons = d);
-                  },
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+    return PaintGaugeWalkaroundWidget(
+      points: _paintGaugePoints,
+      onPointsChanged: (newPoints) {
+        setState(() {
+          _paintGaugePoints = newPoints;
+          if (newPoints.isNotEmpty) {
+            final initSum = newPoints.fold<double>(0.0, (acc, p) => acc + p.initialMicrons);
+            final postSum = newPoints.fold<double>(0.0, (acc, p) => acc + p.postPolishMicrons);
+            _initialMicrons = initSum / newPoints.length;
+            _finalMicrons = postSum / newPoints.length;
+            _initialMicronsCtrl.text = _initialMicrons.toStringAsFixed(1);
+            _finalMicronsCtrl.text = _finalMicrons.toStringAsFixed(1);
+          }
+        });
+      },
     );
   }
 
@@ -1495,9 +1321,9 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
 
           const SizedBox(height: 16),
 
-          // Active Stage Indicator Banner & Quick Chips Instruction
+          // Active Step Builder Instructions
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: AppTheme.surfaceLight,
               borderRadius: BorderRadius.circular(8),
@@ -1512,76 +1338,39 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                     TextSpan(
                       children: [
                         const TextSpan(
-                          text: 'Auto-appending to: ',
-                          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                          text: 'Inline Recipe Editor: ',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
                         ),
                         TextSpan(
                           text: hasStages
-                              ? 'Step ${_activeStageIndex + 1} ($activeStageName)'
-                              : 'New Step 1 (will be created)',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.primary,
-                          ),
+                              ? 'Editing Step ${_activeStageIndex + 1} ($activeStageName). Tap chips directly inside the card below.'
+                              : 'Tap "+ Add Step" to begin crafting your process.',
+                          style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                         ),
                       ],
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 10),
 
-          // Chips Carousel / Wrap
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              ...DetailingPresets.toolOptions.take(4).map((tool) => _buildAppendChip(
-                tool,
-                Icons.build_rounded,
-                (t) => _applyChipToActiveStage(machine: t),
-              )),
-              ...DetailingPresets.padOptions.take(4).map((pad) => _buildAppendChip(
-                pad,
-                Icons.lens_outlined,
-                (p) => _applyChipToActiveStage(pad: p),
-              )),
-              ...DetailingPresets.compoundOptions.take(4).map((comp) => _buildAppendChip(
-                comp,
-                Icons.science_rounded,
-                (c) => _applyChipToActiveStage(chemical: c),
-              )),
-              ...DetailingPresets.protectionOptions.take(3).map((prot) => _buildAppendChip(
-                prot,
-                Icons.shield_outlined,
-                (p) => _applyChipToActiveStage(
-                  stageName: 'Step ${_recipeStages.length + 1}: Ceramic Protection',
-                  chemical: p,
-                  technique: 'Cross-hatch application, 2-minute flash time, level with edgeless microfiber',
-                  notes: 'Allow 12-hour dry cure before exposure to moisture',
-                  alwaysCreateNew: true,
-                ),
-              )),
-            ],
-          ),
+          const SizedBox(height: 14),
 
-          const SizedBox(height: 16),
-
-          // Render Active Stages
+          // Render Active Stages with Inline Chips
           if (_recipeStages.isEmpty)
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: AppTheme.surfaceLight,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.border.withAlpha(100)),
               ),
               child: const Center(
-                child: Text('No stages added. Tap "+ Add Step" or a preset above to begin.',
-                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                child: Text(
+                  'No stages added. Tap "+ Add Step" or select a 1-tap preset above to begin.',
+                  style: TextStyle(fontSize: 12.5, color: AppTheme.textMuted),
+                ),
               ),
             )
           else
@@ -1593,107 +1382,194 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                 final stage = _recipeStages[idx];
                 final isCurrentActive = idx == _activeStageIndex;
 
+                // Determine service-context specific chips
+                final List<String> currentTools;
+                final List<String> currentPads;
+                final List<String> currentChemicals;
+                final List<String> currentProtections;
+
+                if (_selectedService == 'Interior Deep Clean') {
+                  currentTools = DetailingPresets.interiorToolOptions;
+                  currentPads = DetailingPresets.interiorPadOptions;
+                  currentChemicals = DetailingPresets.interiorChemicalOptions;
+                  currentProtections = DetailingPresets.interiorProtectionOptions;
+                } else if (_selectedService == 'PPF & Clear Bra') {
+                  currentTools = DetailingPresets.ppfToolOptions;
+                  currentPads = DetailingPresets.ppfPadOptions;
+                  currentChemicals = DetailingPresets.ppfChemicalOptions;
+                  currentProtections = DetailingPresets.ppfProtectionOptions;
+                } else if (_selectedService == 'Gloss & Decon Wash') {
+                  currentTools = DetailingPresets.washToolOptions;
+                  currentPads = DetailingPresets.washPadOptions;
+                  currentChemicals = DetailingPresets.washChemicalOptions;
+                  currentProtections = DetailingPresets.washProtectionOptions;
+                } else {
+                  // Paint Correction or Ceramic Coating (Standard polishing & coating)
+                  currentTools = DetailingPresets.toolOptions;
+                  currentPads = DetailingPresets.padOptions;
+                  currentChemicals = DetailingPresets.compoundOptions;
+                  currentProtections = DetailingPresets.protectionOptions;
+                }
+
                 return InkWell(
                   onTap: () {
                     setState(() => _activeStageIndex = idx);
                   },
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
                   child: Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: isCurrentActive ? AppTheme.primary.withAlpha(20) : AppTheme.surfaceLight,
-                      borderRadius: BorderRadius.circular(10),
+                      color: isCurrentActive ? AppTheme.primary.withAlpha(22) : AppTheme.surfaceLight,
+                      borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: isCurrentActive ? AppTheme.primary : AppTheme.border.withAlpha(120),
-                        width: isCurrentActive ? 1.6 : 1.0,
+                        width: isCurrentActive ? 1.8 : 1.0,
                       ),
                     ),
-                    child: Row(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        CircleAvatar(
-                          radius: 12,
-                          backgroundColor: isCurrentActive ? AppTheme.primary : AppTheme.primary.withAlpha(30),
-                          child: Text(
-                            '${idx + 1}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: isCurrentActive ? Colors.black : AppTheme.primary,
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            CircleAvatar(
+                              radius: 12,
+                              backgroundColor: isCurrentActive ? AppTheme.primary : AppTheme.primary.withAlpha(30),
+                              child: Text(
+                                '${idx + 1}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: isCurrentActive ? Colors.black : AppTheme.primary,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Expanded(
-                                    child: Text(
-                                      stage.stageName,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                        color: isCurrentActive ? AppTheme.primary : Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                  if (isCurrentActive)
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: AppTheme.primary,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: const Text(
-                                        'ACTIVE STEP',
-                                        style: TextStyle(
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.black,
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          stage.stageName,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                            color: isCurrentActive ? AppTheme.primary : Colors.white,
+                                          ),
                                         ),
                                       ),
+                                      if (isCurrentActive)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.primary,
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: const Text(
+                                            'ACTIVE STEP',
+                                            style: TextStyle(
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.black,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  if (stage.machine.isNotEmpty)
+                                    Text('Tool: ${stage.machine}',
+                                        style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                                  if (stage.pad.isNotEmpty)
+                                    Text('Pad: ${stage.pad}',
+                                        style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                                  if (stage.chemical.isNotEmpty)
+                                    Text('Chemical: ${stage.chemical}',
+                                        style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600))
+                                  else
+                                    Text(
+                                      isCurrentActive
+                                          ? '(Tap a chip below to select tool, pad, or chemical)'
+                                          : '(No product selected)',
+                                      style: const TextStyle(fontSize: 11, color: AppTheme.textMuted, fontStyle: FontStyle.italic),
                                     ),
+                                  if (stage.technique.isNotEmpty)
+                                    Text('Technique: ${stage.technique}',
+                                        style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted)),
+                                  if (stage.notes != null && stage.notes!.isNotEmpty)
+                                    Text('Note: ${stage.notes}',
+                                        style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted, fontStyle: FontStyle.italic)),
                                 ],
                               ),
-                              const SizedBox(height: 4),
-                              if (stage.machine.isNotEmpty)
-                                Text('Tool: ${stage.machine}',
-                                    style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                              if (stage.pad.isNotEmpty)
-                                Text('Pad: ${stage.pad}',
-                                    style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                              if (stage.chemical.isNotEmpty)
-                                Text('Chemical: ${stage.chemical}',
-                                    style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600))
-                              else
-                                const Text('(No chemical selected - tap a compound chip above)',
-                                    style: TextStyle(fontSize: 11, color: AppTheme.textMuted, fontStyle: FontStyle.italic)),
-                              if (stage.technique.isNotEmpty)
-                                Text('Technique: ${stage.technique}',
-                                    style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted)),
-                              if (stage.notes != null && stage.notes!.isNotEmpty)
-                                Text('Note: ${stage.notes}',
-                                    style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted, fontStyle: FontStyle.italic)),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent),
+                              onPressed: () {
+                                setState(() {
+                                  _recipeStages.removeAt(idx);
+                                  if (_recipeStages.isEmpty) {
+                                    _activeStageIndex = 0;
+                                  } else if (_activeStageIndex >= _recipeStages.length) {
+                                    _activeStageIndex = _recipeStages.length - 1;
+                                  }
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+
+                        // Inline Quick-Chips inside active card (Zero scrolling UX)
+                        if (isCurrentActive) ...[
+                          const SizedBox(height: 12),
+                          const Divider(color: AppTheme.border, height: 1),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'TAP TO APPLY DIRECTLY TO THIS STEP:',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.8,
+                              color: AppTheme.textMuted,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              ...currentTools.take(4).map((tool) => _buildAppendChip(
+                                tool,
+                                Icons.build_rounded,
+                                (t) => _applyChipToActiveStage(machine: t),
+                              )),
+                              ...currentPads.take(4).map((pad) => _buildAppendChip(
+                                pad,
+                                Icons.lens_outlined,
+                                (p) => _applyChipToActiveStage(pad: p),
+                              )),
+                              ...currentChemicals.take(4).map((comp) => _buildAppendChip(
+                                comp,
+                                Icons.science_rounded,
+                                (c) => _applyChipToActiveStage(chemical: c),
+                              )),
+                              ...currentProtections.take(3).map((prot) => _buildAppendChip(
+                                prot,
+                                Icons.shield_outlined,
+                                (p) => _applyChipToActiveStage(
+                                  stageName: 'Step ${_recipeStages.length + 1}: Protection Stage',
+                                  chemical: p,
+                                  technique: 'Cross-hatch application, level with edgeless microfiber',
+                                  notes: 'Allow curing time before moisture exposure',
+                                  alwaysCreateNew: true,
+                                ),
+                              )),
                             ],
                           ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent),
-                          onPressed: () {
-                            setState(() {
-                              _recipeStages.removeAt(idx);
-                              if (_recipeStages.isEmpty) {
-                                _activeStageIndex = 0;
-                              } else if (_activeStageIndex >= _recipeStages.length) {
-                                _activeStageIndex = _recipeStages.length - 1;
-                              }
-                            });
-                          },
-                        ),
+                        ],
                       ],
                     ),
                   ),
@@ -1879,27 +1755,29 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                     },
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: DropdownButtonFormField<PaintHardness>(
-                    isExpanded: true,
-                    initialValue: _hardness,
-                    decoration: const InputDecoration(labelText: 'Clearcoat Hardness'),
-                    items: PaintHardness.values.map((h) {
-                      return DropdownMenuItem(
-                        value: h,
-                        child: Text(
-                          h.label,
-                          style: const TextStyle(fontSize: 13),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (v) {
-                      if (v != null) setState(() => _hardness = v);
-                    },
+                if (_selectedService == 'Paint Correction' || _selectedService == 'Ceramic Coating') ...[
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButtonFormField<PaintHardness>(
+                      isExpanded: true,
+                      initialValue: _hardness,
+                      decoration: const InputDecoration(labelText: 'Clearcoat Hardness'),
+                      items: PaintHardness.values.map((h) {
+                        return DropdownMenuItem(
+                          value: h,
+                          child: Text(
+                            h.label,
+                            style: const TextStyle(fontSize: 13),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (v) {
+                        if (v != null) setState(() => _hardness = v);
+                      },
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
             const SizedBox(height: 10),
@@ -1912,15 +1790,18 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
             ),
             const SizedBox(height: 18),
 
-            // Step 5: Simplified Paint Defect Severity (1-Tap)
-            _buildDefectSeveritySection(),
-            const SizedBox(height: 14),
+            // Paint Correction & Ceramic Coating Specific Sections
+            if (_selectedService == 'Paint Correction' || _selectedService == 'Ceramic Coating') ...[
+              // Step 5: Simplified Paint Defect Severity (1-Tap)
+              _buildDefectSeveritySection(),
+              const SizedBox(height: 14),
 
-            // Step 6: Simplified Paint Gauge & Clear Coat Health (1-Tap)
-            _buildPaintGaugeHealthSection(),
-            const SizedBox(height: 14),
+              // Step 6: 8-Point Visual Walkaround Paint Gauge & Clear Coat Depth
+              _buildPaintGaugeHealthSection(),
+              const SizedBox(height: 14),
+            ],
 
-            // Step 7: Simplified Studio Detailing Recipe Builder (1-Tap Presets + Chips)
+            // Step 7: Simplified Studio Detailing Recipe Builder (Adaptive Presets + Inline Chips)
             _buildRecipeBuilderSection(),
             const SizedBox(height: 16),
           ],
