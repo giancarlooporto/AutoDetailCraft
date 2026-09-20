@@ -36,6 +36,7 @@ class JobRepository extends ChangeNotifier {
 
   bool get isInitialized => _isInitialized;
   bool get isLoggedIn => _isLoggedIn;
+  set isLoggedIn(bool value) => _isLoggedIn = value;
   bool get isGuestMode => !_isLoggedIn;
   int get activeTabIndex => _activeTabIndex;
 

@@ -9,21 +9,37 @@ import 'chat_screen.dart';
 import 'auth_modal.dart';
 import 'public_studio_screen.dart';
 import 'booking_flow_screen.dart';
+import 'create_job_screen.dart';
 
 class JobDetailScreen extends StatefulWidget {
   final DetailJob job;
   final JobRepository? repository;
+  final int initialTabIndex;
+  final VoidCallback? onJobChanged;
 
-  const JobDetailScreen({super.key, required this.job, this.repository});
+  const JobDetailScreen({
+    super.key,
+    required this.job,
+    this.repository,
+    this.initialTabIndex = 0,
+    this.onJobChanged,
+  });
 
   static Future<void> show(
     BuildContext context, {
     required DetailJob job,
     JobRepository? repository,
+    int initialTabIndex = 0,
+    VoidCallback? onJobChanged,
   }) {
     return Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => JobDetailScreen(job: job, repository: repository),
+        builder: (_) => JobDetailScreen(
+          job: job,
+          repository: repository,
+          initialTabIndex: initialTabIndex,
+          onJobChanged: onJobChanged,
+        ),
       ),
     );
   }
@@ -37,12 +53,86 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   final FocusNode _commentFocusNode = FocusNode();
   JobComment? _replyingToComment;
   late DetailJob _currentJob;
+  late int _selectedTabIndex;
   bool _messagingLoading = false;
 
   @override
   void initState() {
     super.initState();
     _currentJob = widget.job;
+    _selectedTabIndex = widget.initialTabIndex;
+  }
+
+  bool get _isOwner {
+    final repo = widget.repository;
+    if (repo == null || repo.isGuestMode) return false;
+    return _currentJob.detailerId == repo.currentUser.id;
+  }
+
+  void _openEditRecipe() {
+    final repo = widget.repository;
+    if (repo == null) return;
+    CreateJobScreen.show(
+      context,
+      repository: repo,
+      jobToEdit: _currentJob,
+      onJobCreated: () {
+        final updatedJob = repo.jobs.cast<DetailJob?>().firstWhere(
+          (j) => j?.id == _currentJob.id,
+          orElse: () => null,
+        );
+        if (updatedJob != null && mounted) {
+          setState(() {
+            _currentJob = updatedJob;
+          });
+        }
+        widget.onJobChanged?.call();
+      },
+    );
+  }
+
+  Future<void> _showDeleteConfirmDialog() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppTheme.border),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_outline, color: Colors.redAccent, size: 22),
+            SizedBox(width: 8),
+            Text('Delete Recipe', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: const Text(
+          'Are you sure you want to delete this detailing recipe? This action cannot be undone.',
+          style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      widget.repository?.deleteJob(_currentJob.id);
+      widget.onJobChanged?.call();
+      Navigator.of(context).pop();
+    }
   }
 
   @override
@@ -594,11 +684,72 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            onPressed: _showExportSuccess,
-            icon: const Icon(Icons.share_outlined, color: AppTheme.primary, size: 20),
-            tooltip: 'Share Client Report',
-          ),
+          if (_isOwner) ...[
+            IconButton(
+              key: const Key('edit_recipe_appbar_button'),
+              onPressed: _openEditRecipe,
+              icon: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 20),
+              tooltip: 'Edit Recipe',
+            ),
+            PopupMenuButton<String>(
+              key: const Key('recipe_overflow_menu'),
+              icon: const Icon(Icons.more_vert_rounded, color: Colors.white70, size: 20),
+              color: AppTheme.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: AppTheme.border),
+              ),
+              onSelected: (val) {
+                if (val == 'edit') {
+                  _openEditRecipe();
+                } else if (val == 'share') {
+                  _showExportSuccess();
+                } else if (val == 'delete') {
+                  _showDeleteConfirmDialog();
+                }
+              },
+              itemBuilder: (ctx) => [
+                const PopupMenuItem(
+                  value: 'edit',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit_outlined, size: 18, color: AppTheme.primary),
+                      SizedBox(width: 10),
+                      Text('Edit Recipe', style: TextStyle(fontSize: 13)),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'share',
+                  child: Row(
+                    children: [
+                      Icon(Icons.share_outlined, size: 18, color: Colors.white70),
+                      SizedBox(width: 10),
+                      Text('Share Client Report', style: TextStyle(fontSize: 13)),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                      SizedBox(width: 10),
+                      Text('Delete Recipe', style: TextStyle(fontSize: 13, color: Colors.redAccent)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            IconButton(
+              key: const Key('share_recipe_appbar_button'),
+              onPressed: _showExportSuccess,
+              icon: const Icon(Icons.share_outlined, color: AppTheme.primary, size: 20),
+              tooltip: 'Share Client Report',
+            ),
+          ],
           const SizedBox(width: 8),
         ],
         bottom: PreferredSize(
@@ -742,85 +893,86 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
             const SizedBox(height: 16),
 
-            // 4. Technical Inspection & Gauge Metrics
+            // Segmented Tabs Bar: Specs & Recipe vs Discussion
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
                   color: AppTheme.surface,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: AppTheme.border),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.analytics_outlined, color: AppTheme.primary, size: 20),
-                        SizedBox(width: 8),
-                        Text(
-                          'Paint Inspection & Gauge Data',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                    Expanded(
+                      child: InkWell(
+                        key: const Key('specs_tab_button'),
+                        onTap: () => setState(() => _selectedTabIndex = 0),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: _selectedTabIndex == 0 ? AppTheme.primary : Colors.transparent,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          alignment: Alignment.center,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.science_outlined,
+                                size: 16,
+                                color: _selectedTabIndex == 0 ? Colors.black : AppTheme.textSecondary,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Job Specs & Recipe',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: _selectedTabIndex == 0 ? Colors.black : AppTheme.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ],
+                      ),
                     ),
-                    const SizedBox(height: 14),
-
-                    // Paint Specs Row
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Vehicle:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-                        Text(_currentJob.vehicleFullName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Paint Code & Color:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-                        Text('${_currentJob.paintColorName} (${_currentJob.paintCode})', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Paint Hardness:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-                        PaintHardnessBadge(hardness: _currentJob.paintHardness, isCompact: true),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Defect Stage:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-                        Text(_currentJob.defectStage.label, style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.hardnessSoft, fontSize: 13)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Correction Achieved:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-                        Text('${_currentJob.correctionPercentage}% Correction', style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.primary, fontSize: 13)),
-                      ],
-                    ),
-
-                    const SizedBox(height: 14),
-                    const Divider(),
-                    const SizedBox(height: 14),
-
-                    // Depth Comparison Grid
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _buildGaugeMetric('Initial Depth', '${_currentJob.initialPaintThicknessMicrons} µm', Icons.speed_rounded, AppTheme.textSecondary),
-                        _buildGaugeMetric('Final Depth', '${_currentJob.finalPaintThicknessMicrons} µm', Icons.check_circle_outline, AppTheme.primary),
-                        _buildGaugeMetric('Clear Removed', '-${_currentJob.micronsRemoved.toStringAsFixed(1)} µm', Icons.layers_clear_outlined, AppTheme.hardnessHard),
-                        _buildGaugeMetric('Total Time', '${_currentJob.durationHours} hrs', Icons.timer_outlined, Colors.amberAccent),
-                      ],
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: InkWell(
+                        key: const Key('discussion_tab_button'),
+                        onTap: () => setState(() => _selectedTabIndex = 1),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: _selectedTabIndex == 1 ? AppTheme.primary : Colors.transparent,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          alignment: Alignment.center,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.forum_outlined,
+                                size: 16,
+                                color: _selectedTabIndex == 1 ? Colors.black : AppTheme.textSecondary,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Discussion (${_currentJob.comments.length})',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: _selectedTabIndex == 1 ? Colors.black : AppTheme.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -829,215 +981,357 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
             const SizedBox(height: 16),
 
-            // 5. Step-by-Step Detailing Recipe
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
+            if (_selectedTabIndex == 0) ...[
+              // 4. Technical Inspection & Gauge Metrics
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.science_outlined, color: AppTheme.primary, size: 20),
-                      SizedBox(width: 8),
-                      Text(
-                        'Step-by-Step Process Recipe',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  Column(
-                    children: _currentJob.recipeStages.asMap().entries.map((entry) {
-                      final idx = entry.key;
-                      final stage = entry.value;
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: AppTheme.surface,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: AppTheme.border),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  width: 24,
-                                  height: 24,
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.primary.withAlpha(35),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: AppTheme.primary, width: 1),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      '${idx + 1}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppTheme.primary,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    stage.stageName,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppTheme.textPrimary,
-                                    ),
-                                  ),
-                                ),
-                                if (stage.dilution != null)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.surfaceLight,
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: AppTheme.border),
-                                    ),
-                                    child: Text(
-                                      stage.dilution!,
-                                      style: const TextStyle(fontSize: 11, color: AppTheme.primary),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-
-                            // Stage Details
-                            if (stage.machine.isNotEmpty)
-                              _buildRecipeField('Machine', stage.machine, Icons.build_rounded),
-                            if (stage.pad.isNotEmpty)
-                              _buildRecipeField('Pad', stage.pad, Icons.circle_outlined),
-                            _buildRecipeField('Chemical / Compound', stage.chemical, Icons.science_rounded),
-                            if (stage.technique.isNotEmpty)
-                              _buildRecipeField('Technique / Passes', stage.technique, Icons.tune_rounded),
-                            if (stage.notes != null && stage.notes!.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 6),
-                                child: Text(
-                                  'Pro Note: ${stage.notes}',
-                                  style: TextStyle(fontSize: 12, color: AppTheme.textMuted, fontStyle: FontStyle.italic),
-                                ),
-                              ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // 6. Verified Pro Comments & Community Discussion
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.forum_outlined, color: AppTheme.primary, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Discussion (${_currentJob.comments.length})',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Active Replying-To Banner (Twitter-style)
-                  if (_replyingToComment != null)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primary.withAlpha(20),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppTheme.primary.withAlpha(80)),
-                      ),
-                      child: Row(
+                      const Row(
                         children: [
-                          const Icon(Icons.reply_rounded, size: 15, color: AppTheme.primary),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Replying to @${_replyingToComment!.authorName}',
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          InkWell(
-                            onTap: _cancelReply,
-                            borderRadius: BorderRadius.circular(12),
-                            child: const Padding(
-                              padding: EdgeInsets.all(2),
-                              child: Icon(Icons.close_rounded, size: 16, color: AppTheme.textMuted),
-                            ),
+                          Icon(Icons.analytics_outlined, color: AppTheme.primary, size: 20),
+                          SizedBox(width: 8),
+                          Text(
+                            'Paint Inspection & Gauge Data',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
                           ),
                         ],
                       ),
-                    ),
+                      const SizedBox(height: 14),
 
-                  // Comment Input
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _commentController,
-                          focusNode: _commentFocusNode,
-                          decoration: InputDecoration(
-                            hintText: _replyingToComment != null
-                                ? 'Write a reply to @${_replyingToComment!.authorName}...'
-                                : 'Ask about compound, pad, or flash time...',
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      // Paint Specs Row
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Vehicle:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                          Text(_currentJob.vehicleFullName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Paint Code & Color:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                          Text('${_currentJob.paintColorName} (${_currentJob.paintCode})', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Paint Hardness:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                          PaintHardnessBadge(hardness: _currentJob.paintHardness, isCompact: true),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Defect Stage:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                          Text(_currentJob.defectStage.label, style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.hardnessSoft, fontSize: 13)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Correction Achieved:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                          Text('${_currentJob.correctionPercentage}% Correction', style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.primary, fontSize: 13)),
+                        ],
+                      ),
+
+                      const SizedBox(height: 14),
+                      const Divider(),
+                      const SizedBox(height: 14),
+
+                      // Depth Comparison Grid
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _buildGaugeMetric('Initial Depth', '${_currentJob.initialPaintThicknessMicrons} µm', Icons.speed_rounded, AppTheme.textSecondary),
+                          _buildGaugeMetric('Final Depth', '${_currentJob.finalPaintThicknessMicrons} µm', Icons.check_circle_outline, AppTheme.primary),
+                          _buildGaugeMetric('Clear Removed', '-${_currentJob.micronsRemoved.toStringAsFixed(1)} µm', Icons.layers_clear_outlined, AppTheme.hardnessHard),
+                          _buildGaugeMetric('Total Time', '${_currentJob.durationHours} hrs', Icons.timer_outlined, Colors.amberAccent),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // 5. Step-by-Step Detailing Recipe
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.science_outlined, color: AppTheme.primary, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'Step-by-Step Process Recipe',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    Column(
+                      children: _currentJob.recipeStages.asMap().entries.map((entry) {
+                        final idx = entry.key;
+                        final stage = entry.value;
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surface,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: AppTheme.border),
                           ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 24,
+                                    height: 24,
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.primary.withAlpha(35),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: AppTheme.primary, width: 1),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        '${idx + 1}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppTheme.primary,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      stage.stageName,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppTheme.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                  if (stage.dilution != null)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.surfaceLight,
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: AppTheme.border),
+                                      ),
+                                      child: Text(
+                                        stage.dilution!,
+                                        style: const TextStyle(fontSize: 11, color: AppTheme.primary),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+
+                              // Stage Details
+                              if (stage.machine.isNotEmpty)
+                                _buildRecipeField('Machine', stage.machine, Icons.build_rounded),
+                              if (stage.pad.isNotEmpty)
+                                _buildRecipeField('Pad', stage.pad, Icons.circle_outlined),
+                              _buildRecipeField('Chemical / Compound', stage.chemical, Icons.science_rounded),
+                              if (stage.technique.isNotEmpty)
+                                _buildRecipeField('Technique / Passes', stage.technique, Icons.tune_rounded),
+                              if (stage.notes != null && stage.notes!.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: Text(
+                                    'Pro Note: ${stage.notes}',
+                                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted, fontStyle: FontStyle.italic),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Digital Inspection & Warranty Report Card
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withAlpha(25),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.verified_user_outlined, color: AppTheme.primary, size: 24),
+                      ),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Digital Inspection & Warranty Report',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Verified paint thickness readings and ceramic coating warranty documentation for client handover.',
+                              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(width: 8),
-                      IconButton.filled(
-                        onPressed: _handleAddComment,
-                        icon: const Icon(Icons.send_rounded, size: 18),
-                        style: IconButton.styleFrom(
-                          backgroundColor: AppTheme.primary,
-                          foregroundColor: Colors.black,
+                      OutlinedButton.icon(
+                        onPressed: _showExportSuccess,
+                        icon: const Icon(Icons.share_outlined, size: 16, color: AppTheme.primary),
+                        label: const Text('Share', style: TextStyle(color: AppTheme.primary, fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppTheme.border),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                ),
+              ),
+            ] else ...[
+              // 6. Verified Pro Comments & Community Discussion
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.forum_outlined, color: AppTheme.primary, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Discussion (${_currentJob.comments.length})',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
 
-                  // Comments List (Twitter-style Threaded)
-                  if (_currentJob.comments.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Center(
-                        child: Text(
-                          'No comments yet. Be the first to ask about the recipe!',
-                          style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                    // Active Replying-To Banner (Twitter-style)
+                    if (_replyingToComment != null)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withAlpha(20),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppTheme.primary.withAlpha(80)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.reply_rounded, size: 15, color: AppTheme.primary),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Replying to @${_replyingToComment!.authorName}',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            InkWell(
+                              onTap: _cancelReply,
+                              borderRadius: BorderRadius.circular(12),
+                              child: const Padding(
+                                padding: EdgeInsets.all(2),
+                                child: Icon(Icons.close_rounded, size: 16, color: AppTheme.textMuted),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    )
-                  else
-                    Column(
-                      children: _buildThreadedComments(),
-                    ),
-                ],
-              ),
-            ),
 
-                  const SizedBox(height: 20),
-                ],
+                    // Comment Input
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _commentController,
+                            focusNode: _commentFocusNode,
+                            decoration: InputDecoration(
+                              hintText: _replyingToComment != null
+                                  ? 'Write a reply to @${_replyingToComment!.authorName}...'
+                                  : 'Ask about compound, pad, or flash time...',
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton.filled(
+                          onPressed: _handleAddComment,
+                          icon: const Icon(Icons.send_rounded, size: 18),
+                          style: IconButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            foregroundColor: Colors.black,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Comments List (Twitter-style Threaded)
+                    if (_currentJob.comments.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Center(
+                          child: Text(
+                            'No comments yet. Be the first to ask about the recipe!',
+                            style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                          ),
+                        ),
+                      )
+                    else
+                      Column(
+                        children: _buildThreadedComments(),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 20),
+          ],
               ),
             ),
           ),

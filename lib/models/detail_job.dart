@@ -320,6 +320,9 @@ class DetailJob {
 
   String get vehicleFullName => '$vehicleYear $vehicleMake $vehicleModel';
 
+  /// Shortcut to the author/detailer ID for ownership checks
+  String get detailerId => author.id;
+
   /// Formatted defect summary string according to detailing industry standard
   String get defectStageLabel => defectStage.label;
 

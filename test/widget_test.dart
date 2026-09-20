@@ -340,8 +340,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    // Verify Discussion section exists
-    expect(find.textContaining('Discussion'), findsOneWidget);
+    // Verify Discussion tab exists and tap it to reveal comments
+    expect(find.textContaining('Discussion'), findsWidgets);
+    await tester.tap(find.byKey(const Key('discussion_tab_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     // Scroll until reply button is visible
     await tester.ensureVisible(find.text('Reply').first);
@@ -374,6 +377,139 @@ void main() {
 
     // Verify comment is now visible in the discussion thread
     expect(find.text('Great info on this polish!'), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('JobDetailScreen Segmented Tabs switch between Specs & Recipe and Discussion', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    final sampleJob = repository.jobs.first.copyWith(
+      comments: [
+        JobComment(
+          id: 'cmt_tab_1',
+          authorName: 'Chris Porter',
+          authorAvatar: '',
+          text: 'What was the pad compression on this curve?',
+          createdAt: DateTime.now(),
+          isVerifiedPro: true,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      home: JobDetailScreen(job: sampleJob, repository: repository),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Both tab buttons should exist
+    expect(find.byKey(const Key('specs_tab_button')), findsOneWidget);
+    expect(find.byKey(const Key('discussion_tab_button')), findsOneWidget);
+
+    // Default tab 0: Specs & Recipe should be displayed
+    expect(find.text('Paint Inspection & Gauge Data'), findsOneWidget);
+    expect(find.text('Step-by-Step Process Recipe'), findsOneWidget);
+    expect(find.text('What was the pad compression on this curve?'), findsNothing);
+
+    // Tap Discussion tab
+    await tester.tap(find.byKey(const Key('discussion_tab_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Now Discussion should be displayed, and Specs hidden
+    expect(find.text('Paint Inspection & Gauge Data'), findsNothing);
+    expect(find.text('Step-by-Step Process Recipe'), findsNothing);
+    expect(find.text('What was the pad compression on this curve?'), findsOneWidget);
+
+    // Tap Specs tab to switch back
+    await tester.tap(find.byKey(const Key('specs_tab_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Specs & Recipe should be visible again
+    expect(find.text('Paint Inspection & Gauge Data'), findsOneWidget);
+    expect(find.text('Step-by-Step Process Recipe'), findsOneWidget);
+    expect(find.text('What was the pad compression on this curve?'), findsNothing);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('JobDetailScreen renders Owner Edit action for author and opens CreateJobScreen', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    repository.isLoggedIn = true;
+    final ownedJob = repository.jobs.first.copyWith(
+      author: repository.currentUser,
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      home: JobDetailScreen(job: ownedJob, repository: repository),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Owner should see the Edit button and overflow menu
+    expect(find.byKey(const Key('edit_recipe_appbar_button')), findsOneWidget);
+    expect(find.byKey(const Key('recipe_overflow_menu')), findsOneWidget);
+    expect(find.byKey(const Key('share_recipe_appbar_button')), findsNothing);
+
+    // Tapping Edit button should open the CreateJobScreen editor modal
+    await tester.tap(find.byKey(const Key('edit_recipe_appbar_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byType(CreateJobScreen), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('JobDetailScreen renders Share action and hides edit actions for visitors', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    final visitorJob = repository.jobs.first.copyWith(
+      author: repository.currentUser.copyWith(
+        id: 'usr_different_detailer',
+      ),
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      home: JobDetailScreen(job: visitorJob, repository: repository),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Visitor should see Share button, NOT Edit or overflow menu
+    expect(find.byKey(const Key('share_recipe_appbar_button')), findsOneWidget);
+    expect(find.byKey(const Key('edit_recipe_appbar_button')), findsNothing);
+    expect(find.byKey(const Key('recipe_overflow_menu')), findsNothing);
 
     debugNetworkImageHttpClientProvider = null;
   });
