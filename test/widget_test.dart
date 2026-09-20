@@ -467,13 +467,21 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    // Owner should see the Edit button and overflow menu
-    expect(find.byKey(const Key('edit_recipe_appbar_button')), findsOneWidget);
+    // Owner should see only the 3-dots overflow menu (no standalone edit or share button)
+    expect(find.byKey(const Key('edit_recipe_appbar_button')), findsNothing);
     expect(find.byKey(const Key('recipe_overflow_menu')), findsOneWidget);
     expect(find.byKey(const Key('share_recipe_appbar_button')), findsNothing);
 
-    // Tapping Edit button should open the CreateJobScreen editor modal
-    await tester.tap(find.byKey(const Key('edit_recipe_appbar_button')));
+    // Opening overflow menu shows Edit Recipe and Delete Recipe, but no Share Client Report
+    await tester.tap(find.byKey(const Key('recipe_overflow_menu')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit Recipe'), findsOneWidget);
+    expect(find.text('Delete Recipe'), findsOneWidget);
+    expect(find.text('Share Client Report'), findsNothing);
+
+    // Tapping Edit Recipe in overflow menu opens CreateJobScreen
+    await tester.tap(find.text('Edit Recipe'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
@@ -482,7 +490,7 @@ void main() {
     debugNetworkImageHttpClientProvider = null;
   });
 
-  testWidgets('JobDetailScreen renders Share action and hides edit actions for visitors', (WidgetTester tester) async {
+  testWidgets('JobDetailScreen hides edit actions for visitors and preserves bottom Share Report', (WidgetTester tester) async {
     debugNetworkImageHttpClientProvider = () => _MockHttpClient();
     addTearDown(() {
       debugNetworkImageHttpClientProvider = null;
@@ -506,10 +514,13 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    // Visitor should see Share button, NOT Edit or overflow menu
-    expect(find.byKey(const Key('share_recipe_appbar_button')), findsOneWidget);
+    // Visitor should NOT see edit button, overflow menu, or redundant share button in AppBar
+    expect(find.byKey(const Key('share_recipe_appbar_button')), findsNothing);
     expect(find.byKey(const Key('edit_recipe_appbar_button')), findsNothing);
     expect(find.byKey(const Key('recipe_overflow_menu')), findsNothing);
+
+    // Bottom action bar still contains Share Report
+    expect(find.text('Share Report'), findsOneWidget);
 
     debugNetworkImageHttpClientProvider = null;
   });
@@ -988,5 +999,547 @@ void main() {
     expect(find.text('Commercial Hot Water Extractor'), findsWidgets);
     expect(find.text('Scrub Ninja Interior Pad'), findsWidgets);
     expect(find.text('P&S Carpet Bomber & Terminator'), findsWidgets);
+  });
+
+  testWidgets('PaintGaugeWalkaroundWidget dialog adapts dynamically to mil unit mode, presets, and conversions', (WidgetTester tester) async {
+    List<PaintGaugePoint> points = PaintGaugePoint.default8Points(initial: 120.0, post: 115.0);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                return PaintGaugeWalkaroundWidget(
+                  points: points,
+                  onPointsChanged: (newPts) {
+                    setState(() => points = newPts);
+                  },
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Tap on mils toggle
+    await tester.tap(find.text('mils'));
+    await tester.pumpAndSettle();
+
+    // Tap Hood panel to open dialog in mil mode
+    await tester.tap(find.text('Hood').first);
+    await tester.pumpAndSettle();
+
+    // Dialog title & presets in mils
+    expect(find.text('Hood Reading'), findsOneWidget);
+    expect(find.text('Quick Presets (1-Tap):'), findsOneWidget);
+    expect(find.text('Thin ~3.1 mil'), findsOneWidget);
+    expect(find.text('Factory Healthy ~4.8 mil'), findsOneWidget);
+    expect(find.text('Re-spray ~9.0 mil'), findsOneWidget);
+
+    // Entry header and field labels in mils
+    expect(find.text('Direct Numerical Entry (mil):'), findsOneWidget);
+    expect(find.text('Initial (mil)'), findsOneWidget);
+    expect(find.text('Post-Polish (mil)'), findsOneWidget);
+
+    // Tap Thin preset in mils (sets initial: 3.2, post: 3.1)
+    await tester.tap(find.text('Thin ~3.1 mil'));
+    await tester.pumpAndSettle();
+
+    // Estimated Clear Removed in mils (3.2 - 3.1 = 0.1 mil)
+    expect(find.text('-0.1 mil'), findsOneWidget);
+
+    // Apply dialog
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+
+    // Hood should now display in mils: 3.2 mil initial, 3.1 mil post
+    expect(find.text('3.2 mil'), findsWidgets);
+    expect(find.text('3.1 mil'), findsWidgets);
+
+    // Switch back to µm mode and verify conversion stored properly (3.2 mil * 25.4 = 81.28 -> 81 µm)
+    await tester.tap(find.text('µm'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('81 µm'), findsWidgets);
+    expect(find.text('79 µm'), findsWidgets);
+  });
+
+  testWidgets('JobDetailScreen customer-focused recipe view displays completed checkmarks and collapses tool specs', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(800, 2000);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    final job = repository.jobs.first;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: JobDetailScreen(job: job, repository: repository),
+    ));
+    await tester.pumpAndSettle();
+
+    // Verify recipe section header
+    expect(find.text('Step-by-Step Process Recipe'), findsOneWidget);
+
+    // Verify customer-facing stage indicators
+    expect(find.text('STAGE 1'), findsOneWidget);
+    expect(find.text('Completed'), findsWidgets);
+    expect(find.byIcon(Icons.check_rounded), findsWidgets);
+    expect(find.text(job.recipeStages.first.stageName), findsOneWidget);
+
+    // Verify internal tool specs are collapsed by default
+    expect(find.text('Technique / Passes: '), findsNothing);
+    expect(find.text('Machine: '), findsNothing);
+    expect(find.text('Pad: '), findsNothing);
+
+    // Verify "Detailer Craft Specs" toggle exists
+    expect(find.byKey(const Key('craft_specs_toggle_0')), findsOneWidget);
+    expect(find.byKey(const Key('craft_specs_toggle_1')), findsOneWidget);
+    expect(find.text('Detailer Craft Specs'), findsWidgets);
+
+    // Tap toggle for stage 0 (chemical decon) to expand technique
+    await tester.tap(find.byKey(const Key('craft_specs_toggle_0')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Technique / Passes: '), findsOneWidget);
+
+    // Tap toggle 0 again to collapse
+    await tester.tap(find.byKey(const Key('craft_specs_toggle_0')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Technique / Passes: '), findsNothing);
+
+    // Tap toggle for stage 1 (compounding) to expand machine and pad
+    await tester.tap(find.byKey(const Key('craft_specs_toggle_1')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Machine: '), findsWidgets);
+    expect(find.text('Pad: '), findsWidgets);
+
+    // Tap toggle 1 again to collapse
+    await tester.tap(find.byKey(const Key('craft_specs_toggle_1')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Machine: '), findsNothing);
+    expect(find.text('Pad: '), findsNothing);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('PaintGaugeWalkaroundWidget supports multi-decimal mil precision, comma decimals, and non-destructive µm/mil roundtrips', (WidgetTester tester) async {
+    List<PaintGaugePoint> points = PaintGaugePoint.default8Points(initial: 120.0, post: 115.0);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                return PaintGaugeWalkaroundWidget(
+                  points: points,
+                  onPointsChanged: (newPts) {
+                    setState(() => points = newPts);
+                  },
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // In µm mode, metric tile says 'Microns Removed'
+    expect(find.text('Microns Removed'), findsOneWidget);
+
+    // Toggle to mils mode
+    await tester.tap(find.text('mils'));
+    await tester.pumpAndSettle();
+
+    // In mils mode, metric tile adapts to 'Clear Removed' (not 'Microns Removed')
+    expect(find.text('Clear Removed'), findsOneWidget);
+    expect(find.text('Microns Removed'), findsNothing);
+
+    // Open Hood dialog
+    await tester.tap(find.text('Hood').first);
+    await tester.pumpAndSettle();
+
+    // Enter multi-decimal precision (3.1415 mil and 3.0 mil)
+    final initialField = find.widgetWithText(TextField, 'Initial (mil)');
+    final postField = find.widgetWithText(TextField, 'Post-Polish (mil)');
+
+    await tester.enterText(initialField, '3.1415');
+    await tester.enterText(postField, '3.0');
+    await tester.pumpAndSettle();
+
+    // Verify estimated clear removed displays active unit
+    expect(find.text('-0.1 mil'), findsOneWidget);
+
+    // Apply changes
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+
+    // Verify point stored without losing precision: 3.1415 * 25.4 = 79.7941 µm
+    final hoodPoint = points.firstWhere((p) => p.id == 'hood');
+    expect((hoodPoint.initialMicrons - 79.7941).abs() < 0.001, isTrue);
+
+    // Reopen dialog in mils mode: must preserve 3.1415 in text controller without premature rounding
+    await tester.tap(find.text('Hood').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('3.1415'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    // Open Roof dialog and test comma decimal input (e.g. 4,2 mil and 4,0 mil)
+    await tester.tap(find.text('Roof').first);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.widgetWithText(TextField, 'Initial (mil)'), '4,2');
+    await tester.enterText(find.widgetWithText(TextField, 'Post-Polish (mil)'), '4,0');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+
+    final roofPoint = points.firstWhere((p) => p.id == 'roof');
+    expect((roofPoint.initialMicrons - 106.68).abs() < 0.001, isTrue);
+
+    // Switch to µm mode
+    await tester.tap(find.text('µm'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Microns Removed'), findsOneWidget);
+
+    // Open Hood dialog in µm mode: non-integer microns should not be lost when applying without editing
+    await tester.tap(find.text('Hood').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('79.79'), findsOneWidget);
+    // Tap Apply without editing initial text
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+
+    final hoodAfterUmApply = points.firstWhere((p) => p.id == 'hood');
+    expect((hoodAfterUmApply.initialMicrons - 79.7941).abs() < 0.001, isTrue);
+  });
+
+  testWidgets('JobDetailScreen Delete Recipe flow prompts confirmation and deletes job', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+    });
+
+    final repository = JobRepository();
+    repository.isLoggedIn = true;
+    final initialCount = repository.jobs.length;
+    final jobToDelete = repository.jobs.first.copyWith(
+      author: repository.currentUser,
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: JobDetailScreen(job: jobToDelete, repository: repository),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Open overflow menu
+    await tester.tap(find.byKey(const Key('recipe_overflow_menu')));
+    await tester.pumpAndSettle();
+
+    // Tap Delete Recipe
+    await tester.tap(find.text('Delete Recipe'));
+    await tester.pumpAndSettle();
+
+    // Verify confirmation dialog
+    expect(find.text('Are you sure you want to delete this detailing recipe? This action cannot be undone.'), findsOneWidget);
+
+    // Tap Cancel
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(repository.jobs.length, equals(initialCount));
+
+    // Open overflow menu again and confirm delete
+    await tester.tap(find.byKey(const Key('recipe_overflow_menu')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Delete Recipe'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Delete'));
+    await tester.pumpAndSettle();
+
+    expect(repository.jobs.length, equals(initialCount - 1));
+    expect(repository.jobs.any((j) => j.id == jobToDelete.id), isFalse);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('PaintGaugeWalkaroundWidget avoids negative zero display when 0 clear is removed in µm and mils modes', (WidgetTester tester) async {
+    List<PaintGaugePoint> points = PaintGaugePoint.default8Points(initial: 120.0, post: 120.0);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                return PaintGaugeWalkaroundWidget(
+                  points: points,
+                  onPointsChanged: (newPts) => setState(() => points = newPts),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // In µm mode with 0 difference: should display '0 µm', not '-0 µm'
+    expect(find.text('-0 µm'), findsNothing);
+    expect(find.text('0 µm'), findsWidgets);
+
+    // Toggle to mils mode
+    await tester.tap(find.text('mils'));
+    await tester.pumpAndSettle();
+
+    // In mils mode with 0 difference: should display '0.0 mil', not '-0.0 mil'
+    expect(find.text('-0.0 mil'), findsNothing);
+    expect(find.text('0.0 mil'), findsWidgets);
+  });
+
+  testWidgets('PaintGaugeWalkaroundWidget clamps negative numerical entries to 0.0 and closes dialog safely', (WidgetTester tester) async {
+    List<PaintGaugePoint> points = PaintGaugePoint.default8Points(initial: 120.0, post: 115.0);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                return PaintGaugeWalkaroundWidget(
+                  points: points,
+                  onPointsChanged: (newPts) => setState(() => points = newPts),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Open Hood dialog
+    await tester.tap(find.text('Hood').first);
+    await tester.pumpAndSettle();
+
+    // Enter negative values
+    await tester.enterText(find.widgetWithText(TextField, 'Initial (µm)'), '-25');
+    await tester.enterText(find.widgetWithText(TextField, 'Post-Polish (µm)'), '-10');
+    await tester.pumpAndSettle();
+
+    // Estimated Clear Removed should clamp to 0.0 µm
+    expect(find.text('0.0 µm'), findsOneWidget);
+
+    // Tap Apply
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+
+    // Verify values were clamped to 0.0 and not negative
+    final hoodPoint = points.firstWhere((p) => p.id == 'hood');
+    expect(hoodPoint.initialMicrons, equals(0.0));
+    expect(hoodPoint.postPolishMicrons, equals(0.0));
+  });
+
+  testWidgets('JobDetailScreen avoids negative zero in depth grid and resets expanded specs on job change', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(800, 2000);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    final jobZeroRemoved = repository.jobs.first.copyWith(
+      id: 'job_zero_removed',
+      initialPaintThicknessMicrons: 120.0,
+      finalPaintThicknessMicrons: 120.0,
+      paintGaugePoints: PaintGaugePoint.default8Points(initial: 120.0, post: 120.0),
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: JobDetailScreen(job: jobZeroRemoved, repository: repository),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Depth comparison grid should show 0.0 µm, not -0.0 µm
+    expect(find.text('-0.0 µm'), findsNothing);
+    expect(find.text('0.0 µm'), findsOneWidget);
+
+    // Expand stage 0 craft specs
+    expect(find.byKey(const Key('craft_specs_toggle_0')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('craft_specs_toggle_0')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Technique / Passes: '), findsOneWidget);
+
+    // Switch to a different job
+    final secondJob = repository.jobs.length > 1 ? repository.jobs[1] : repository.jobs.first.copyWith(id: 'job_second');
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: JobDetailScreen(job: secondJob, repository: repository),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Specs should be collapsed on the new job
+    expect(find.text('Technique / Passes: '), findsNothing);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('PaintGaugeWalkaroundWidget prevents negative zero on fractional clear removed rounding down in µm and mils modes', (WidgetTester tester) async {
+    // 0.3 µm difference: rounds to 0 µm in µm mode
+    List<PaintGaugePoint> points = PaintGaugePoint.default8Points(initial: 120.3, post: 120.0);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                return PaintGaugeWalkaroundWidget(
+                  points: points,
+                  onPointsChanged: (newPts) => setState(() => points = newPts),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // In µm mode with 0.3 µm removed: should display '0 µm', never '-0 µm'
+    expect(find.text('-0 µm'), findsNothing);
+    expect(find.text('0 µm'), findsWidgets);
+
+    // Toggle to mils mode with 0.8 µm removed (0.8 / 25.4 = 0.0315 mil, rounds to 0.0 mil)
+    await tester.tap(find.text('mils'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('-0.0 mil'), findsNothing);
+    expect(find.text('0.0 mil'), findsWidgets);
+  });
+
+  testWidgets('PaintGaugeWalkaroundWidget editor dialog prevents negative zero on fractional difference and handles empty inputs safely', (WidgetTester tester) async {
+    List<PaintGaugePoint> points = PaintGaugePoint.default8Points(initial: 120.0, post: 119.0);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                return PaintGaugeWalkaroundWidget(
+                  points: points,
+                  onPointsChanged: (newPts) => setState(() => points = newPts),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Switch to mils mode
+    await tester.tap(find.text('mils'));
+    await tester.pumpAndSettle();
+
+    // Open Hood dialog
+    await tester.tap(find.text('Hood').first);
+    await tester.pumpAndSettle();
+
+    // Enter values with 0.02 mil difference (rounds to 0.0)
+    await tester.enterText(find.widgetWithText(TextField, 'Initial (mil)'), '4.8');
+    await tester.enterText(find.widgetWithText(TextField, 'Post-Polish (mil)'), '4.78');
+    await tester.pumpAndSettle();
+
+    // Should display '0.0 mil', never '-0.0 mil' in the dialog
+    expect(find.descendant(of: find.byType(AlertDialog), matching: find.text('-0.0 mil')), findsNothing);
+    expect(find.descendant(of: find.byType(AlertDialog), matching: find.text('0.0 mil')), findsOneWidget);
+
+    // Clear both text fields
+    await tester.enterText(find.widgetWithText(TextField, 'Initial (mil)'), '');
+    await tester.enterText(find.widgetWithText(TextField, 'Post-Polish (mil)'), '');
+    await tester.pumpAndSettle();
+
+    // Should safely display '0.0 mil' in the dialog
+    expect(find.descendant(of: find.byType(AlertDialog), matching: find.text('0.0 mil')), findsOneWidget);
+
+    // Tap Cancel
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('JobDetailScreen handles fractional micronsRemoved without negative zero and shows fallback when recipeStages is empty', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(800, 2000);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    final jobFractional = repository.jobs.first.copyWith(
+      id: 'job_fractional',
+      initialPaintThicknessMicrons: 120.04,
+      finalPaintThicknessMicrons: 120.0,
+      paintGaugePoints: PaintGaugePoint.default8Points(initial: 120.04, post: 120.0),
+      recipeStages: [],
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: JobDetailScreen(job: jobFractional, repository: repository),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Clear Removed metric should show 0.0 µm, never -0.0 µm
+    expect(find.text('-0.0 µm'), findsNothing);
+    expect(find.text('0.0 µm'), findsOneWidget);
+
+    // Empty recipe stages fallback message should appear
+    expect(find.text('No specific recipe stages logged for this transformation.'), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
   });
 }

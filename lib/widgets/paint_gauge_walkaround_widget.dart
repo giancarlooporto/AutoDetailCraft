@@ -2,6 +2,29 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../models/paint_gauge_point.dart';
 
+String _formatDialogInput(double microns, {required bool isMil}) {
+  final safeMicrons = microns <= 0.0 ? 0.0 : microns;
+  if (isMil) {
+    final mils = safeMicrons / 25.4;
+    if ((safeMicrons - safeMicrons.roundToDouble()).abs() < 0.0001) {
+      final s = mils.toStringAsFixed(1);
+      return (s == '-0.0' || s == '-0') ? '0.0' : s;
+    }
+    final s = mils.toStringAsFixed(4).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+    if (!s.contains('.')) {
+      return '$s.0';
+    }
+    return (s == '-0.0' || s == '-0') ? '0.0' : s;
+  } else {
+    if ((safeMicrons - safeMicrons.roundToDouble()).abs() < 0.0001) {
+      final s = safeMicrons.toStringAsFixed(0);
+      return s == '-0' ? '0' : s;
+    }
+    final s = safeMicrons.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+    return s == '-0' ? '0' : s;
+  }
+}
+
 class PaintGaugeWalkaroundWidget extends StatefulWidget {
   final List<PaintGaugePoint> points;
   final ValueChanged<List<PaintGaugePoint>> onPointsChanged;
@@ -41,209 +64,30 @@ class _PaintGaugeWalkaroundWidgetState extends State<PaintGaugeWalkaroundWidget>
   String _formatReading(double microns) {
     if (_useMils) {
       // 1 mil = 25.4 microns
-      final mils = microns / 25.4;
-      return '${mils.toStringAsFixed(1)} mil';
+      final mils = microns <= 0.0 ? 0.0 : microns / 25.4;
+      final s = mils.toStringAsFixed(1);
+      return '${(s == "-0.0" || s == "-0") ? "0.0" : s} mil';
     }
-    return '${microns.toStringAsFixed(0)} µm';
+    final safeMicrons = microns <= 0.0 ? 0.0 : microns;
+    final s = safeMicrons.toStringAsFixed(0);
+    return '${(s == "-0.0" || s == "-0") ? "0" : s} µm';
   }
 
   void _openPointEditor(int index) {
     if (widget.readOnly) return;
+    if (index < 0 || index >= widget.points.length) return;
     final point = widget.points[index];
-
-    final initialCtrl = TextEditingController(text: point.initialMicrons.toStringAsFixed(0));
-    final postCtrl = TextEditingController(text: point.postPolishMicrons.toStringAsFixed(0));
 
     showDialog(
       context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (dialogCtx, setDialogState) {
-            final curInitial = double.tryParse(initialCtrl.text) ?? point.initialMicrons;
-            final curPost = double.tryParse(postCtrl.text) ?? point.postPolishMicrons;
-            final diff = (curInitial - curPost).clamp(0.0, 999.0);
-
-            return AlertDialog(
-              backgroundColor: AppTheme.surface,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: const BorderSide(color: AppTheme.border),
-              ),
-              title: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withAlpha(30),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.straighten_rounded, color: AppTheme.primary, size: 18),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '${point.label} Reading',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Quick Presets (1-Tap):',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppTheme.textSecondary),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        _buildQuickSetButton(
-                          label: 'Thin ~80µm',
-                          color: const Color(0xFFFFD600),
-                          onTap: () {
-                            setDialogState(() {
-                              initialCtrl.text = '82';
-                              postCtrl.text = '80';
-                            });
-                          },
-                        ),
-                        _buildQuickSetButton(
-                          label: 'Factory Healthy ~120µm',
-                          color: const Color(0xFF00E676),
-                          onTap: () {
-                            setDialogState(() {
-                              initialCtrl.text = '122';
-                              postCtrl.text = '119';
-                            });
-                          },
-                        ),
-                        _buildQuickSetButton(
-                          label: 'Re-spray ~200µm',
-                          color: const Color(0xFFFF5252),
-                          onTap: () {
-                            setDialogState(() {
-                              initialCtrl.text = '230';
-                              postCtrl.text = '225';
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    const Divider(color: AppTheme.border, height: 1),
-                    const SizedBox(height: 14),
-                    const Text(
-                      'Direct Numerical Entry (µm):',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppTheme.textSecondary),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: initialCtrl,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: const InputDecoration(
-                              labelText: 'Initial (µm)',
-                              prefixIcon: Icon(Icons.speed_rounded, size: 16),
-                              isDense: true,
-                            ),
-                            onChanged: (_) => setDialogState(() {}),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: postCtrl,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: const InputDecoration(
-                              labelText: 'Post-Polish (µm)',
-                              prefixIcon: Icon(Icons.check_circle_outline, size: 16),
-                              isDense: true,
-                            ),
-                            onChanged: (_) => setDialogState(() {}),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: AppTheme.surfaceLight,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppTheme.border),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Estimated Clear Removed:', style: TextStyle(fontSize: 11.5, color: AppTheme.textSecondary)),
-                          Text(
-                            '-${diff.toStringAsFixed(1)} µm',
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    foregroundColor: Colors.black,
-                  ),
-                  onPressed: () {
-                    final newInitial = double.tryParse(initialCtrl.text) ?? point.initialMicrons;
-                    final newPost = double.tryParse(postCtrl.text) ?? point.postPolishMicrons;
-                    final updatedPoints = List<PaintGaugePoint>.from(widget.points);
-                    updatedPoints[index] = point.copyWith(
-                      initialMicrons: newInitial,
-                      postPolishMicrons: newPost,
-                    );
-                    widget.onPointsChanged(updatedPoints);
-                    Navigator.pop(ctx);
-                  },
-                  child: const Text('Apply'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildQuickSetButton({
-    required String label,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        decoration: BoxDecoration(
-          color: color.withAlpha(20),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: color.withAlpha(90)),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
-        ),
+      builder: (ctx) => _PointEditorDialog(
+        point: point,
+        useMils: _useMils,
+        onApply: (updatedPoint) {
+          final updatedPoints = List<PaintGaugePoint>.from(widget.points);
+          updatedPoints[index] = updatedPoint;
+          widget.onPointsChanged(updatedPoints);
+        },
       ),
     );
   }
@@ -413,8 +257,12 @@ class _PaintGaugeWalkaroundWidgetState extends State<PaintGaugeWalkaroundWidget>
                     ),
                     Container(width: 1, height: 26, color: AppTheme.border),
                     _buildOverallMetricTile(
-                      label: 'Microns Removed',
-                      value: '-${_formatReading(_overallMicronsRemoved)}',
+                      label: _useMils ? 'Clear Removed' : 'Microns Removed',
+                      value: () {
+                        final reading = _formatReading(_overallMicronsRemoved);
+                        final numVal = double.tryParse(reading.split(' ').first) ?? 0.0;
+                        return numVal == 0.0 ? _formatReading(0.0) : '-$reading';
+                      }(),
                       color: const Color(0xFFFF5252),
                       icon: Icons.layers_clear_outlined,
                     ),
@@ -574,6 +422,327 @@ class _PaintGaugeWalkaroundWidgetState extends State<PaintGaugeWalkaroundWidget>
         Text(
           label,
           style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary),
+        ),
+      ],
+    );
+  }
+}
+
+class _PointEditorDialog extends StatefulWidget {
+  final PaintGaugePoint point;
+  final bool useMils;
+  final ValueChanged<PaintGaugePoint> onApply;
+
+  const _PointEditorDialog({
+    required this.point,
+    required this.useMils,
+    required this.onApply,
+  });
+
+  @override
+  State<_PointEditorDialog> createState() => _PointEditorDialogState();
+}
+
+class _PointEditorDialogState extends State<_PointEditorDialog> {
+  late final String _initialStr;
+  late final String _postStr;
+  late final TextEditingController _initialCtrl;
+  late final TextEditingController _postCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialStr = _formatDialogInput(widget.point.initialMicrons, isMil: widget.useMils);
+    _postStr = _formatDialogInput(widget.point.postPolishMicrons, isMil: widget.useMils);
+    _initialCtrl = TextEditingController(text: _initialStr);
+    _postCtrl = TextEditingController(text: _postStr);
+  }
+
+  @override
+  void dispose() {
+    _initialCtrl.dispose();
+    _postCtrl.dispose();
+    super.dispose();
+  }
+
+  Widget _buildQuickSetButton({
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withAlpha(20),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withAlpha(90)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final parsedInitial = double.tryParse(_initialCtrl.text.trim().replaceAll(',', '.'));
+    final parsedPost = double.tryParse(_postCtrl.text.trim().replaceAll(',', '.'));
+    final double diff;
+    if (parsedInitial != null && parsedPost != null) {
+      final curInitial = parsedInitial.clamp(0.0, 9999.0);
+      final curPost = parsedPost.clamp(0.0, 9999.0);
+      diff = (curInitial - curPost).clamp(0.0, 999.0);
+    } else {
+      diff = 0.0;
+    }
+
+    final diffFormatted = diff.toStringAsFixed(1);
+    final numDiff = double.tryParse(diffFormatted) ?? 0.0;
+    final unit = widget.useMils ? 'mil' : 'µm';
+    final diffDisplay = numDiff == 0.0 ? '0.0 $unit' : '-$diffFormatted $unit';
+
+    return AlertDialog(
+      backgroundColor: AppTheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: AppTheme.border),
+      ),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withAlpha(30),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.straighten_rounded, color: AppTheme.primary, size: 18),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${widget.point.label} Reading',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Quick Presets (1-Tap):',
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: widget.useMils
+                  ? [
+                      _buildQuickSetButton(
+                        label: 'Thin ~3.1 mil',
+                        color: const Color(0xFFFFD600),
+                        onTap: () {
+                          setState(() {
+                            _initialCtrl.text = '3.2';
+                            _postCtrl.text = '3.1';
+                          });
+                        },
+                      ),
+                      _buildQuickSetButton(
+                        label: 'Factory Healthy ~4.8 mil',
+                        color: const Color(0xFF00E676),
+                        onTap: () {
+                          setState(() {
+                            _initialCtrl.text = '4.8';
+                            _postCtrl.text = '4.7';
+                          });
+                        },
+                      ),
+                      _buildQuickSetButton(
+                        label: 'Re-spray ~9.0 mil',
+                        color: const Color(0xFFFF5252),
+                        onTap: () {
+                          setState(() {
+                            _initialCtrl.text = '9.1';
+                            _postCtrl.text = '8.9';
+                          });
+                        },
+                      ),
+                    ]
+                  : [
+                      _buildQuickSetButton(
+                        label: 'Thin ~80µm',
+                        color: const Color(0xFFFFD600),
+                        onTap: () {
+                          setState(() {
+                            _initialCtrl.text = '82';
+                            _postCtrl.text = '80';
+                          });
+                        },
+                      ),
+                      _buildQuickSetButton(
+                        label: 'Factory Healthy ~120µm',
+                        color: const Color(0xFF00E676),
+                        onTap: () {
+                          setState(() {
+                            _initialCtrl.text = '122';
+                            _postCtrl.text = '119';
+                          });
+                        },
+                      ),
+                      _buildQuickSetButton(
+                        label: 'Re-spray ~200µm',
+                        color: const Color(0xFFFF5252),
+                        onTap: () {
+                          setState(() {
+                            _initialCtrl.text = '230';
+                            _postCtrl.text = '225';
+                          });
+                        },
+                      ),
+                    ],
+            ),
+            const SizedBox(height: 16),
+            const Divider(color: AppTheme.border, height: 1),
+            const SizedBox(height: 14),
+            Text(
+              widget.useMils ? 'Direct Numerical Entry (mil):' : 'Direct Numerical Entry (µm):',
+              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _initialCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: widget.useMils ? 'Initial (mil)' : 'Initial (µm)',
+                      prefixIcon: const Icon(Icons.speed_rounded, size: 16),
+                      isDense: true,
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _postCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: widget.useMils ? 'Post-Polish (mil)' : 'Post-Polish (µm)',
+                      prefixIcon: const Icon(Icons.check_circle_outline, size: 16),
+                      isDense: true,
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceLight,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Estimated Clear Removed:', style: TextStyle(fontSize: 11.5, color: AppTheme.textSecondary)),
+                  Text(
+                    diffDisplay,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.primary,
+            foregroundColor: Colors.black,
+          ),
+          onPressed: () {
+            final rawInitial = double.tryParse(_initialCtrl.text.trim().replaceAll(',', '.'));
+            final rawPost = double.tryParse(_postCtrl.text.trim().replaceAll(',', '.'));
+            final newInitialInput = rawInitial?.clamp(0.0, 9999.0);
+            final newPostInput = rawPost?.clamp(0.0, 9999.0);
+
+            final normalizedInitial = _initialCtrl.text.trim().replaceAll(',', '.');
+            final normalizedPost = _postCtrl.text.trim().replaceAll(',', '.');
+            final normalizedInitialStr = _initialStr.trim().replaceAll(',', '.');
+            final normalizedPostStr = _postStr.trim().replaceAll(',', '.');
+
+            final double newInitial;
+            final double newPost;
+
+            if (widget.useMils) {
+              if (newInitialInput != null) {
+                if (normalizedInitial == normalizedInitialStr) {
+                  newInitial = widget.point.initialMicrons;
+                } else {
+                  newInitial = newInitialInput * 25.4;
+                }
+              } else {
+                newInitial = widget.point.initialMicrons;
+              }
+
+              if (newPostInput != null) {
+                if (normalizedPost == normalizedPostStr) {
+                  newPost = widget.point.postPolishMicrons;
+                } else {
+                  newPost = newPostInput * 25.4;
+                }
+              } else {
+                newPost = widget.point.postPolishMicrons;
+              }
+            } else {
+              if (newInitialInput != null) {
+                if (normalizedInitial == normalizedInitialStr) {
+                  newInitial = widget.point.initialMicrons;
+                } else {
+                  newInitial = newInitialInput;
+                }
+              } else {
+                newInitial = widget.point.initialMicrons;
+              }
+
+              if (newPostInput != null) {
+                if (normalizedPost == normalizedPostStr) {
+                  newPost = widget.point.postPolishMicrons;
+                } else {
+                  newPost = newPostInput;
+                }
+              } else {
+                newPost = widget.point.postPolishMicrons;
+              }
+            }
+
+            widget.onApply(widget.point.copyWith(
+              initialMicrons: newInitial,
+              postPolishMicrons: newPost,
+            ));
+            Navigator.pop(context);
+          },
+          child: const Text('Apply'),
         ),
       ],
     );

@@ -55,12 +55,26 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   late DetailJob _currentJob;
   late int _selectedTabIndex;
   bool _messagingLoading = false;
+  final Set<int> _expandedStageSpecs = {};
 
   @override
   void initState() {
     super.initState();
     _currentJob = widget.job;
     _selectedTabIndex = widget.initialTabIndex;
+  }
+
+  @override
+  void didUpdateWidget(JobDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.job != widget.job) {
+      _currentJob = widget.job;
+      if (oldWidget.job.id != widget.job.id) {
+        _expandedStageSpecs.clear();
+      } else {
+        _expandedStageSpecs.removeWhere((idx) => idx >= _currentJob.recipeStages.length);
+      }
+    }
   }
 
   bool get _isOwner {
@@ -84,6 +98,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         if (updatedJob != null && mounted) {
           setState(() {
             _currentJob = updatedJob;
+            _expandedStageSpecs.removeWhere((idx) => idx >= _currentJob.recipeStages.length);
           });
         }
         widget.onJobChanged?.call();
@@ -685,12 +700,6 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         ),
         actions: [
           if (_isOwner) ...[
-            IconButton(
-              key: const Key('edit_recipe_appbar_button'),
-              onPressed: _openEditRecipe,
-              icon: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 20),
-              tooltip: 'Edit Recipe',
-            ),
             PopupMenuButton<String>(
               key: const Key('recipe_overflow_menu'),
               icon: const Icon(Icons.more_vert_rounded, color: Colors.white70, size: 20),
@@ -702,8 +711,6 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               onSelected: (val) {
                 if (val == 'edit') {
                   _openEditRecipe();
-                } else if (val == 'share') {
-                  _showExportSuccess();
                 } else if (val == 'delete') {
                   _showDeleteConfirmDialog();
                 }
@@ -716,16 +723,6 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                       Icon(Icons.edit_outlined, size: 18, color: AppTheme.primary),
                       SizedBox(width: 10),
                       Text('Edit Recipe', style: TextStyle(fontSize: 13)),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'share',
-                  child: Row(
-                    children: [
-                      Icon(Icons.share_outlined, size: 18, color: Colors.white70),
-                      SizedBox(width: 10),
-                      Text('Share Client Report', style: TextStyle(fontSize: 13)),
                     ],
                   ),
                 ),
@@ -742,15 +739,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                 ),
               ],
             ),
-          ] else ...[
-            IconButton(
-              key: const Key('share_recipe_appbar_button'),
-              onPressed: _showExportSuccess,
-              icon: const Icon(Icons.share_outlined, color: AppTheme.primary, size: 20),
-              tooltip: 'Share Client Report',
-            ),
+            const SizedBox(width: 8),
           ],
-          const SizedBox(width: 8),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
@@ -1058,7 +1048,18 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                         children: [
                           _buildGaugeMetric('Initial Depth', '${_currentJob.initialPaintThicknessMicrons} µm', Icons.speed_rounded, AppTheme.textSecondary),
                           _buildGaugeMetric('Final Depth', '${_currentJob.finalPaintThicknessMicrons} µm', Icons.check_circle_outline, AppTheme.primary),
-                          _buildGaugeMetric('Clear Removed', '-${_currentJob.micronsRemoved.toStringAsFixed(1)} µm', Icons.layers_clear_outlined, AppTheme.hardnessHard),
+                          Builder(
+                            builder: (context) {
+                              final formatted = _currentJob.micronsRemoved.toStringAsFixed(1);
+                              final numVal = double.tryParse(formatted) ?? 0.0;
+                              return _buildGaugeMetric(
+                                'Clear Removed',
+                                numVal == 0.0 ? '0.0 µm' : '-$formatted µm',
+                                Icons.layers_clear_outlined,
+                                AppTheme.hardnessHard,
+                              );
+                            },
+                          ),
                           _buildGaugeMetric('Total Time', '${_currentJob.durationHours} hrs', Icons.timer_outlined, Colors.amberAccent),
                         ],
                       ),
@@ -1087,10 +1088,24 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    Column(
-                      children: _currentJob.recipeStages.asMap().entries.map((entry) {
+                    if (_currentJob.recipeStages.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          'No specific recipe stages logged for this transformation.',
+                          style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                        ),
+                      )
+                    else
+                      Column(
+                        children: _currentJob.recipeStages.asMap().entries.map((entry) {
                         final idx = entry.key;
                         final stage = entry.value;
+                        final isExpanded = _expandedStageSpecs.contains(idx);
+                        final hasSpecs = stage.machine.isNotEmpty ||
+                            stage.pad.isNotEmpty ||
+                            stage.technique.isNotEmpty ||
+                            (stage.notes != null && stage.notes!.isNotEmpty);
                         return Container(
                           margin: const EdgeInsets.only(bottom: 12),
                           padding: const EdgeInsets.all(14),
@@ -1103,70 +1118,200 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
+                                  // Green checked circle
                                   Container(
-                                    width: 24,
-                                    height: 24,
+                                    width: 26,
+                                    height: 26,
                                     decoration: BoxDecoration(
-                                      color: AppTheme.primary.withAlpha(35),
+                                      color: const Color(0xFF00E676).withAlpha(28),
                                       shape: BoxShape.circle,
-                                      border: Border.all(color: AppTheme.primary, width: 1),
+                                      border: Border.all(color: const Color(0xFF00E676), width: 1.5),
                                     ),
-                                    child: Center(
-                                      child: Text(
-                                        '${idx + 1}',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          color: AppTheme.primary,
-                                        ),
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.check_rounded,
+                                        size: 16,
+                                        color: Color(0xFF00E676),
                                       ),
                                     ),
                                   ),
                                   const SizedBox(width: 10),
                                   Expanded(
-                                    child: Text(
-                                      stage.stageName,
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppTheme.textPrimary,
-                                      ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'STAGE ${idx + 1}',
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                            color: AppTheme.primary,
+                                            letterSpacing: 0.8,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          stage.stageName,
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppTheme.textPrimary,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  if (stage.dilution != null)
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: AppTheme.surfaceLight,
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(color: AppTheme.border),
-                                      ),
-                                      child: Text(
-                                        stage.dilution!,
-                                        style: const TextStyle(fontSize: 11, color: AppTheme.primary),
-                                      ),
+                                  const SizedBox(width: 8),
+                                  // Pro completion status badge
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF00E676).withAlpha(22),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: const Color(0xFF00E676).withAlpha(80)),
                                     ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.verified_rounded, size: 12, color: Color(0xFF00E676)),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'Completed',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF00E676),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ],
                               ),
-                              const SizedBox(height: 10),
-
-                              // Stage Details
-                              if (stage.machine.isNotEmpty)
-                                _buildRecipeField('Machine', stage.machine, Icons.build_rounded),
-                              if (stage.pad.isNotEmpty)
-                                _buildRecipeField('Pad', stage.pad, Icons.circle_outlined),
-                              _buildRecipeField('Chemical / Compound', stage.chemical, Icons.science_rounded),
-                              if (stage.technique.isNotEmpty)
-                                _buildRecipeField('Technique / Passes', stage.technique, Icons.tune_rounded),
-                              if (stage.notes != null && stage.notes!.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 6),
-                                  child: Text(
-                                    'Pro Note: ${stage.notes}',
-                                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted, fontStyle: FontStyle.italic),
+                              if (stage.chemical.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.science_rounded, size: 14, color: AppTheme.primary),
+                                    const SizedBox(width: 6),
+                                    const Text(
+                                      'Product: ',
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary),
+                                    ),
+                                    Expanded(
+                                      child: Text(
+                                        stage.chemical,
+                                        style: const TextStyle(fontSize: 12, color: Colors.white),
+                                      ),
+                                    ),
+                                    if (stage.dilution != null && stage.dilution!.isNotEmpty)
+                                      Container(
+                                        margin: const EdgeInsets.only(left: 6),
+                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.surfaceLight,
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(color: AppTheme.border),
+                                        ),
+                                        child: Text(
+                                          stage.dilution!,
+                                          style: const TextStyle(fontSize: 10.5, color: AppTheme.primary, fontWeight: FontWeight.w600),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                              if (hasSpecs) ...[
+                                const SizedBox(height: 10),
+                                InkWell(
+                                  key: Key('craft_specs_toggle_$idx'),
+                                  onTap: () {
+                                    setState(() {
+                                      if (isExpanded) {
+                                        _expandedStageSpecs.remove(idx);
+                                      } else {
+                                        _expandedStageSpecs.add(idx);
+                                      }
+                                    });
+                                  },
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 4),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          isExpanded ? Icons.tune_rounded : Icons.build_outlined,
+                                          size: 13,
+                                          color: AppTheme.textMuted,
+                                        ),
+                                        const SizedBox(width: 5),
+                                        const Text(
+                                          'Detailer Craft Specs',
+                                          style: TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppTheme.textMuted,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 2),
+                                        Icon(
+                                          isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                                          size: 16,
+                                          color: AppTheme.textMuted,
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
+                                if (isExpanded) ...[
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.surfaceLight,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: AppTheme.border.withAlpha(150)),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        if (stage.machine.isNotEmpty)
+                                          _buildRecipeField('Machine', stage.machine, Icons.build_rounded),
+                                        if (stage.pad.isNotEmpty)
+                                          _buildRecipeField('Pad', stage.pad, Icons.circle_outlined),
+                                        if (stage.technique.isNotEmpty)
+                                          _buildRecipeField('Technique / Passes', stage.technique, Icons.tune_rounded),
+                                        if (stage.notes != null && stage.notes!.isNotEmpty)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 4),
+                                            child: Row(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                const Icon(Icons.info_outline, size: 14, color: AppTheme.textMuted),
+                                                const SizedBox(width: 6),
+                                                Expanded(
+                                                  child: Text(
+                                                    'Pro Note: ${stage.notes}',
+                                                    style: const TextStyle(
+                                                      fontSize: 11.5,
+                                                      color: AppTheme.textMuted,
+                                                      fontStyle: FontStyle.italic,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ],
                           ),
                         );
