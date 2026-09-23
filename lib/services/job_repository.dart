@@ -29,6 +29,9 @@ class JobRepository extends ChangeNotifier {
   // Messaging state
   List<Conversation> _conversations = [];
   RealtimeChannel? _messagesChannel;
+  RealtimeChannel? _jobsChannel;
+  RealtimeChannel? _bookingsChannel;
+  RealtimeChannel? _interactionsChannel;
 
   JobRepository() {
     init();
@@ -98,6 +101,9 @@ class JobRepository extends ChangeNotifier {
     if (savedBookings != null) {
       _bookings = savedBookings;
     }
+    if (_isLoggedIn) {
+      _refreshBookingsFromCloud(_currentUser.id);
+    }
 
     // 5. Load persistent likes & bookmarks
     final interaction = await LocalStorageService.loadInteractionState();
@@ -111,12 +117,20 @@ class JobRepository extends ChangeNotifier {
         );
       }).toList();
     }
+    if (_isLoggedIn) {
+      _refreshInteractionsFromCloud(_currentUser.id);
+    }
 
     // 6. Background fetch newest community jobs from Supabase if online
     _refreshJobsFromCloud();
 
     // 7. Load persistent messages & conversations
     loadConversations();
+
+    // 8. Subscribe to realtime channels if logged in
+    if (_isLoggedIn) {
+      _subscribeToRealtime();
+    }
 
     _isInitialized = true;
     notifyListeners();
@@ -127,7 +141,7 @@ class JobRepository extends ChangeNotifier {
       final cloudProfile = await SupabaseDbService.fetchUserProfile(userId);
       if (cloudProfile != null) {
         _currentUser = cloudProfile;
-        _persistUser();
+        LocalStorageService.saveCurrentUser(cloudProfile);
         notifyListeners();
       }
     } catch (_) {}
@@ -137,28 +151,97 @@ class JobRepository extends ChangeNotifier {
     try {
       final cloudJobs = await SupabaseDbService.fetchJobs();
       if (cloudJobs.isNotEmpty) {
-        final currentIds = _jobs.map((j) => j.id).toSet();
-        final newFromCloud = cloudJobs.where((j) => !currentIds.contains(j.id)).toList();
-        if (newFromCloud.isNotEmpty) {
-          _jobs = [...newFromCloud, ..._jobs];
-          _persistCustomJobs();
-          notifyListeners();
+        final Map<String, DetailJob> jobMap = {};
+        // 1. Existing local jobs
+        for (final job in _jobs) {
+          jobMap[job.id] = job;
         }
+        // 2. Cloud jobs overwrite stale local copies
+        for (final cJob in cloudJobs) {
+          final existing = jobMap[cJob.id];
+          if (existing != null) {
+            jobMap[cJob.id] = cJob.copyWith(
+              isLiked: existing.isLiked,
+              isSaved: existing.isSaved,
+            );
+          } else {
+            jobMap[cJob.id] = cJob;
+          }
+        }
+        _jobs = jobMap.values.toList();
+        _jobs.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        _persistCustomJobs();
+        notifyListeners();
       }
     } catch (_) {}
   }
 
-  void loginUser(UserProfile user) {
+  Future<void> _refreshBookingsFromCloud(String userId) async {
+    try {
+      final cloudBookings = await SupabaseDbService.fetchBookings(userId);
+      if (cloudBookings.isNotEmpty) {
+        final Map<String, BookingAppointment> map = {
+          for (final b in _bookings) b.id: b,
+        };
+        for (final cb in cloudBookings) {
+          map[cb.id] = cb;
+        }
+        _bookings = map.values.toList()
+          ..sort((a, b) => b.scheduledDate.compareTo(a.scheduledDate));
+        LocalStorageService.saveBookings(_bookings);
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _refreshInteractionsFromCloud(String userId) async {
+    try {
+      final interactions = await SupabaseDbService.fetchUserInteractions(userId);
+      if (interactions != null) {
+        final liked = interactions.likedJobIds;
+        final saved = interactions.savedJobIds;
+        _jobs = _jobs.map((job) {
+          final isLiked = liked.contains(job.id);
+          final isSaved = saved.contains(job.id);
+          return job.copyWith(
+            isLiked: isLiked,
+            isSaved: isSaved,
+          );
+        }).toList();
+        await LocalStorageService.saveInteractionState(likedJobIds: liked, savedJobIds: saved);
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> loginUser(UserProfile user) async {
     _currentUser = user;
     _isLoggedIn = true;
     LocalStorageService.saveIsGuest(false);
+
+    // 1. Fetch latest profile state from cloud FIRST before persisting to cloud
+    // This prevents any default/fallback profile fields from overwriting existing cloud data
+    await _refreshProfileFromCloud(user.id);
     _persistUser();
-    // Try to fetch latest cloud state
-    _refreshProfileFromCloud(user.id);
+
+    // 2. Refresh jobs from cloud
+    await _refreshJobsFromCloud();
+
+    // 3. Refresh conversations
+    await loadConversations();
+
+    // 4. Refresh bookings and interactions from cloud
+    await _refreshBookingsFromCloud(user.id);
+    await _refreshInteractionsFromCloud(user.id);
+
+    // 5. Subscribe to realtime channels
+    _subscribeToRealtime();
+
     notifyListeners();
   }
 
   Future<void> logoutUser() async {
+    _unsubscribeFromRealtime();
     await SupabaseAuthService.signOut();
     await LocalStorageService.logoutSession();
     _isLoggedIn = false;
@@ -167,6 +250,7 @@ class JobRepository extends ChangeNotifier {
   }
 
   Future<void> deleteAccount() async {
+    _unsubscribeFromRealtime();
     final userId = _currentUser.id;
     await SupabaseAuthService.signOut();
     await LocalStorageService.deleteAccountData(userId);
@@ -207,6 +291,13 @@ class JobRepository extends ChangeNotifier {
     final liked = _jobs.where((j) => j.isLiked).map((j) => j.id).toSet();
     final saved = _jobs.where((j) => j.isSaved).map((j) => j.id).toSet();
     LocalStorageService.saveInteractionState(likedJobIds: liked, savedJobIds: saved);
+    if (_isLoggedIn) {
+      SupabaseDbService.saveUserInteractions(
+        userId: _currentUser.id,
+        likedJobIds: liked,
+        savedJobIds: saved,
+      );
+    }
   }
 
   // Getters
@@ -585,6 +676,9 @@ class JobRepository extends ChangeNotifier {
   void addBooking(BookingAppointment booking) {
     _bookings.insert(0, booking);
     _persistBookings();
+    if (_isLoggedIn) {
+      SupabaseDbService.saveBooking(booking);
+    }
     notifyListeners();
   }
 
@@ -594,6 +688,7 @@ class JobRepository extends ChangeNotifier {
       final b = _bookings[idx];
       _bookings[idx] = BookingAppointment(
         id: b.id,
+        clientId: b.clientId,
         detailerId: b.detailerId,
         detailerName: b.detailerName,
         detailerBusinessName: b.detailerBusinessName,
@@ -616,6 +711,9 @@ class JobRepository extends ChangeNotifier {
         warrantyPassportId: b.warrantyPassportId,
       );
       _persistBookings();
+      if (_isLoggedIn) {
+        SupabaseDbService.updateBookingStatus(bookingId, newStatus);
+      }
       notifyListeners();
     }
   }
@@ -650,7 +748,7 @@ class JobRepository extends ChangeNotifier {
           }
           _conversations = convMap.values.toList();
         }
-        _subscribeToMessages();
+        _subscribeToRealtime();
       }
 
       _enrichConversationProfiles();
@@ -802,11 +900,14 @@ class JobRepository extends ChangeNotifier {
     return localMsg;
   }
 
-  /// Subscribes to Supabase Realtime on the messages table.
-  void _subscribeToMessages() {
+  /// Subscribes to all Supabase Realtime channels (messages, jobs, bookings, user_interactions)
+  void _subscribeToRealtime() {
     final client = SupabaseService.client;
     if (client == null) return;
-    _messagesChannel?.unsubscribe();
+
+    _unsubscribeFromRealtime();
+
+    // 1. Messages realtime channel
     _messagesChannel = client
         .channel('public:messages')
         .onPostgresChanges(
@@ -814,16 +915,69 @@ class JobRepository extends ChangeNotifier {
           schema: 'public',
           table: 'messages',
           callback: (_) {
-            // Refresh conversations on any new message
             loadConversations();
+          },
+        )
+        .subscribe();
+
+    // 2. Jobs realtime channel
+    _jobsChannel = client
+        .channel('public:jobs')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'jobs',
+          callback: (_) {
+            _refreshJobsFromCloud();
+          },
+        )
+        .subscribe();
+
+    // 3. Bookings realtime channel
+    _bookingsChannel = client
+        .channel('public:bookings')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'bookings',
+          callback: (_) {
+            if (_isLoggedIn) {
+              _refreshBookingsFromCloud(_currentUser.id);
+            }
+          },
+        )
+        .subscribe();
+
+    // 4. User interactions realtime channel
+    _interactionsChannel = client
+        .channel('public:user_interactions')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'user_interactions',
+          callback: (_) {
+            if (_isLoggedIn) {
+              _refreshInteractionsFromCloud(_currentUser.id);
+            }
           },
         )
         .subscribe();
   }
 
+  void _unsubscribeFromRealtime() {
+    _messagesChannel?.unsubscribe();
+    _messagesChannel = null;
+    _jobsChannel?.unsubscribe();
+    _jobsChannel = null;
+    _bookingsChannel?.unsubscribe();
+    _bookingsChannel = null;
+    _interactionsChannel?.unsubscribe();
+    _interactionsChannel = null;
+  }
+
   @override
   void dispose() {
-    _messagesChannel?.unsubscribe();
+    _unsubscribeFromRealtime();
     super.dispose();
   }
 }

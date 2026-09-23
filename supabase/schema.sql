@@ -22,6 +22,9 @@ create table if not exists public.profiles (
   rating numeric default 5.0,
   review_count integer default 0,
   total_jobs_count integer default 0,
+  starting_price numeric default 150.0,
+  subscription_tier text default 'free',
+  service_packages jsonb default '[]'::jsonb,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -149,3 +152,77 @@ alter table public.messages enable row level security;
 create policy "Allow read on messages" on public.messages for select using (true);
 create policy "Allow insert on messages" on public.messages for insert with check (true);
 create policy "Allow update on messages" on public.messages for update using (true);
+
+-- 7. JOBS TABLE (Transformation Jobs)
+create table if not exists public.jobs (
+  id text primary key,
+  author_id text not null,
+  title text not null,
+  description text default '',
+  vehicle_year integer,
+  vehicle_make text,
+  vehicle_model text,
+  paint_color text,
+  service_type text,
+  before_image_url text,
+  after_image_url text,
+  raw_data jsonb not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.jobs enable row level security;
+
+create policy "Allow read on jobs" on public.jobs for select using (true);
+create policy "Allow insert on jobs" on public.jobs for insert with check (true);
+create policy "Allow update on jobs" on public.jobs for update using (true);
+create policy "Allow delete on jobs" on public.jobs for delete using (true);
+
+-- 8. BOOKINGS TABLE (Appointments)
+create table if not exists public.bookings (
+  id text primary key,
+  client_id text,
+  detailer_id text not null,
+  detailer_name text not null,
+  detailer_business_name text not null,
+  detailer_avatar text default '',
+  client_name text not null,
+  client_phone text default '',
+  client_email text default '',
+  vehicle_year_make_model text not null,
+  vehicle_size text not null,
+  package jsonb not null,
+  location_type text not null,
+  client_address text default '',
+  scheduled_date timestamp with time zone not null,
+  scheduled_time_slot text not null,
+  total_price numeric not null,
+  deposit_amount numeric not null,
+  status text not null default 'confirmed',
+  client_notes text,
+  pre_inspection_summary text,
+  warranty_passport_id text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.bookings enable row level security;
+
+create policy "Allow read on bookings" on public.bookings for select using (true);
+create policy "Allow insert on bookings" on public.bookings for insert with check (true);
+create policy "Allow update on bookings" on public.bookings for update using (true);
+create policy "Allow delete on bookings" on public.bookings for delete using (true);
+
+-- 9. USER INTERACTIONS TABLE (Likes and Bookmarks Sync)
+create table if not exists public.user_interactions (
+  user_id text primary key,
+  liked_job_ids jsonb default '[]'::jsonb,
+  saved_job_ids jsonb default '[]'::jsonb,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.user_interactions enable row level security;
+
+create policy "Allow read on user_interactions" on public.user_interactions for select using (true);
+create policy "Allow insert on user_interactions" on public.user_interactions for insert with check (true);
+create policy "Allow update on user_interactions" on public.user_interactions for update using (true);

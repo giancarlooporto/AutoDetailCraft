@@ -138,6 +138,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   void _confirmAndSubmitBooking() {
     final booking = BookingAppointment(
       id: 'book_${DateTime.now().millisecondsSinceEpoch}',
+      clientId: widget.repository.isLoggedIn ? widget.repository.currentUser.id : null,
       detailerId: widget.detailer.id,
       detailerName: _selectedTeamMember != null
           ? '${widget.detailer.businessName} (${_selectedTeamMember!.name})'

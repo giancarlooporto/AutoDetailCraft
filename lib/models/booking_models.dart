@@ -77,6 +77,7 @@ class ServicePackage {
 
 class BookingAppointment {
   final String id;
+  final String? clientId;
   final String detailerId;
   final String detailerName;
   final String detailerBusinessName;
@@ -100,6 +101,7 @@ class BookingAppointment {
 
   const BookingAppointment({
     required this.id,
+    this.clientId,
     required this.detailerId,
     required this.detailerName,
     required this.detailerBusinessName,
@@ -124,6 +126,7 @@ class BookingAppointment {
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'clientId': clientId,
     'detailerId': detailerId,
     'detailerName': detailerName,
     'detailerBusinessName': detailerBusinessName,
@@ -148,6 +151,7 @@ class BookingAppointment {
 
   factory BookingAppointment.fromJson(Map<String, dynamic> json) => BookingAppointment(
     id: json['id'] as String? ?? 'bk_${DateTime.now().millisecondsSinceEpoch}',
+    clientId: json['clientId'] as String?,
     detailerId: json['detailerId'] as String? ?? '',
     detailerName: json['detailerName'] as String? ?? '',
     detailerBusinessName: json['detailerBusinessName'] as String? ?? '',

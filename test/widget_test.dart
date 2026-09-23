@@ -3,6 +3,7 @@ import 'package:detail_craft/screens/feed_screen.dart';
 import 'package:detail_craft/screens/job_detail_screen.dart';
 import 'package:detail_craft/models/detail_job.dart';
 import 'package:detail_craft/models/booking_models.dart';
+import 'package:detail_craft/models/user_profile.dart';
 import 'package:detail_craft/widgets/dilution_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -554,6 +555,143 @@ void main() {
     repository.updateBookingStatus(booking.id, BookingStatus.completed);
     final updated = repository.bookings.firstWhere((b) => b.id == booking.id);
     expect(updated.status, BookingStatus.completed);
+  });
+
+  test('BookingAppointment serializes and deserializes clientId correctly', () {
+    final bookingWithClient = BookingAppointment(
+      id: 'bk_client_1',
+      clientId: 'usr_client_123',
+      detailerId: 'usr_marcus',
+      detailerName: 'Marcus Vance',
+      detailerBusinessName: 'Apex Precision Detailing',
+      detailerAvatar: '',
+      clientName: 'Jane Doe',
+      clientPhone: '555-1234',
+      clientEmail: 'jane@example.com',
+      vehicleYearMakeModel: '2024 Porsche 911 GT3',
+      vehicleSize: VehicleSize.coupeSedan,
+      package: const ServicePackage(
+        id: 'pkg_1',
+        title: 'Paint Correction',
+        description: 'Multi-stage correction',
+        basePrice: 800,
+        estimatedDuration: '8 hrs',
+        includes: ['Wash', 'Decon', 'Compound', 'Polish'],
+      ),
+      locationType: ServiceLocationType.shop,
+      clientAddress: '123 Speed Way',
+      scheduledDate: DateTime(2026, 10, 1),
+      scheduledTimeSlot: '10:00 AM',
+      totalPrice: 800,
+      depositAmount: 200,
+      status: BookingStatus.confirmed,
+    );
+
+    final json = bookingWithClient.toJson();
+    expect(json['clientId'], 'usr_client_123');
+
+    final deserialized = BookingAppointment.fromJson(json);
+    expect(deserialized.clientId, 'usr_client_123');
+    expect(deserialized.id, 'bk_client_1');
+    expect(deserialized.totalPrice, 800);
+  });
+
+  test('BookingAppointment supports null clientId for guest bookings', () {
+    final guestBooking = BookingAppointment(
+      id: 'bk_guest_1',
+      detailerId: 'usr_marcus',
+      detailerName: 'Marcus Vance',
+      detailerBusinessName: 'Apex Precision Detailing',
+      detailerAvatar: '',
+      clientName: 'Guest User',
+      clientPhone: '555-0000',
+      clientEmail: 'guest@example.com',
+      vehicleYearMakeModel: '2022 Ford F-150',
+      vehicleSize: VehicleSize.truckVan,
+      package: const ServicePackage(
+        id: 'pkg_2',
+        title: 'Basic Wash',
+        description: 'Hand wash and dry',
+        basePrice: 100,
+        estimatedDuration: '2 hrs',
+        includes: ['Hand wash'],
+      ),
+      locationType: ServiceLocationType.mobile,
+      clientAddress: '456 Farm Rd',
+      scheduledDate: DateTime(2026, 10, 2),
+      scheduledTimeSlot: '1:00 PM',
+      totalPrice: 100,
+      depositAmount: 0,
+      status: BookingStatus.pending,
+    );
+
+    final json = guestBooking.toJson();
+    expect(json['clientId'], isNull);
+
+    final deserialized = BookingAppointment.fromJson(json);
+    expect(deserialized.clientId, isNull);
+    expect(deserialized.id, 'bk_guest_1');
+  });
+
+  testWidgets('JobRepository interaction state toggle and persistence', (WidgetTester tester) async {
+    final repository = JobRepository();
+    final firstJobId = repository.jobs.first.id;
+
+    // Initial state check
+    final wasLiked = repository.jobs.firstWhere((j) => j.id == firstJobId).isLiked;
+    final wasSaved = repository.jobs.firstWhere((j) => j.id == firstJobId).isSaved;
+
+    // Toggle like
+    repository.toggleLike(firstJobId);
+    expect(repository.jobs.firstWhere((j) => j.id == firstJobId).isLiked, !wasLiked);
+
+    // Toggle save
+    repository.toggleSave(firstJobId);
+    expect(repository.jobs.firstWhere((j) => j.id == firstJobId).isSaved, !wasSaved);
+
+    // Toggle back
+    repository.toggleLike(firstJobId);
+    repository.toggleSave(firstJobId);
+    expect(repository.jobs.firstWhere((j) => j.id == firstJobId).isLiked, wasLiked);
+    expect(repository.jobs.firstWhere((j) => j.id == firstJobId).isSaved, wasSaved);
+  });
+
+  test('UserProfile serializes and deserializes startingPrice, subscriptionTier, and servicePackages', () {
+    const customPackage = ServicePackage(
+      id: 'pkg_custom_99',
+      title: 'Ultimate Ceramic & Correction',
+      description: '2-step correction with 5-year ceramic coating',
+      basePrice: 1250,
+      estimatedDuration: '12 hrs',
+      includes: ['Paint Decon', 'Stage 2 Polish', '9H Ceramic'],
+    );
+
+    final profile = UserProfile(
+      id: 'usr_detailer_42',
+      role: UserRole.detailer,
+      username: 'apexpro',
+      displayName: 'Alex Apex',
+      businessName: 'Apex Ceramic Lab',
+      avatarUrl: 'https://example.com/avatar.jpg',
+      location: 'Dallas, Texas',
+      bio: 'High-end paint correction and ceramic specialist.',
+      startingPrice: 350.0,
+      subscriptionTier: SubscriptionTier.pro,
+      servicePackages: [customPackage],
+    );
+
+    final json = profile.toJson();
+    expect(json['startingPrice'], 350.0);
+    expect(json['subscriptionTier'], 'pro');
+    expect(json['servicePackages'], isList);
+    expect((json['servicePackages'] as List).length, 1);
+
+    final deserialized = UserProfile.fromJson(json);
+    expect(deserialized.startingPrice, 350.0);
+    expect(deserialized.subscriptionTier, SubscriptionTier.pro);
+    expect(deserialized.servicePackages.length, 1);
+    expect(deserialized.servicePackages.first.id, 'pkg_custom_99');
+    expect(deserialized.servicePackages.first.basePrice, 1250);
   });
 
   testWidgets('Desktop view renders single unified unlayered search bar with embedded dropdowns', (WidgetTester tester) async {

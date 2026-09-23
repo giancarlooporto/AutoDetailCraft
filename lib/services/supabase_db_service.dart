@@ -5,6 +5,7 @@ import '../models/user_profile.dart';
 import '../models/user_vehicle.dart';
 import '../models/team_member.dart';
 import '../models/detail_job.dart';
+import '../models/booking_models.dart';
 import 'supabase_service.dart';
 import 'mock_data_service.dart';
 
@@ -48,6 +49,23 @@ class SupabaseDbService {
         );
       }).toList();
 
+      // Fetch user's service packages if present, otherwise default to standardPackages
+      List<ServicePackage> packages = MockDataService.standardPackages;
+      if (res['service_packages'] != null && res['service_packages'] is List) {
+        try {
+          final list = res['service_packages'] as List<dynamic>;
+          if (list.isNotEmpty) {
+            packages = list.map((p) => ServicePackage.fromJson(p as Map<String, dynamic>)).toList();
+          }
+        } catch (_) {}
+      }
+
+      final subscriptionTierStr = res['subscription_tier'] as String?;
+      final subscriptionTier = SubscriptionTier.values.firstWhere(
+        (t) => t.name == subscriptionTierStr,
+        orElse: () => SubscriptionTier.free,
+      );
+
       return UserProfile(
         id: res['id'] as String,
         role: (res['role'] as String?) == 'detailer' ? UserRole.detailer : UserRole.client,
@@ -63,7 +81,9 @@ class SupabaseDbService {
         instagramHandle: res['instagram_handle'] as String? ?? '@detailcraft',
         isVerifiedHost: res['is_verified_host'] as bool? ?? false,
         isIdaCertified: res['is_ida_certified'] as bool? ?? false,
-        servicePackages: MockDataService.standardPackages,
+        servicePackages: packages,
+        startingPrice: (res['starting_price'] as num?)?.toDouble() ?? 150.0,
+        subscriptionTier: subscriptionTier,
         myGarage: garage,
         teamMembers: team,
         totalJobsCount: res['total_jobs_count'] as int? ?? 0,
@@ -99,6 +119,9 @@ class SupabaseDbService {
         'rating': user.averageRating,
         'review_count': user.reviewCount,
         'total_jobs_count': user.totalJobsCount,
+        'starting_price': user.startingPrice,
+        'subscription_tier': user.subscriptionTier.name,
+        'service_packages': user.servicePackages.map((p) => p.toJson()).toList(),
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
     } catch (e) {
@@ -402,6 +425,130 @@ class SupabaseDbService {
           .neq('sender_id', userId);
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] markMessagesAsRead error: $e');
+    }
+  }
+
+  // ─── BOOKINGS ─────────────────────────────────────────────────────────────
+
+  /// Upsert a booking appointment to Supabase
+  static Future<void> saveBooking(BookingAppointment booking) async {
+    final client = _client;
+    if (client == null) return;
+
+    try {
+      await client.from('bookings').upsert({
+        'id': booking.id,
+        'client_id': booking.clientId,
+        'detailer_id': booking.detailerId,
+        'detailer_name': booking.detailerName,
+        'detailer_business_name': booking.detailerBusinessName,
+        'detailer_avatar': booking.detailerAvatar,
+        'client_name': booking.clientName,
+        'client_phone': booking.clientPhone,
+        'client_email': booking.clientEmail,
+        'vehicle_year_make_model': booking.vehicleYearMakeModel,
+        'vehicle_size': booking.vehicleSize.name,
+        'package': booking.package.toJson(),
+        'location_type': booking.locationType.name,
+        'client_address': booking.clientAddress,
+        'scheduled_date': booking.scheduledDate.toIso8601String(),
+        'scheduled_time_slot': booking.scheduledTimeSlot,
+        'total_price': booking.totalPrice,
+        'deposit_amount': booking.depositAmount,
+        'status': booking.status.name,
+        'client_notes': booking.clientNotes,
+        'pre_inspection_summary': booking.preInspectionSummary,
+        'warranty_passport_id': booking.warrantyPassportId,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      });
+      if (kDebugMode) print('[SupabaseDbService] Booking saved to Supabase: ${booking.id}');
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error saving booking: $e');
+    }
+  }
+
+  /// Fetches bookings related to a user (either as client or as detailer)
+  static Future<List<BookingAppointment>> fetchBookings(String userId) async {
+    final client = _client;
+    if (client == null) return [];
+
+    try {
+      final res = await client
+          .from('bookings')
+          .select()
+          .or('client_id.eq.$userId,detailer_id.eq.$userId')
+          .order('scheduled_date', ascending: false);
+
+      final List<dynamic> list = res as List<dynamic>;
+      final bookings = <BookingAppointment>[];
+      for (final item in list) {
+        bookings.add(BookingAppointment.fromJson(item as Map<String, dynamic>));
+      }
+      return bookings;
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error fetching bookings: $e');
+      return [];
+    }
+  }
+
+  /// Updates the status of a booking appointment in Supabase
+  static Future<void> updateBookingStatus(String bookingId, BookingStatus newStatus) async {
+    final client = _client;
+    if (client == null) return;
+
+    try {
+      await client.from('bookings').update({
+        'status': newStatus.name,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', bookingId);
+      if (kDebugMode) print('[SupabaseDbService] Updated booking status: $bookingId -> ${newStatus.name}');
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error updating booking status: $e');
+    }
+  }
+
+  // ─── USER INTERACTIONS (LIKES & SAVES) ────────────────────────────────────
+
+  /// Upsert user's liked and saved job interactions
+  static Future<void> saveUserInteractions({
+    required String userId,
+    required Set<String> likedJobIds,
+    required Set<String> savedJobIds,
+  }) async {
+    final client = _client;
+    if (client == null) return;
+
+    try {
+      await client.from('user_interactions').upsert({
+        'user_id': userId,
+        'liked_job_ids': likedJobIds.toList(),
+        'saved_job_ids': savedJobIds.toList(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      });
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error saving user interactions: $e');
+    }
+  }
+
+  /// Fetches user's liked and saved job interactions from Supabase
+  static Future<({Set<String> likedJobIds, Set<String> savedJobIds})?> fetchUserInteractions(String userId) async {
+    final client = _client;
+    if (client == null) return null;
+
+    try {
+      final res = await client.from('user_interactions').select().eq('user_id', userId).maybeSingle();
+      if (res == null) return null;
+
+      final likedList = res['liked_job_ids'] as List<dynamic>?;
+      final savedList = res['saved_job_ids'] as List<dynamic>?;
+
+      final liked = likedList?.map((e) => e.toString()).toSet() ?? <String>{};
+      final saved = savedList?.map((e) => e.toString()).toSet() ?? <String>{};
+
+      return (likedJobIds: liked, savedJobIds: saved);
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error fetching user interactions: $e');
+      return null;
     }
   }
 }

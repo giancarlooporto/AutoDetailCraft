@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_profile.dart';
 import 'mock_data_service.dart';
 import 'supabase_service.dart';
+import 'supabase_db_service.dart';
 import 'local_storage_service.dart';
 
 class SupabaseAuthService {
@@ -46,7 +47,14 @@ class SupabaseAuthService {
         return (success: false, error: 'Registration failed. Please try again.', profile: null);
       }
 
-      // Check if there was already locally saved profile data for this user ID
+      // 1. First check if there is an existing cloud profile in Supabase Database
+      final cloudProfile = await SupabaseDbService.fetchUserProfile(user.id);
+      if (cloudProfile != null) {
+        await LocalStorageService.saveCurrentUser(cloudProfile);
+        return (success: true, error: null, profile: cloudProfile);
+      }
+
+      // 2. Check if there was already locally saved profile data for this user ID
       final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
       if (existingLocalProfile != null) {
         return (success: true, error: null, profile: existingLocalProfile);
@@ -97,7 +105,14 @@ class SupabaseAuthService {
         return (success: false, error: 'User not found.', profile: null);
       }
 
-      // First check if we have the user's saved garage, team, bio, location, etc.
+      // 1. Query SupabaseDbService.fetchUserProfile(user.id) FIRST on sign-in before falling back
+      final cloudProfile = await SupabaseDbService.fetchUserProfile(user.id);
+      if (cloudProfile != null) {
+        await LocalStorageService.saveCurrentUser(cloudProfile);
+        return (success: true, error: null, profile: cloudProfile);
+      }
+
+      // 2. Check if we have the user's saved garage, team, bio, location, etc. in local storage
       final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
       if (existingLocalProfile != null) {
         return (success: true, error: null, profile: existingLocalProfile);
