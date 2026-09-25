@@ -587,7 +587,13 @@ class JobRecipeCard extends StatelessWidget {
                           constraints: const BoxConstraints(),
                           icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18, color: AppTheme.textSecondary),
                           onPressed: () {
-                            JobDetailScreen.show(context, job: job, repository: repository);
+                            JobDetailScreen.show(
+                              context,
+                              job: job,
+                              repository: repository,
+                              initialTabIndex: 1,
+                              onJobChanged: onJobChanged,
+                            );
                           },
                         ),
                         const SizedBox(width: 3),

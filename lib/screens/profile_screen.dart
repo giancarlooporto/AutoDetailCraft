@@ -27,18 +27,21 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
+class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMixin {
   late TabController _tabController;
+  late TabController _clientTabController;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
+    _clientTabController = TabController(length: 2, vsync: this);
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _clientTabController.dispose();
     super.dispose();
   }
 
@@ -303,6 +306,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         final user = widget.repository.currentUser;
         final isDetailer = user.role == UserRole.detailer;
         final myJobs = widget.repository.getJobsByDetailer(user.id);
+        final savedJobs = widget.repository.savedJobs;
         final packages = user.servicePackages;
         final team = user.teamMembers;
         final garage = user.myGarage;
@@ -632,7 +636,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   ),
                 ),
 
-                // Detailer Mode Tabs (Portfolio / Services / Team)
+                // Detailer Mode Tabs (Portfolio / Saved Recipes / Services / Team)
                 if (isDetailer)
                   SliverPersistentHeader(
                     pinned: true,
@@ -644,8 +648,26 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         indicatorColor: AppTheme.primary,
                         tabs: const [
                           Tab(text: 'Portfolio'),
+                          Tab(text: 'Saved Recipes'),
                           Tab(text: 'Services & Pricing'),
                           Tab(text: 'My Team (Hires)'),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  // Client Mode Tabs (My Garage / Saved Recipes)
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _SliverTabBarDelegate(
+                      TabBar(
+                        controller: _clientTabController,
+                        labelColor: AppTheme.primary,
+                        unselectedLabelColor: AppTheme.textSecondary,
+                        indicatorColor: AppTheme.primary,
+                        tabs: const [
+                          Tab(text: 'My Garage'),
+                          Tab(text: 'Saved Recipes'),
                         ],
                       ),
                     ),
@@ -812,7 +834,101 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         ),
                       ),
 
-                      // TAB 2: Services & Pricing
+                      // TAB 2: Saved Recipes (Playbook)
+                      Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1200),
+                          child: savedJobs.isEmpty
+                              ? Center(
+                                  child: SingleChildScrollView(
+                                    padding: const EdgeInsets.all(32),
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(16),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.primary.withAlpha(20),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(color: AppTheme.primary.withAlpha(60)),
+                                          ),
+                                          child: const Icon(Icons.bookmark_border_rounded, size: 40, color: AppTheme.primary),
+                                        ),
+                                        const SizedBox(height: 14),
+                                        const Text(
+                                          'No Saved Recipes Yet',
+                                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        const Text(
+                                          'Bookmark recipes from the community feed to build your technical paint correction playbook.',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              : LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final isDesktop = constraints.maxWidth >= 720;
+                                    final isWide = constraints.maxWidth >= 1024;
+                                    final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
+
+                                    return Center(
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(maxWidth: 1200),
+                                        child: SizedBox(
+                                          width: double.infinity,
+                                          child: !isDesktop
+                                              ? ListView.builder(
+                                                  padding: const EdgeInsets.all(16),
+                                                  itemCount: savedJobs.length,
+                                                  itemBuilder: (context, index) {
+                                                    final job = savedJobs[index];
+                                                    return JobRecipeCard(
+                                                      job: job,
+                                                      repository: widget.repository,
+                                                      onJobChanged: () => setState(() {}),
+                                                      onLike: () => widget.repository.toggleLike(job.id),
+                                                      onSave: () => widget.repository.toggleSave(job.id),
+                                                    );
+                                                  },
+                                                )
+                                              : SingleChildScrollView(
+                                                  padding: const EdgeInsets.all(16),
+                                                  child: Row(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      for (int col = 0; col < crossAxisCount; col++) ...[
+                                                        if (col > 0) const SizedBox(width: 16),
+                                                        Expanded(
+                                                          child: Column(
+                                                            children: [
+                                                              for (int i = col; i < savedJobs.length; i += crossAxisCount)
+                                                                JobRecipeCard(
+                                                                  job: savedJobs[i],
+                                                                  repository: widget.repository,
+                                                                  onJobChanged: () => setState(() {}),
+                                                                  onLike: () => widget.repository.toggleLike(savedJobs[i].id),
+                                                                  onSave: () => widget.repository.toggleSave(savedJobs[i].id),
+                                                                ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ],
+                                                  ),
+                                                ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ),
+
+                      // TAB 3: Services & Pricing
                       LayoutBuilder(
                         builder: (context, constraints) {
                           final isDesktop = constraints.maxWidth >= 720;
@@ -1082,72 +1198,172 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       ),
                     ],
                   )
-                // REGULAR USER VIEW: My Garage & Registered Vehicles with Edit & Upload Options
-                : LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isDesktop = constraints.maxWidth >= 720;
-                      final isWide = constraints.maxWidth >= 1024;
-                      final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
+                // REGULAR USER VIEW: My Garage & Saved Recipes TabBarView
+                : TabBarView(
+                    controller: _clientTabController,
+                    children: [
+                      // CLIENT TAB 1: My Garage
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final isDesktop = constraints.maxWidth >= 720;
+                          final isWide = constraints.maxWidth >= 1024;
+                          final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
 
-                      return Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1100),
-                          child: ListView(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                            children: [
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: SizedBox(
-                                  width: isDesktop ? 300 : double.infinity,
-                                  child: OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      side: const BorderSide(color: AppTheme.primary),
-                                      foregroundColor: AppTheme.primary,
-                                      minimumSize: const Size(double.infinity, 44),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          return Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 1100),
+                              child: ListView(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                                children: [
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: SizedBox(
+                                      width: isDesktop ? 300 : double.infinity,
+                                      child: OutlinedButton.icon(
+                                        style: OutlinedButton.styleFrom(
+                                          side: const BorderSide(color: AppTheme.primary),
+                                          foregroundColor: AppTheme.primary,
+                                          minimumSize: const Size(double.infinity, 44),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                        ),
+                                        icon: const Icon(Icons.add, size: 18),
+                                        label: const Text('Add Vehicle to My Garage', style: TextStyle(fontWeight: FontWeight.bold)),
+                                        onPressed: () => _openVehicleEditor(context),
+                                      ),
                                     ),
-                                    icon: const Icon(Icons.add, size: 18),
-                                    label: const Text('Add Vehicle to My Garage', style: TextStyle(fontWeight: FontWeight.bold)),
-                                    onPressed: () => _openVehicleEditor(context),
                                   ),
-                                ),
+                                  const SizedBox(height: 16),
+                                  if (garage.isEmpty)
+                                    const Center(
+                                      child: Padding(
+                                        padding: EdgeInsets.all(32),
+                                        child: Text(
+                                          'No vehicles added yet.\nAdd your car to store your paint color and track digital detail warranty passports!',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.5),
+                                        ),
+                                      ),
+                                    )
+                                  else if (!isDesktop)
+                                    // Single column for mobile with uniform 16:9 photo framing
+                                    ...garage.map((veh) => _buildGarageVehicleCard(veh))
+                                  else
+                                    // Multi-column grid for desktop/tablet so cards remain balanced and uniform
+                                    GridView.builder(
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: crossAxisCount,
+                                        crossAxisSpacing: 16,
+                                        mainAxisSpacing: 16,
+                                        childAspectRatio: 0.88,
+                                      ),
+                                      itemCount: garage.length,
+                                      itemBuilder: (context, index) {
+                                        return _buildGarageVehicleCard(garage[index], isGrid: true);
+                                      },
+                                    ),
+                                ],
                               ),
-                              const SizedBox(height: 16),
-                              if (garage.isEmpty)
-                                const Center(
-                                  child: Padding(
-                                    padding: EdgeInsets.all(32),
-                                    child: Text(
-                                      'No vehicles added yet.\nAdd your car to store your paint color and track digital detail warranty passports!',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.5),
+                            ),
+                          );
+                        },
+                      ),
+
+                      // CLIENT TAB 2: Saved Recipes
+                      Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1200),
+                          child: savedJobs.isEmpty
+                              ? Center(
+                                  child: SingleChildScrollView(
+                                    padding: const EdgeInsets.all(32),
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(16),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.primary.withAlpha(20),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(color: AppTheme.primary.withAlpha(60)),
+                                          ),
+                                          child: const Icon(Icons.bookmark_border_rounded, size: 40, color: AppTheme.primary),
+                                        ),
+                                        const SizedBox(height: 14),
+                                        const Text(
+                                          'No Saved Recipes Yet',
+                                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        const Text(
+                                          'Bookmark transformations from the feed to reference for your vehicle.',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 )
-                              else if (!isDesktop)
-                                // Single column for mobile with uniform 16:9 photo framing
-                                ...garage.map((veh) => _buildGarageVehicleCard(veh))
-                              else
-                                // Multi-column grid for desktop/tablet so cards remain balanced and uniform
-                                GridView.builder(
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: crossAxisCount,
-                                    crossAxisSpacing: 16,
-                                    mainAxisSpacing: 16,
-                                    childAspectRatio: 0.88,
-                                  ),
-                                  itemCount: garage.length,
-                                  itemBuilder: (context, index) {
-                                    return _buildGarageVehicleCard(garage[index], isGrid: true);
+                              : LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final isDesktop = constraints.maxWidth >= 720;
+                                    final isWide = constraints.maxWidth >= 1024;
+                                    final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
+
+                                    return Center(
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(maxWidth: 1200),
+                                        child: SizedBox(
+                                          width: double.infinity,
+                                          child: !isDesktop
+                                              ? ListView.builder(
+                                                  padding: const EdgeInsets.all(16),
+                                                  itemCount: savedJobs.length,
+                                                  itemBuilder: (context, index) {
+                                                    final job = savedJobs[index];
+                                                    return JobRecipeCard(
+                                                      job: job,
+                                                      repository: widget.repository,
+                                                      onJobChanged: () => setState(() {}),
+                                                      onLike: () => widget.repository.toggleLike(job.id),
+                                                      onSave: () => widget.repository.toggleSave(job.id),
+                                                    );
+                                                  },
+                                                )
+                                              : SingleChildScrollView(
+                                                  padding: const EdgeInsets.all(16),
+                                                  child: Row(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      for (int col = 0; col < crossAxisCount; col++) ...[
+                                                        if (col > 0) const SizedBox(width: 16),
+                                                        Expanded(
+                                                          child: Column(
+                                                            children: [
+                                                              for (int i = col; i < savedJobs.length; i += crossAxisCount)
+                                                                JobRecipeCard(
+                                                                  job: savedJobs[i],
+                                                                  repository: widget.repository,
+                                                                  onJobChanged: () => setState(() {}),
+                                                                  onLike: () => widget.repository.toggleLike(savedJobs[i].id),
+                                                                  onSave: () => widget.repository.toggleSave(savedJobs[i].id),
+                                                                ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ],
+                                                  ),
+                                                ),
+                                        ),
+                                      ),
+                                    );
                                   },
                                 ),
-                            ],
-                          ),
                         ),
-                      );
-                    },
+                      ),
+                    ],
                   ),
           ),
         );
@@ -1459,6 +1675,6 @@ class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   bool shouldRebuild(_SliverTabBarDelegate oldDelegate) {
-    return false;
+    return oldDelegate.tabBar != tabBar || oldDelegate.tabBar.controller != tabBar.controller;
   }
 }

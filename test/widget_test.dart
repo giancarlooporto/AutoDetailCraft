@@ -16,6 +16,7 @@ import 'package:detail_craft/screens/create_job_screen.dart';
 import 'package:detail_craft/models/paint_gauge_point.dart';
 import 'package:detail_craft/widgets/paint_gauge_walkaround_widget.dart';
 import 'package:detail_craft/widgets/job_recipe_card.dart';
+import 'package:detail_craft/screens/profile_screen.dart';
 
 import 'dart:async';
 import 'dart:io';
@@ -1799,6 +1800,100 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.byType(CreateJobScreen), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('JobRecipeCard message icon navigates directly to Discussion tab (initialTabIndex: 1)', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    final testJob = repository.jobs.first;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: JobRecipeCard(
+          job: testJob,
+          repository: repository,
+        ),
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Tap comment bubble icon
+    await tester.tap(find.byIcon(Icons.chat_bubble_outline_rounded));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify JobDetailScreen is opened and Discussion tab is selected
+    expect(find.byType(JobDetailScreen), findsOneWidget);
+    expect(find.text('Paint Inspection & Gauge Data'), findsNothing);
+    expect(find.text('Step-by-Step Process Recipe'), findsNothing);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('ProfileScreen renders Saved Recipes tab in both Detailer and Client modes', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    repository.isLoggedIn = true;
+
+    // 1. Client Mode (default for youUser is client)
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: ProfileScreen(repository: repository),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('My Garage'), findsOneWidget);
+    expect(find.text('Saved Recipes'), findsOneWidget);
+    await tester.tap(find.text('Saved Recipes'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('No Saved Recipes Yet'), findsOneWidget);
+
+    // 2. Detailer Mode
+    repository.toggleHostMode(); // Switches to Detailer mode
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: ProfileScreen(repository: repository),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Portfolio'), findsOneWidget);
+    expect(find.text('Saved Recipes'), findsOneWidget);
+    await tester.tap(find.text('Saved Recipes'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('No Saved Recipes Yet'), findsOneWidget);
+
+    // 3. Real-time updates when saving/unsaving
+    repository.toggleSave(repository.jobs.first.id);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('No Saved Recipes Yet'), findsNothing);
+    expect(find.byType(JobRecipeCard), findsWidgets);
 
     debugNetworkImageHttpClientProvider = null;
   });
