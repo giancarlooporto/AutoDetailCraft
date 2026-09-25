@@ -233,7 +233,49 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     );
   }
 
+  void _toggleLike() {
+    final repo = widget.repository;
+    if (repo == null) return;
+    if (repo.isGuestMode) {
+      AuthModal.show(context, repository: repo, onSuccess: () {
+        if (mounted) _toggleLike();
+      });
+      return;
+    }
+    repo.toggleLike(_currentJob.id);
+    final updated = repo.jobs.cast<DetailJob?>().firstWhere(
+      (j) => j?.id == _currentJob.id,
+      orElse: () => null,
+    );
+    if (updated != null && mounted) {
+      setState(() {
+        _currentJob = updated;
+      });
+    }
+    widget.onJobChanged?.call();
+  }
 
+  void _toggleSave() {
+    final repo = widget.repository;
+    if (repo == null) return;
+    if (repo.isGuestMode) {
+      AuthModal.show(context, repository: repo, onSuccess: () {
+        if (mounted) _toggleSave();
+      });
+      return;
+    }
+    repo.toggleSave(_currentJob.id);
+    final updated = repo.jobs.cast<DetailJob?>().firstWhere(
+      (j) => j?.id == _currentJob.id,
+      orElse: () => null,
+    );
+    if (updated != null && mounted) {
+      setState(() {
+        _currentJob = updated;
+      });
+    }
+    widget.onJobChanged?.call();
+  }
 
   Future<void> _handleAddComment() async {
     final repo = widget.repository;
@@ -1488,7 +1530,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           color: AppTheme.surface,
           border: Border(top: BorderSide(color: AppTheme.border.withAlpha(150), width: 1)),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: SafeArea(
           top: false,
           child: Center(
@@ -1496,29 +1538,86 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               constraints: const BoxConstraints(maxWidth: 880),
               child: Row(
                 children: [
+                  // Social interaction buttons (Like & Save)
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(),
+                    icon: Icon(
+                      _currentJob.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                      color: _currentJob.isLiked ? Colors.redAccent : AppTheme.textSecondary,
+                      size: 19,
+                    ),
+                    onPressed: _toggleLike,
+                  ),
+                  const SizedBox(width: 3),
+                  Text('${_currentJob.likesCount}', style: const TextStyle(fontSize: 11.5, color: AppTheme.textSecondary)),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(),
+                    icon: Icon(
+                      _currentJob.isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                      color: _currentJob.isSaved ? AppTheme.primary : AppTheme.textSecondary,
+                      size: 19,
+                    ),
+                    onPressed: _toggleSave,
+                  ),
+                  const SizedBox(width: 3),
+                  Text('${_currentJob.savesCount}', style: const TextStyle(fontSize: 11.5, color: AppTheme.textSecondary)),
+                  const SizedBox(width: 6),
                   TextButton.icon(
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: const Size(0, 36),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                     onPressed: _showExportSuccess,
-                    icon: const Icon(Icons.share_rounded, color: AppTheme.primary, size: 18),
-                    label: const Text('Share Report', style: TextStyle(color: AppTheme.primary)),
+                    icon: const Icon(Icons.share_rounded, color: AppTheme.primary, size: 17),
+                    label: const Text('Share Report', style: TextStyle(color: AppTheme.primary, fontSize: 12)),
                   ),
                   const Spacer(),
-                  // Show Message and Book Service buttons for other detailers' recipes
-                  if (widget.repository != null &&
+                  // Owner action button
+                  if (_isOwner) ...[
+                    ElevatedButton.icon(
+                      key: const Key('job_detail_owner_edit_button'),
+                      onPressed: _openEditRecipe,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.surfaceLight,
+                        foregroundColor: AppTheme.primary,
+                        side: const BorderSide(color: AppTheme.border),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        minimumSize: const Size(0, 36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        elevation: 0,
+                      ),
+                      icon: const Icon(Icons.edit_outlined, size: 15, color: AppTheme.primary),
+                      label: const Text(
+                        'Edit',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppTheme.primary),
+                      ),
+                    ),
+                  ] else if (widget.repository != null &&
                       widget.repository!.currentUser.id != _currentJob.author.id) ...[
+                    // Show Message and Book Service buttons for other detailers' recipes
                     ElevatedButton(
                       onPressed: _messagingLoading ? null : _messageDetailer,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.surfaceLight,
                         foregroundColor: AppTheme.textPrimary,
                         side: const BorderSide(color: AppTheme.border),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        minimumSize: const Size(0, 36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         elevation: 0,
                       ),
                       child: _messagingLoading
                           ? const SizedBox(
-                              width: 16,
-                              height: 16,
+                              width: 14,
+                              height: 14,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
                                 color: AppTheme.primary,
@@ -1527,26 +1626,28 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                           : const Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.chat_rounded, size: 16),
-                                SizedBox(width: 6),
-                                Text('Message', style: TextStyle(fontWeight: FontWeight.bold)),
+                                Icon(Icons.chat_rounded, size: 15),
+                                SizedBox(width: 4),
+                                Text('Message', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                               ],
                             ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     ElevatedButton.icon(
                       onPressed: _openBookingFlow,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.primary,
                         foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        minimumSize: const Size(0, 36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         elevation: 0,
                       ),
-                      icon: const Icon(Icons.bolt_rounded, size: 16, color: Colors.black),
+                      icon: const Icon(Icons.bolt_rounded, size: 15, color: Colors.black),
                       label: const Text(
                         'Book Service',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black),
                       ),
                     ),
                   ],

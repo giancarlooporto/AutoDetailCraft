@@ -298,9 +298,22 @@ class JobRecipeCard extends StatelessWidget {
 
                 // Management or Booking actions
                 if (canManage) ...[
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 19),
-                    tooltip: 'Edit Transformation',
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.surfaceLight,
+                      foregroundColor: AppTheme.primary,
+                      side: const BorderSide(color: AppTheme.border),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      minimumSize: const Size(0, 30),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      elevation: 0,
+                    ),
+                    icon: const Icon(Icons.edit_outlined, size: 14, color: AppTheme.primary),
+                    label: const Text(
+                      'Edit Recipe',
+                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                    ),
                     onPressed: () => _editJob(context),
                   ),
                 ] else
@@ -565,19 +578,19 @@ class JobRecipeCard extends StatelessWidget {
                           ),
                           onPressed: onLike,
                         ),
-                        const SizedBox(width: 2),
+                        const SizedBox(width: 3),
                         Text('${job.likesCount}', style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
                         const SizedBox(width: 6),
                         IconButton(
                           visualDensity: VisualDensity.compact,
                           padding: const EdgeInsets.all(2),
                           constraints: const BoxConstraints(),
-                          icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16, color: AppTheme.textSecondary),
+                          icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18, color: AppTheme.textSecondary),
                           onPressed: () {
                             JobDetailScreen.show(context, job: job, repository: repository);
                           },
                         ),
-                        const SizedBox(width: 2),
+                        const SizedBox(width: 3),
                         Text('${job.comments.length}', style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
                         const SizedBox(width: 6),
                         IconButton(
@@ -591,6 +604,8 @@ class JobRecipeCard extends StatelessWidget {
                           ),
                           onPressed: onSave,
                         ),
+                        const SizedBox(width: 3),
+                        Text('${job.savesCount}', style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
                       ],
                     ),
                     TextButton(

@@ -15,6 +15,7 @@ import 'package:detail_craft/widgets/fullscreen_image_viewer.dart';
 import 'package:detail_craft/screens/create_job_screen.dart';
 import 'package:detail_craft/models/paint_gauge_point.dart';
 import 'package:detail_craft/widgets/paint_gauge_walkaround_widget.dart';
+import 'package:detail_craft/widgets/job_recipe_card.dart';
 
 import 'dart:async';
 import 'dart:io';
@@ -1680,4 +1681,126 @@ void main() {
 
     debugNetworkImageHttpClientProvider = null;
   });
+
+  testWidgets('JobRecipeCard renders like, comment, and save counts and handles actions', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    final testJob = repository.jobs.first.copyWith(
+      likesCount: 42,
+      savesCount: 17,
+      comments: [
+        JobComment(
+          id: 'c1',
+          authorName: 'Commenter',
+          authorAvatar: '',
+          text: 'Nice work!',
+          createdAt: DateTime.now(),
+        ),
+      ],
+    );
+
+    bool likePressed = false;
+    bool savePressed = false;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: JobRecipeCard(
+          job: testJob,
+          repository: repository,
+          showDetailerManagement: true,
+          onLike: () => likePressed = true,
+          onSave: () => savePressed = true,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Verify like count (42), comment count (1), and save count (17)
+    expect(find.text('42'), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
+    expect(find.text('17'), findsOneWidget);
+
+    // Verify "Edit Recipe" management button for author
+    expect(find.text('Edit Recipe'), findsOneWidget);
+
+    // Verify tapping like and save invokes callbacks
+    await tester.tap(find.byIcon(testJob.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded));
+    await tester.pump();
+    expect(likePressed, isTrue);
+
+    await tester.tap(find.byIcon(testJob.isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded));
+    await tester.pump();
+    expect(savePressed, isTrue);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('JobDetailScreen bottom docked bar renders Like, Save, and Owner Edit button', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    repository.isLoggedIn = true;
+    final ownedJob = repository.jobs.first.copyWith(
+      author: repository.currentUser,
+      likesCount: 15,
+      savesCount: 8,
+    );
+    repository.jobs[0] = ownedJob;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: JobDetailScreen(job: ownedJob, repository: repository),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify bottom docked bar social counts
+    expect(find.text('15'), findsOneWidget);
+    expect(find.text('8'), findsOneWidget);
+    expect(find.text('Share Report'), findsOneWidget);
+
+    // Verify owner bottom action button
+    final ownerEditBtn = find.byKey(const Key('job_detail_owner_edit_button'));
+    expect(ownerEditBtn, findsOneWidget);
+
+    // Tap like in detail screen
+    final initialLiked = ownedJob.isLiked;
+    await tester.tap(find.byIcon(initialLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Tap save in detail screen
+    final initialSaved = ownedJob.isSaved;
+    await tester.tap(find.byIcon(initialSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Tapping bottom owner Edit button opens CreateJobScreen
+    await tester.tap(ownerEditBtn);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byType(CreateJobScreen), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
 }
+
