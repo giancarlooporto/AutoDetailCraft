@@ -62,11 +62,30 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     super.initState();
     _currentJob = widget.job;
     _selectedTabIndex = widget.initialTabIndex;
+    widget.repository?.addListener(_onRepositoryChanged);
+  }
+
+  void _onRepositoryChanged() {
+    final repo = widget.repository;
+    if (repo == null || !mounted) return;
+    final updated = repo.jobs.cast<DetailJob?>().firstWhere(
+      (j) => j?.id == _currentJob.id,
+      orElse: () => null,
+    );
+    if (updated != null && mounted) {
+      setState(() {
+        _currentJob = updated;
+      });
+    }
   }
 
   @override
   void didUpdateWidget(JobDetailScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.repository != widget.repository) {
+      oldWidget.repository?.removeListener(_onRepositoryChanged);
+      widget.repository?.addListener(_onRepositoryChanged);
+    }
     if (oldWidget.job != widget.job) {
       _currentJob = widget.job;
       if (oldWidget.job.id != widget.job.id) {
@@ -152,6 +171,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
   @override
   void dispose() {
+    widget.repository?.removeListener(_onRepositoryChanged);
     _commentController.dispose();
     _commentFocusNode.dispose();
     super.dispose();

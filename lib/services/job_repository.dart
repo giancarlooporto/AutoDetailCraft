@@ -62,8 +62,6 @@ class JobRepository extends ChangeNotifier {
     if (!isGuest && savedUser != null) {
       _currentUser = savedUser;
       _isLoggedIn = true;
-      // Background refresh profile from Supabase Database if online
-      _refreshProfileFromCloud(savedUser.id);
     } else if (SupabaseAuthService.isLoggedIn) {
       // Supabase persistent session found
       final authUser = SupabaseAuthService.currentAuthUser!;
@@ -78,15 +76,13 @@ class JobRepository extends ChangeNotifier {
       );
       _isLoggedIn = true;
       await LocalStorageService.saveIsGuest(false);
-      _refreshProfileFromCloud(authUser.id);
     } else {
       _isLoggedIn = false;
     }
 
-    // 3. Load persistent custom transformation jobs
+    // 3. Load persistent custom transformation jobs from local cache first
     final customJobs = await LocalStorageService.loadCustomJobs();
     if (customJobs.isNotEmpty) {
-      // Prepend custom jobs before mock jobs, deduplicating by ID
       final existingIds = customJobs.map((j) => j.id).toSet();
       _jobs = [
         ...customJobs,
@@ -96,16 +92,13 @@ class JobRepository extends ChangeNotifier {
       _jobs = MockDataService.getInitialJobs();
     }
 
-    // 4. Load persistent bookings if logged in
+    // 4. Load persistent bookings from local cache
     final savedBookings = await LocalStorageService.loadBookings();
     if (savedBookings != null) {
       _bookings = savedBookings;
     }
-    if (_isLoggedIn) {
-      _refreshBookingsFromCloud(_currentUser.id);
-    }
 
-    // 5. Load persistent likes & bookmarks
+    // 5. Load persistent likes & bookmarks from local cache
     final interaction = await LocalStorageService.loadInteractionState();
     if (interaction.likedJobIds.isNotEmpty || interaction.savedJobIds.isNotEmpty) {
       _jobs = _jobs.map((job) {
@@ -117,12 +110,25 @@ class JobRepository extends ChangeNotifier {
         );
       }).toList();
     }
-    if (_isLoggedIn) {
-      _refreshInteractionsFromCloud(_currentUser.id);
-    }
 
-    // 6. Background fetch newest community jobs from Supabase if online
-    _refreshJobsFromCloud();
+    // 6. Synchronous hydration from Supabase Cloud:
+    // Await cloud hydration before marking initialization complete so a secondary device
+    // immediately displays all synced profile info, custom published jobs, bookings, and likes/saves.
+    if (_isLoggedIn) {
+      try {
+        await Future.wait([
+          _refreshProfileFromCloud(_currentUser.id),
+          _refreshJobsFromCloud(),
+          _refreshBookingsFromCloud(_currentUser.id),
+          _refreshInteractionsFromCloud(_currentUser.id),
+        ]).timeout(const Duration(seconds: 4));
+      } catch (_) {
+        // Fallback to local cache if offline or slow network
+      }
+    } else {
+      // For guest visitors, refresh community jobs in the background
+      _refreshJobsFromCloud();
+    }
 
     // 7. Load persistent messages & conversations
     loadConversations();
@@ -141,7 +147,7 @@ class JobRepository extends ChangeNotifier {
       final cloudProfile = await SupabaseDbService.fetchUserProfile(userId);
       if (cloudProfile != null) {
         _currentUser = cloudProfile;
-        LocalStorageService.saveCurrentUser(cloudProfile);
+        await LocalStorageService.saveCurrentUser(cloudProfile);
         notifyListeners();
       }
     } catch (_) {}
@@ -217,12 +223,12 @@ class JobRepository extends ChangeNotifier {
   Future<void> loginUser(UserProfile user) async {
     _currentUser = user;
     _isLoggedIn = true;
-    LocalStorageService.saveIsGuest(false);
+    await LocalStorageService.saveIsGuest(false);
 
-    // 1. Fetch latest profile state from cloud FIRST before persisting to cloud
-    // This prevents any default/fallback profile fields from overwriting existing cloud data
+    // 1. Fetch latest profile state from cloud FIRST
+    // This ensures cloud garage, team, bio, packages are loaded onto this device
     await _refreshProfileFromCloud(user.id);
-    _persistUser();
+    await LocalStorageService.saveCurrentUser(_currentUser);
 
     // 2. Refresh jobs from cloud
     await _refreshJobsFromCloud();

@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/theme/app_theme.dart';
 import '../models/message_model.dart';
 import '../services/job_repository.dart';
+import '../services/supabase_service.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
@@ -46,17 +48,48 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _loading = true;
   bool _sending = false;
   Timer? _pollTimer;
+  RealtimeChannel? _chatChannel;
 
   @override
   void initState() {
     super.initState();
     _loadMessages();
-    // Poll every 5s as realtime fallback
-    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) => _loadMessages(scroll: false));
+    widget.repository.addListener(_onRepositoryChanged);
+
+    // 1. Subscribe to realtime messages for this specific conversation
+    final client = SupabaseService.client;
+    if (client != null) {
+      _chatChannel = client
+          .channel('public:messages:${widget.conversationId}')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'messages',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'conversation_id',
+              value: widget.conversationId,
+            ),
+            callback: (_) {
+              _loadMessages(scroll: true);
+            },
+          )
+          .subscribe();
+    }
+
+    // 2. High-frequency active fallback poll (every 1 second) while in the active chat view
+    _pollTimer = Timer.periodic(const Duration(seconds: 1), (_) => _loadMessages(scroll: false));
+  }
+
+  void _onRepositoryChanged() {
+    _loadMessages(scroll: false);
   }
 
   @override
   void dispose() {
+    widget.repository.removeListener(_onRepositoryChanged);
+    _chatChannel?.unsubscribe();
+    _chatChannel = null;
     _pollTimer?.cancel();
     _textController.dispose();
     _scrollController.dispose();
