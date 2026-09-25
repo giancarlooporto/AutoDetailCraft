@@ -56,6 +56,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   late int _selectedTabIndex;
   bool _messagingLoading = false;
   final Set<int> _expandedStageSpecs = {};
+  bool _sortByNewest = true;
 
   @override
   void initState() {
@@ -563,13 +564,53 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     );
   }
 
+  String _formatCommentTime(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inDays >= 7) {
+      return '${(diff.inDays / 7).floor()}w';
+    } else if (diff.inDays >= 1) {
+      return '${diff.inDays}d';
+    } else if (diff.inHours >= 1) {
+      return '${diff.inHours}h';
+    } else if (diff.inMinutes >= 1) {
+      return '${diff.inMinutes}m';
+    } else {
+      return 'just now';
+    }
+  }
+
   List<Widget> _buildThreadedComments() {
     final rootComments = _currentJob.comments.where((c) => c.parentId == null || c.parentId!.isEmpty).toList();
     final allReplies = _currentJob.comments.where((c) => c.parentId != null && c.parentId!.isNotEmpty).toList();
+
+    // Map reply counts for Top sorting
+    final Map<String, int> replyCounts = {};
+    for (final r in allReplies) {
+      if (r.parentId != null) {
+        replyCounts[r.parentId!] = (replyCounts[r.parentId!] ?? 0) + 1;
+      }
+    }
+
+    if (_sortByNewest) {
+      // Newest discussion thread at top
+      rootComments.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    } else {
+      // Top active discussions: most replies first, then verified pro comments, then newest
+      rootComments.sort((a, b) {
+        final aReplies = replyCounts[a.id] ?? 0;
+        final bReplies = replyCounts[b.id] ?? 0;
+        if (aReplies != bReplies) return bReplies.compareTo(aReplies);
+        if (a.isVerifiedPro != b.isVerifiedPro) return a.isVerifiedPro ? -1 : 1;
+        return b.createdAt.compareTo(a.createdAt);
+      });
+    }
+
     final List<Widget> items = [];
 
     for (final root in rootComments) {
-      final childReplies = allReplies.where((r) => r.parentId == root.id).toList();
+      // Replies are always sequential (oldest first) so conversation flows naturally
+      final childReplies = allReplies.where((r) => r.parentId == root.id).toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
       items.add(
         Padding(
@@ -625,6 +666,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
   Widget _buildCommentCard(JobComment c, {required bool isReply}) {
     final isSelectedForReply = _replyingToComment?.id == c.id;
+    final isJobCreator = c.authorName == _currentJob.author.displayName ||
+        c.authorName == _currentJob.author.businessName;
 
     return Container(
       padding: EdgeInsets.all(isReply ? 10 : 12),
@@ -670,10 +713,30 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (isJobCreator) ...[
+                          const SizedBox(width: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary.withAlpha(40),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: AppTheme.primary.withAlpha(120), width: 0.8),
+                            ),
+                            child: const Text(
+                              'AUTHOR',
+                              style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: AppTheme.primary),
+                            ),
+                          ),
+                        ],
                         if (c.isVerifiedPro) ...[
                           const SizedBox(width: 4),
                           const Icon(Icons.verified_rounded, size: 13, color: AppTheme.primary),
                         ],
+                        const SizedBox(width: 6),
+                        Text(
+                          '• ${_formatCommentTime(c.createdAt)}',
+                          style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                        ),
                       ],
                     ),
                     if (c.replyToAuthorName != null && c.replyToAuthorName!.isNotEmpty) ...[
@@ -1452,6 +1515,53 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                           'Discussion (${_currentJob.comments.length})',
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
                         ),
+                        const Spacer(),
+                        // Discussion Sort Hierarchy Selector (Social media pattern: Newest vs Top)
+                        if (_currentJob.comments.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppTheme.surfaceLight,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppTheme.border),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<bool>(
+                                value: _sortByNewest,
+                                icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: AppTheme.primary),
+                                isDense: true,
+                                dropdownColor: AppTheme.surface,
+                                style: const TextStyle(fontSize: 11.5, color: AppTheme.textPrimary, fontWeight: FontWeight.w600),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: true,
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.schedule_rounded, size: 13, color: AppTheme.primary),
+                                        SizedBox(width: 5),
+                                        Text('Newest First'),
+                                      ],
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: false,
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.trending_up_rounded, size: 13, color: AppTheme.primary),
+                                        SizedBox(width: 5),
+                                        Text('Top Threads'),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    setState(() => _sortByNewest = val);
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                     const SizedBox(height: 12),
