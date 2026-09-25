@@ -1871,6 +1871,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('No Saved Recipes Yet'), findsOneWidget);
+    expect(
+      find.text('Bookmark transformations from the feed to reference for your vehicle.'),
+      findsOneWidget,
+    );
 
     // 2. Detailer Mode
     repository.toggleHostMode(); // Switches to Detailer mode
@@ -1887,9 +1891,35 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('No Saved Recipes Yet'), findsOneWidget);
+    expect(
+      find.text('Bookmark recipes from the community feed to build your technical paint correction playbook.'),
+      findsOneWidget,
+    );
 
-    // 3. Real-time updates when saving/unsaving
+    // 3. Real-time updates when saving
     repository.toggleSave(repository.jobs.first.id);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('No Saved Recipes Yet'), findsNothing);
+    expect(find.byType(JobRecipeCard), findsWidgets);
+
+    // 4. Real-time updates when unsaving
+    repository.toggleSave(repository.jobs.first.id);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('No Saved Recipes Yet'), findsOneWidget);
+
+    // 5. Switch back to Client Mode and verify Saved Recipes persists
+    repository.toggleSave(repository.jobs.first.id); // Save again
+    repository.toggleHostMode(); // Switch back to Client mode
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: ProfileScreen(repository: repository),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.tap(find.text('Saved Recipes'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('No Saved Recipes Yet'), findsNothing);

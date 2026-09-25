@@ -622,7 +622,12 @@ class JobRecipeCard extends StatelessWidget {
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                       onPressed: () {
-                        JobDetailScreen.show(context, job: job, repository: repository);
+                        JobDetailScreen.show(
+                          context,
+                          job: job,
+                          repository: repository,
+                          onJobChanged: onJobChanged,
+                        );
                       },
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
