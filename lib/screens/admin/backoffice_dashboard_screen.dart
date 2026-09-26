@@ -417,7 +417,7 @@ class _BackofficeDashboardScreenState extends State<BackofficeDashboardScreen>
                           width: 120,
                           height: 80,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
+                          errorBuilder: (_, _, _) => Container(
                             width: 120,
                             height: 80,
                             color: Colors.white10,

@@ -6,6 +6,7 @@ import '../models/booking_models.dart';
 import '../models/team_member.dart';
 import '../models/user_vehicle.dart';
 import '../models/message_model.dart';
+import '../core/constants/detailing_presets.dart';
 import 'mock_data_service.dart';
 import 'local_storage_service.dart';
 import 'supabase_auth_service.dart';
@@ -18,6 +19,7 @@ class JobRepository extends ChangeNotifier {
   List<BookingAppointment> _bookings = [];
   List<UserProfile> _publicDetailers = List.from(MockDataService.publicDetailers);
   UserProfile _currentUser = MockDataService.youUser; // Default fallback
+  List<StudioRecipePreset> _customPresets = [];
 
   String _selectedServiceType = 'All Services';
   String _selectedLocationCity = 'All Locations';
@@ -97,6 +99,9 @@ class JobRepository extends ChangeNotifier {
     if (savedBookings != null) {
       _bookings = savedBookings;
     }
+
+    // 4b. Load custom recipe presets from local cache
+    _customPresets = await LocalStorageService.loadCustomPresets();
 
     // 5. Load persistent likes & bookmarks from local cache
     final interaction = await LocalStorageService.loadInteractionState();
@@ -304,6 +309,31 @@ class JobRepository extends ChangeNotifier {
         savedJobIds: saved,
       );
     }
+  }
+
+  // Studio Recipe Presets (System presets + User custom presets)
+  List<StudioRecipePreset> get allRecipePresets => [
+    ...DetailingPresets.recipePresets,
+    ..._customPresets,
+  ];
+
+  List<StudioRecipePreset> get customPresets => List.unmodifiable(_customPresets);
+
+  void saveRecipePreset(StudioRecipePreset preset) {
+    final existingIdx = _customPresets.indexWhere((p) => p.id == preset.id);
+    if (existingIdx != -1) {
+      _customPresets[existingIdx] = preset;
+    } else {
+      _customPresets.add(preset);
+    }
+    LocalStorageService.saveCustomPresets(_customPresets);
+    notifyListeners();
+  }
+
+  void deleteRecipePreset(String presetId) {
+    _customPresets.removeWhere((p) => p.id == presetId);
+    LocalStorageService.saveCustomPresets(_customPresets);
+    notifyListeners();
   }
 
   // Getters
@@ -622,7 +652,7 @@ class JobRepository extends ChangeNotifier {
   }
 
   // Active Staff & Delegated Admins (RBAC)
-  List<StaffMember> _staffMembers = [
+  final List<StaffMember> _staffMembers = [
     StaffMember(
       id: 'staff_founder',
       username: 'giancarlooporto',

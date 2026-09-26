@@ -1927,5 +1927,169 @@ void main() {
 
     debugNetworkImageHttpClientProvider = null;
   });
+
+  testWidgets('Studio Detailing Recipe allows renaming steps, free-text typing, appending samples, and saving/loading custom presets', (WidgetTester tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: CreateJobScreen(
+          repository: repository,
+          onJobCreated: () {},
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // 1. Scroll to Studio Detailing Recipe section
+    await tester.scrollUntilVisible(
+      find.text('Studio Detailing Recipe'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Studio Detailing Recipe'), findsOneWidget);
+    expect(find.text('Save Preset'), findsOneWidget);
+    expect(find.text('Add Step'), findsOneWidget);
+
+    // 2. Tap Add Step
+    await tester.tap(find.text('Add Step'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('ACTIVE STEP'), findsWidgets);
+
+    // 3. Rename step title via the rename dialog icon
+    final renameButtonFinder = find.byTooltip('Rename Step').first;
+    await tester.tap(renameButtonFinder);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Edit Title - Step 1'), findsOneWidget);
+    final titleDialogField = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(titleDialogField, 'Heavy Rotary Correction');
+    await tester.tap(find.text('Save Title'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Heavy Rotary Correction'), findsWidgets);
+
+    // 4. Test free-text typing directly into fields
+    final toolInputFinder = find.widgetWithText(TextFormField, 'Machines / Tools (comma separated)').first;
+    await tester.enterText(toolInputFinder, 'Custom Rotary Buffer, Mini Air Polisher');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Custom Rotary Buffer, Mini Air Polisher'), findsWidgets);
+
+    // 5. Test sample chip appending without replacing typed text
+    // Menzerna Heavy Cut 400 sample chip
+    await tester.scrollUntilVisible(
+      find.text('Menzerna Heavy Cut 400'),
+      100,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Menzerna Heavy Cut 400'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Chemical: Menzerna Heavy Cut 400'), findsOneWidget);
+
+    // 6. Test Save Custom Preset
+    await tester.scrollUntilVisible(
+      find.text('Save Preset'),
+      -100,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save Preset'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Save Studio Preset'), findsOneWidget);
+    final presetNameField = find.widgetWithText(TextField, 'Preset Name');
+    await tester.enterText(presetNameField, 'Heavy Cut Custom Preset');
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Save Preset'));
+    await tester.pumpAndSettle();
+
+    // Verify preset chip appears in the presets row
+    expect(find.text('Heavy Cut Custom Preset'), findsWidgets);
+    expect(repository.allRecipePresets.any((p) => p.name == 'Heavy Cut Custom Preset' && p.isCustom), isTrue);
+
+    // 7. Test 1-click loading of custom preset
+    final customChipFinder = find.text('Heavy Cut Custom Preset').first;
+    final horizontalScrollable = find.byWidgetPredicate(
+      (w) => w is Scrollable && w.axisDirection == AxisDirection.right,
+    );
+    if (horizontalScrollable.evaluate().isNotEmpty) {
+      await tester.scrollUntilVisible(
+        customChipFinder,
+        100,
+        scrollable: horizontalScrollable.first,
+      );
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(customChipFinder);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Heavy Rotary Correction'), findsWidgets);
+
+    // 8. Test Step Deletion and active stage index adjustment
+    final initialStepCount = find.byTooltip('Rename Step').evaluate().length;
+    final firstDeleteButton = find.byIcon(Icons.delete_outline_rounded).first;
+    await tester.tap(firstDeleteButton);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Rename Step').evaluate().length, equals(initialStepCount - 1));
+
+    // 9. Test Preset Options Sheet: Rename custom preset
+    final customPresetChip = find.widgetWithText(InputChip, 'Heavy Cut Custom Preset');
+    await tester.ensureVisible(customPresetChip);
+    await tester.pumpAndSettle();
+    final moreOptionsFinder = find.descendant(
+      of: customPresetChip,
+      matching: find.byIcon(Icons.more_vert_rounded),
+    );
+    await tester.tap(moreOptionsFinder);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rename Preset'), findsOneWidget);
+    await tester.tap(find.text('Rename Preset'));
+    await tester.pumpAndSettle();
+
+    final renameField = find.widgetWithText(TextField, 'Preset Name');
+    await tester.enterText(renameField, 'Renamed Heavy Cut Preset');
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Renamed Heavy Cut Preset'), findsWidgets);
+    expect(repository.allRecipePresets.any((p) => p.name == 'Renamed Heavy Cut Preset'), isTrue);
+
+    // 10. Test Preset Options Sheet: Delete custom preset
+    final renamedPresetChip = find.widgetWithText(InputChip, 'Renamed Heavy Cut Preset');
+    await tester.ensureVisible(renamedPresetChip);
+    await tester.pumpAndSettle();
+    final moreOptionsAfterRename = find.descendant(
+      of: renamedPresetChip,
+      matching: find.byIcon(Icons.more_vert_rounded),
+    );
+    await tester.tap(moreOptionsAfterRename);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delete Custom Preset'), findsOneWidget);
+    await tester.tap(find.text('Delete Custom Preset'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Renamed Heavy Cut Preset'), findsNothing);
+    expect(repository.allRecipePresets.any((p) => p.name == 'Renamed Heavy Cut Preset'), isFalse);
+  });
 }
 

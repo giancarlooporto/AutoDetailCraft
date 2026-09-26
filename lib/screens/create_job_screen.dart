@@ -1160,6 +1160,17 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
     );
   }
 
+  String _appendValue(String existing, String append) {
+    if (existing.trim().isEmpty) {
+      return append.trim();
+    }
+    final items = existing.split(',').map((e) => e.trim().toLowerCase()).toList();
+    if (items.contains(append.trim().toLowerCase())) {
+      return existing; // already present
+    }
+    return '$existing, $append';
+  }
+
   void _applyChipToActiveStage({
     String? machine,
     String? pad,
@@ -1185,11 +1196,11 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
         final current = _recipeStages[_activeStageIndex];
         _recipeStages[_activeStageIndex] = current.copyWith(
           stageName: stageName ?? current.stageName,
-          machine: machine ?? current.machine,
-          pad: pad ?? current.pad,
-          chemical: chemical ?? current.chemical,
-          technique: technique ?? current.technique,
-          notes: notes ?? current.notes,
+          machine: machine != null ? _appendValue(current.machine, machine) : current.machine,
+          pad: pad != null ? _appendValue(current.pad, pad) : current.pad,
+          chemical: chemical != null ? _appendValue(current.chemical, chemical) : current.chemical,
+          technique: technique != null ? _appendValue(current.technique, technique) : current.technique,
+          notes: notes != null ? _appendValue(current.notes ?? '', notes) : current.notes,
         );
       }
     });
@@ -1207,6 +1218,288 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
     );
   }
 
+  void _showSavePresetDialog() {
+    if (_recipeStages.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add at least one step before saving a preset')),
+      );
+      return;
+    }
+    final nameCtrl = TextEditingController(text: 'My Studio Recipe ($_selectedService)');
+    final descCtrl = TextEditingController(text: 'Custom $_selectedService detailing process with ${_recipeStages.length} steps.');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Row(
+          children: [
+            Icon(Icons.bookmark_add_rounded, color: AppTheme.primary, size: 20),
+            SizedBox(width: 8),
+            Text('Save Studio Preset', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Save your current steps as a reusable 1-click studio preset for future jobs.',
+              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Preset Name',
+                hintText: 'e.g. 2-Stage Euro Paint Special',
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: descCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Description (optional)',
+                hintText: 'Brief notes about this preset...',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () {
+              final name = nameCtrl.text.trim();
+              if (name.isEmpty) return;
+              final newPreset = StudioRecipePreset(
+                id: 'custom_preset_${DateTime.now().millisecondsSinceEpoch}',
+                name: name,
+                serviceType: _selectedService,
+                description: descCtrl.text.trim(),
+                stages: List.from(_recipeStages),
+                isCustom: true,
+              );
+              widget.repository.saveRecipePreset(newPreset);
+              setState(() {
+                _selectedPresetId = newPreset.id;
+              });
+              Navigator.of(ctx).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Saved "$name" preset! Available for 1-click loading.'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+            child: const Text('Save Preset', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPresetOptionsSheet(StudioRecipePreset preset) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.download_rounded, color: AppTheme.primary),
+                title: Text('Load "${preset.name}"'),
+                subtitle: Text('${preset.stages.length} steps • ${preset.serviceType}'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  setState(() {
+                    _selectedPresetId = preset.id;
+                    _recipeStages = List.from(preset.stages);
+                    _activeStageIndex = 0;
+                    _selectedService = preset.serviceType;
+                  });
+                },
+              ),
+              if (preset.isCustom) ...[
+                ListTile(
+                  leading: const Icon(Icons.edit_note_rounded, color: Colors.amber),
+                  title: const Text('Update with Current Recipe Steps'),
+                  subtitle: const Text('Overwrite this preset with what you have built on screen'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    final updated = preset.copyWith(
+                      stages: List.from(_recipeStages),
+                      serviceType: _selectedService,
+                    );
+                    widget.repository.saveRecipePreset(updated);
+                    setState(() {
+                      _selectedPresetId = updated.id;
+                    });
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Updated "${preset.name}" preset!')),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.drive_file_rename_outline_rounded, color: Colors.lightBlueAccent),
+                  title: const Text('Rename Preset'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _showRenamePresetDialog(preset);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+                  title: const Text('Delete Custom Preset', style: TextStyle(color: Colors.redAccent)),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    widget.repository.deleteRecipePreset(preset.id);
+                    setState(() {
+                      if (_selectedPresetId == preset.id) {
+                        _selectedPresetId = 'preset_2_stage';
+                      }
+                    });
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Deleted "${preset.name}" preset')),
+                    );
+                  },
+                ),
+              ] else ...[
+                ListTile(
+                  leading: const Icon(Icons.bookmark_add_rounded, color: AppTheme.primary),
+                  title: const Text('Save as Custom Preset'),
+                  subtitle: const Text('Save a custom, editable copy of this system preset'),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    final newPreset = StudioRecipePreset(
+                      id: 'custom_preset_${DateTime.now().millisecondsSinceEpoch}',
+                      name: '${preset.name} (Custom)',
+                      serviceType: preset.serviceType,
+                      description: preset.description,
+                      stages: List.from(preset.stages),
+                      isCustom: true,
+                    );
+                    widget.repository.saveRecipePreset(newPreset);
+                    setState(() {
+                      _selectedPresetId = newPreset.id;
+                      _recipeStages = List.from(newPreset.stages);
+                      _activeStageIndex = 0;
+                      _selectedService = newPreset.serviceType;
+                    });
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Created custom copy "${newPreset.name}"')),
+                    );
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showRenamePresetDialog(StudioRecipePreset preset) {
+    final ctrl = TextEditingController(text: preset.name);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Text('Rename Preset', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(labelText: 'Preset Name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () {
+              final newName = ctrl.text.trim();
+              if (newName.isNotEmpty) {
+                widget.repository.saveRecipePreset(preset.copyWith(name: newName));
+                setState(() {});
+              }
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEditStepTitleDialog(int index) {
+    final currentTitle = _recipeStages[index].stageName;
+    final ctrl = TextEditingController(text: currentTitle);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: Text('Edit Title - Step ${index + 1}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Give this stage a custom title (e.g. "Heavy Rotary Cutting", "Wheels & Calipers Acid Decon")',
+              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Step Title',
+                hintText: 'e.g. Stage 1: Rotary Compound',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () {
+              final text = ctrl.text.trim();
+              if (text.isNotEmpty) {
+                setState(() {
+                  _recipeStages[index] = _recipeStages[index].copyWith(stageName: text);
+                });
+              }
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('Save Title'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRecipeBuilderSection() {
     // Ensure _activeStageIndex is valid if stages exist
     if (_recipeStages.isNotEmpty) {
@@ -1219,6 +1512,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
 
     final hasStages = _recipeStages.isNotEmpty;
     final activeStageName = hasStages ? _recipeStages[_activeStageIndex].stageName : null;
+    final allPresets = widget.repository.allRecipePresets;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1250,85 +1544,103 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                   ),
                 ],
               ),
-              FilledButton.tonalIcon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppTheme.primary.withAlpha(40),
-                  foregroundColor: AppTheme.primary,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  visualDensity: VisualDensity.compact,
-                ),
-                icon: const Icon(Icons.add_rounded, size: 16),
-                label: const Text('Add Step', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                onPressed: () {
-                  setState(() {
-                    final newIdx = _recipeStages.length;
-                    _recipeStages.add(RecipeStage(
-                      stageName: 'Step ${newIdx + 1}: Polishing Stage',
-                      chemical: '',
-                      machine: '',
-                      pad: '',
-                      technique: '',
-                    ));
-                    _activeStageIndex = newIdx;
-                  });
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Added Step ${_recipeStages.length} - tap chips below to populate'),
-                      duration: const Duration(milliseconds: 1400),
-                      behavior: SnackBarBehavior.floating,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.primary,
+                      side: const BorderSide(color: AppTheme.primary),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      visualDensity: VisualDensity.compact,
                     ),
-                  );
-                },
+                    icon: const Icon(Icons.bookmark_add_rounded, size: 15),
+                    label: const Text('Save Preset', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    onPressed: _showSavePresetDialog,
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.tonalIcon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppTheme.primary.withAlpha(40),
+                      foregroundColor: AppTheme.primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: const Icon(Icons.add_rounded, size: 16),
+                    label: const Text('Add Step', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    onPressed: () {
+                      setState(() {
+                        final newIdx = _recipeStages.length;
+                        _recipeStages.add(RecipeStage(
+                          stageName: 'Step ${newIdx + 1}: Polishing Stage',
+                          chemical: '',
+                          machine: '',
+                          pad: '',
+                          technique: '',
+                        ));
+                        _activeStageIndex = newIdx;
+                      });
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Added Step ${_recipeStages.length} - type or tap sample chips below to populate'),
+                          duration: const Duration(milliseconds: 1400),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    },
+                  ),
+                ],
               ),
             ],
           ),
           const SizedBox(height: 6),
           const Text(
-            '1-Tap Studio Presets: Auto-populate standard procedures, or select an active step and tap quick-chips.',
+            'Studio Presets: 1-click apply, edit or create custom presets. You can freely type tools/pads/chemicals or tap suggestions to append.',
             style: TextStyle(fontSize: 11.5, color: AppTheme.textSecondary),
           ),
           const SizedBox(height: 12),
 
-          // 1-Tap Preset Selector Buttons
+          // 1-Tap Preset Selector Buttons (System + Custom)
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
-              children: DetailingPresets.recipePresets.map((preset) {
+              children: allPresets.map((preset) {
                 final isSelected = _selectedPresetId == preset.id;
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          isSelected ? Icons.check_circle_rounded : Icons.auto_awesome_rounded,
-                          size: 14,
-                          color: isSelected ? Colors.black : AppTheme.primary,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(preset.name),
-                      ],
+                  child: InputChip(
+                    avatar: Icon(
+                      preset.isCustom
+                          ? (isSelected ? Icons.check_circle_rounded : Icons.star_rounded)
+                          : (isSelected ? Icons.check_circle_rounded : Icons.auto_awesome_rounded),
+                      size: 14,
+                      color: isSelected
+                          ? Colors.black
+                          : (preset.isCustom ? Colors.amber : AppTheme.primary),
                     ),
+                    label: Text(preset.name),
                     selected: isSelected,
                     selectedColor: AppTheme.primary,
-                    backgroundColor: AppTheme.surfaceLight,
+                    backgroundColor: preset.isCustom ? AppTheme.surfaceLight.withAlpha(200) : AppTheme.surfaceLight,
+                    side: BorderSide(
+                      color: preset.isCustom ? Colors.amber.withAlpha(120) : AppTheme.border,
+                    ),
                     labelStyle: TextStyle(
                       color: isSelected ? Colors.black : Colors.white,
                       fontWeight: FontWeight.bold,
                       fontSize: 12,
                     ),
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedPresetId = preset.id;
-                          _recipeStages = List.from(preset.stages);
-                          _activeStageIndex = 0;
-                          _selectedService = preset.serviceType;
-                        });
-                      }
+                    onPressed: () {
+                      setState(() {
+                        _selectedPresetId = preset.id;
+                        _recipeStages = List.from(preset.stages);
+                        _activeStageIndex = 0;
+                        _selectedService = preset.serviceType;
+                      });
                     },
+                    deleteIcon: const Icon(Icons.more_vert_rounded, size: 14),
+                    onDeleted: () => _showPresetOptionsSheet(preset),
                   ),
                 );
               }).toList(),
@@ -1347,19 +1659,19 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.touch_app_rounded, size: 16, color: AppTheme.primary),
+                const Icon(Icons.edit_note_rounded, size: 16, color: AppTheme.primary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text.rich(
                     TextSpan(
                       children: [
                         const TextSpan(
-                          text: 'Inline Recipe Editor: ',
+                          text: 'Flexible Step Editor: ',
                           style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
                         ),
                         TextSpan(
                           text: hasStages
-                              ? 'Editing Step ${_activeStageIndex + 1} ($activeStageName). Tap chips directly inside the card below.'
+                              ? 'Editing Step ${_activeStageIndex + 1} ($activeStageName). Type freely in any field, or tap sample chips below to append multiple tools/products.'
                               : 'Tap "+ Add Step" to begin crafting your process.',
                           style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                         ),
@@ -1373,7 +1685,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
 
           const SizedBox(height: 14),
 
-          // Render Active Stages with Inline Chips
+          // Render Active Stages with Free Text Fields & Sample Chips
           if (_recipeStages.isEmpty)
             Container(
               padding: const EdgeInsets.all(16),
@@ -1398,7 +1710,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                 final stage = _recipeStages[idx];
                 final isCurrentActive = idx == _activeStageIndex;
 
-                // Determine service-context specific chips
+                // Determine service-context specific sample suggestions
                 final List<String> currentTools;
                 final List<String> currentPads;
                 final List<String> currentChemicals;
@@ -1447,7 +1759,7 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             CircleAvatar(
                               radius: 12,
@@ -1463,62 +1775,65 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                             ),
                             const SizedBox(width: 10),
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              child: Row(
                                 children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          stage.stageName,
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 13,
-                                            color: isCurrentActive ? AppTheme.primary : Colors.white,
-                                          ),
+                                  Expanded(
+                                    child: TextFormField(
+                                      key: ValueKey('stage_title_${idx}_${stage.stageName}'),
+                                      initialValue: stage.stageName,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: isCurrentActive ? AppTheme.primary : Colors.white,
+                                      ),
+                                      decoration: InputDecoration(
+                                        isDense: true,
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                        hintText: 'Step Title / Process Name',
+                                        hintStyle: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                                        suffixIcon: IconButton(
+                                          icon: const Icon(Icons.edit_note_rounded, size: 16, color: AppTheme.primary),
+                                          onPressed: () => _showEditStepTitleDialog(idx),
+                                          tooltip: 'Rename Step',
+                                        ),
+                                        filled: true,
+                                        fillColor: isCurrentActive ? AppTheme.surface : AppTheme.surfaceLight,
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                          borderSide: BorderSide(color: AppTheme.border.withAlpha(80)),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                          borderSide: BorderSide(color: AppTheme.border.withAlpha(80)),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                          borderSide: const BorderSide(color: AppTheme.primary),
                                         ),
                                       ),
-                                      if (isCurrentActive)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: AppTheme.primary,
-                                            borderRadius: BorderRadius.circular(4),
-                                          ),
-                                          child: const Text(
-                                            'ACTIVE STEP',
-                                            style: TextStyle(
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.black,
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  if (stage.machine.isNotEmpty)
-                                    Text('Tool: ${stage.machine}',
-                                        style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                                  if (stage.pad.isNotEmpty)
-                                    Text('Pad: ${stage.pad}',
-                                        style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                                  if (stage.chemical.isNotEmpty)
-                                    Text('Chemical: ${stage.chemical}',
-                                        style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600))
-                                  else
-                                    Text(
-                                      isCurrentActive
-                                          ? '(Tap a chip below to select tool, pad, or chemical)'
-                                          : '(No product selected)',
-                                      style: const TextStyle(fontSize: 11, color: AppTheme.textMuted, fontStyle: FontStyle.italic),
+                                      onChanged: (val) {
+                                        _recipeStages[idx] = stage.copyWith(stageName: val);
+                                      },
                                     ),
-                                  if (stage.technique.isNotEmpty)
-                                    Text('Technique: ${stage.technique}',
-                                        style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted)),
-                                  if (stage.notes != null && stage.notes!.isNotEmpty)
-                                    Text('Note: ${stage.notes}',
-                                        style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted, fontStyle: FontStyle.italic)),
+                                  ),
+                                  if (isCurrentActive) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.primary,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Text(
+                                        'ACTIVE STEP',
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -1529,8 +1844,10 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                                   _recipeStages.removeAt(idx);
                                   if (_recipeStages.isEmpty) {
                                     _activeStageIndex = 0;
-                                  } else if (_activeStageIndex >= _recipeStages.length) {
-                                    _activeStageIndex = _recipeStages.length - 1;
+                                  } else if (_activeStageIndex == idx) {
+                                    _activeStageIndex = idx < _recipeStages.length ? idx : _recipeStages.length - 1;
+                                  } else if (_activeStageIndex > idx) {
+                                    _activeStageIndex--;
                                   }
                                 });
                               },
@@ -1538,13 +1855,171 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                           ],
                         ),
 
-                        // Inline Quick-Chips inside active card (Zero scrolling UX)
+                        // Process summary indicators
+                        if (stage.machine.isNotEmpty || stage.pad.isNotEmpty || stage.chemical.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8.0),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                if (stage.chemical.isNotEmpty)
+                                  Text(
+                                    'Chemical: ${stage.chemical}',
+                                    style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600),
+                                  ),
+                                if (stage.machine.isNotEmpty)
+                                  Text(
+                                    'Tool: ${stage.machine}',
+                                    style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                                  ),
+                                if (stage.pad.isNotEmpty)
+                                  Text(
+                                    'Pad: ${stage.pad}',
+                                    style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                                  ),
+                              ],
+                            ),
+                          ),
+
+                        // Free text fields when active (or collapsed summary when inactive)
+                        if (isCurrentActive) ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  key: ValueKey('stage_machine_${idx}_${stage.machine}'),
+                                  initialValue: stage.machine,
+                                  decoration: InputDecoration(
+                                    labelText: 'Machines / Tools (comma separated)',
+                                    hintText: 'e.g. Rupes LHR15, Flex PXE80',
+                                    prefixIcon: const Icon(Icons.build_rounded, size: 14, color: AppTheme.primary),
+                                    isDense: true,
+                                    filled: true,
+                                    fillColor: AppTheme.surface,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  onChanged: (val) {
+                                    _recipeStages[idx] = stage.copyWith(machine: val);
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextFormField(
+                                  key: ValueKey('stage_pad_${idx}_${stage.pad}'),
+                                  initialValue: stage.pad,
+                                  decoration: InputDecoration(
+                                    labelText: 'Pads (comma separated)',
+                                    hintText: 'e.g. LC HDO Blue Foam, Rupes Wool',
+                                    prefixIcon: const Icon(Icons.lens_outlined, size: 14, color: AppTheme.primary),
+                                    isDense: true,
+                                    filled: true,
+                                    fillColor: AppTheme.surface,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  onChanged: (val) {
+                                    _recipeStages[idx] = stage.copyWith(pad: val);
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            key: ValueKey('stage_chemical_${idx}_${stage.chemical}'),
+                            initialValue: stage.chemical,
+                            decoration: InputDecoration(
+                              labelText: 'Chemicals / Compounds / Products',
+                              hintText: 'e.g. Koch Chemie H9.02, Sonax Perfect Finish',
+                              prefixIcon: const Icon(Icons.science_rounded, size: 14, color: AppTheme.primary),
+                              isDense: true,
+                              filled: true,
+                              fillColor: AppTheme.surface,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            onChanged: (val) {
+                              _recipeStages[idx] = stage.copyWith(chemical: val);
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: TextFormField(
+                                  key: ValueKey('stage_technique_${idx}_${stage.technique}'),
+                                  initialValue: stage.technique,
+                                  decoration: InputDecoration(
+                                    labelText: 'Technique / Passes / Speed',
+                                    hintText: 'e.g. 4 crosshatch passes @ speed 4, slow arm speed',
+                                    isDense: true,
+                                    filled: true,
+                                    fillColor: AppTheme.surface,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  onChanged: (val) {
+                                    _recipeStages[idx] = stage.copyWith(technique: val);
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                flex: 2,
+                                child: TextFormField(
+                                  key: ValueKey('stage_notes_${idx}_${stage.notes ?? ""}'),
+                                  initialValue: stage.notes ?? '',
+                                  decoration: InputDecoration(
+                                    labelText: 'Pro Notes',
+                                    hintText: 'e.g. Wipe off with 15% IPA',
+                                    isDense: true,
+                                    filled: true,
+                                    fillColor: AppTheme.surface,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  onChanged: (val) {
+                                    _recipeStages[idx] = stage.copyWith(notes: val);
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ] else ...[
+                          // Collapsed Summary
+                          if (stage.machine.isNotEmpty)
+                            Text('Tool: ${stage.machine}',
+                                style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                          if (stage.pad.isNotEmpty)
+                            Text('Pad: ${stage.pad}',
+                                style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                          if (stage.chemical.isNotEmpty)
+                            Text('Chemical: ${stage.chemical}',
+                                style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600))
+                          else
+                            const Text(
+                              '(No product selected - tap to edit)',
+                              style: TextStyle(fontSize: 11, color: AppTheme.textMuted, fontStyle: FontStyle.italic),
+                            ),
+                          if (stage.technique.isNotEmpty)
+                            Text('Technique: ${stage.technique}',
+                                style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted)),
+                          if (stage.notes != null && stage.notes!.isNotEmpty)
+                            Text('Note: ${stage.notes}',
+                                style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted, fontStyle: FontStyle.italic)),
+                        ],
+
+                        // Inline Quick-Chips inside active card (Zero scrolling UX, tap to append sample)
                         if (isCurrentActive) ...[
                           const SizedBox(height: 12),
                           const Divider(color: AppTheme.border, height: 1),
                           const SizedBox(height: 10),
                           const Text(
-                            'TAP TO APPLY DIRECTLY TO THIS STEP:',
+                            'TAP SAMPLES TO APPEND TO THIS STEP (OR TYPE FREELY ABOVE):',
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.bold,

@@ -249,6 +249,19 @@ class LocalStorageService {
     } catch (_) {}
   }
 
+  // Load messages for a conversation locally
+  static Future<List<DirectMessage>> loadMessages(String conversationId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString('$_messagesKeyPrefix$conversationId');
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(jsonStr);
+        return list.map((item) => DirectMessage.fromJson(item as Map<String, dynamic>)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
   // Save custom studio recipe presets
   static Future<void> saveCustomPresets(List<StudioRecipePreset> presets) async {
     try {
