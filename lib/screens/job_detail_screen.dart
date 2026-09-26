@@ -419,119 +419,225 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     );
   }
 
-  Widget _buildPhotoContainerSection({
-    required String title,
-    required List<String> photos,
-    required Color accentColor,
-    required IconData icon,
-    required String emptyMsg,
+  Widget _buildPhotoGalleryStrip({
+    required List<String> beforePhotos,
+    required List<String> afterPhotos,
   }) {
+    if (beforePhotos.isEmpty && afterPhotos.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppTheme.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: accentColor.withAlpha(30),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(icon, color: accentColor, size: 18),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    title,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                  ),
-                ],
+              const Icon(Icons.photo_library_outlined, size: 14, color: AppTheme.primary),
+              const SizedBox(width: 6),
+              const Text(
+                'Inspection Gallery',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: accentColor.withAlpha(20),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: accentColor.withAlpha(80)),
-                ),
-                child: Text(
-                  '${photos.length} photos',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: accentColor),
-                ),
+              const SizedBox(width: 8),
+              Text(
+                '•  Tap thumbnail for full HD zoom',
+                style: TextStyle(fontSize: 11, color: AppTheme.textMuted.withAlpha(200)),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          if (photos.isEmpty)
-            Text(emptyMsg, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted))
-          else
-            SizedBox(
-              height: 110,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: photos.length,
-                itemBuilder: (context, idx) {
-                  final url = photos[idx];
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 10),
-                    child: InkWell(
-                      onTap: () => FullscreenImageViewer.open(
-                        context,
-                        images: photos,
-                        initialIndex: idx,
-                        title: '$title (${idx + 1}/${photos.length})',
-                      ),
-                      borderRadius: BorderRadius.circular(10),
-                      child: Stack(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: Image.network(
-                              url,
-                              width: 130,
-                              height: 110,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) => Container(
-                                width: 130,
-                                height: 110,
-                                color: AppTheme.surfaceLight,
-                                child: const Center(
-                                  child: Icon(Icons.broken_image_rounded, color: AppTheme.textMuted),
-                                ),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            left: 6,
-                            bottom: 6,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withAlpha(180),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                '#${idx + 1}',
-                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                // Before Photos Section
+                if (beforePhotos.isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.hardnessSoft.withAlpha(25),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: AppTheme.hardnessSoft.withAlpha(80)),
                     ),
-                  );
-                },
-              ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.history_rounded, size: 11, color: AppTheme.hardnessSoft),
+                        const SizedBox(width: 4),
+                        Text(
+                          'BEFORE (${beforePhotos.length})',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.hardnessSoft,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ...beforePhotos.asMap().entries.map((entry) {
+                    final idx = entry.key;
+                    final url = entry.value;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: InkWell(
+                        onTap: () => FullscreenImageViewer.open(
+                          context,
+                          images: beforePhotos,
+                          initialIndex: idx,
+                          title: 'Before Inspection (${idx + 1}/${beforePhotos.length})',
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          width: 58,
+                          height: 58,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppTheme.hardnessSoft.withAlpha(120), width: 1.5),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(6.5),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Image.network(
+                                  url,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) => Container(
+                                    color: AppTheme.surfaceLight,
+                                    child: const Icon(Icons.broken_image_rounded, size: 18, color: AppTheme.textMuted),
+                                  ),
+                                ),
+                                Positioned(
+                                  right: 2,
+                                  bottom: 2,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withAlpha(200),
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                    child: Text(
+                                      '#${idx + 1}',
+                                      style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.white),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+
+                // Divider if both exist
+                if (beforePhotos.isNotEmpty && afterPhotos.isNotEmpty) ...[
+                  Container(
+                    height: 38,
+                    width: 1,
+                    margin: const EdgeInsets.symmetric(horizontal: 6),
+                    color: AppTheme.border.withAlpha(180),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+
+                // After Photos Section
+                if (afterPhotos.isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withAlpha(25),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: AppTheme.primary.withAlpha(80)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.auto_awesome_rounded, size: 11, color: AppTheme.primary),
+                        SizedBox(width: 4),
+                        Text(
+                          'AFTER',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.primary,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ...afterPhotos.asMap().entries.map((entry) {
+                    final idx = entry.key;
+                    final url = entry.value;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: InkWell(
+                        onTap: () => FullscreenImageViewer.open(
+                          context,
+                          images: afterPhotos,
+                          initialIndex: idx,
+                          title: 'After Transformation (${idx + 1}/${afterPhotos.length})',
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          width: 58,
+                          height: 58,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppTheme.primary.withAlpha(120), width: 1.5),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(6.5),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Image.network(
+                                  url,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) => Container(
+                                    color: AppTheme.surfaceLight,
+                                    child: const Icon(Icons.broken_image_rounded, size: 18, color: AppTheme.textMuted),
+                                  ),
+                                ),
+                                Positioned(
+                                  right: 2,
+                                  bottom: 2,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withAlpha(200),
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                    child: Text(
+                                      '#${idx + 1}',
+                                      style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.white),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ],
             ),
+          ),
         ],
       ),
     );
@@ -897,31 +1003,17 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                       ),
                       const SizedBox(height: 16),
 
-            // 2. Inspection Photo Containers (View All Before & After)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                children: [
-                  _buildPhotoContainerSection(
-                    title: 'Before Inspection Photos',
-                    photos: beforeList,
-                    accentColor: AppTheme.hardnessSoft,
-                    icon: Icons.history_rounded,
-                    emptyMsg: 'No additional before inspection photos.',
-                  ),
-                  const SizedBox(height: 12),
-                  _buildPhotoContainerSection(
-                    title: 'After Transformation Photos',
-                    photos: afterList,
-                    accentColor: AppTheme.primary,
-                    icon: Icons.auto_awesome_rounded,
-                    emptyMsg: 'No additional after transformation photos.',
-                  ),
-                ],
+            // 2. Compact Amazon-Style Photo Gallery Strip (Before & After Thumbnails)
+            if (beforeList.isNotEmpty || afterList.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _buildPhotoGalleryStrip(
+                  beforePhotos: beforeList,
+                  afterPhotos: afterList,
+                ),
               ),
-            ),
-
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
+            ],
 
             // 3. Vehicle & Author Card
             Padding(
