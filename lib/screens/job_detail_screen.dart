@@ -1015,7 +1015,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               const SizedBox(height: 16),
             ],
 
-            // 3. Vehicle & Author Card
+            // 3. Vehicle & Author Card (YouTube style: Title -> Channel/Studio -> Description)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
@@ -1028,6 +1028,14 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // 1. Title on top
+                    Text(
+                      _currentJob.title,
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // 2. Creator / Studio row under Title
                     InkWell(
                       onTap: _openPublicStudio,
                       borderRadius: BorderRadius.circular(10),
@@ -1036,7 +1044,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                         child: Row(
                           children: [
                             CircleAvatar(
-                              radius: 22,
+                              radius: 20,
                               backgroundColor: AppTheme.surfaceLight,
                               backgroundImage: _currentJob.author.avatarUrl.isNotEmpty ? NetworkImage(_currentJob.author.avatarUrl) : null,
                               onBackgroundImageError: _currentJob.author.avatarUrl.isNotEmpty ? (_, _) {} : null,
@@ -1053,7 +1061,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                                         _currentJob.author.displayName,
                                         style: const TextStyle(
                                           fontWeight: FontWeight.w700,
-                                          fontSize: 15,
+                                          fontSize: 14.5,
                                           color: AppTheme.textPrimary,
                                         ),
                                       ),
@@ -1083,16 +1091,15 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 14),
-                    Text(
-                      _currentJob.title,
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _currentJob.description,
-                      style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.45),
-                    ),
+                    const SizedBox(height: 12),
+
+                    // 3. Description / Craft Story under Creator
+                    if (_currentJob.description.isNotEmpty) ...[
+                      Text(
+                        _currentJob.description,
+                        style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.45),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1189,7 +1196,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
             const SizedBox(height: 16),
 
             if (_selectedTabIndex == 0) ...[
-              // 4. Technical Inspection & Gauge Metrics
+              // 4. Consolidated Craft Specs & Step-by-Step Recipe Card
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Container(
@@ -1202,9 +1209,10 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Header
                       const Row(
                         children: [
-                          Icon(Icons.analytics_outlined, color: AppTheme.primary, size: 20),
+                          Icon(Icons.science_outlined, color: AppTheme.primary, size: 20),
                           SizedBox(width: 8),
                           Text(
                             'Paint Inspection & Gauge Data',
@@ -1280,314 +1288,253 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                           _buildGaugeMetric('Total Time', '${_currentJob.durationHours} hrs', Icons.timer_outlined, Colors.amberAccent),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-              ),
 
-              const SizedBox(height: 16),
+                      const SizedBox(height: 16),
+                      const Divider(),
+                      const SizedBox(height: 16),
 
-              // 5. Step-by-Step Detailing Recipe
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.science_outlined, color: AppTheme.primary, size: 20),
-                        SizedBox(width: 8),
-                        Text(
-                          'Step-by-Step Process Recipe',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    if (_currentJob.recipeStages.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Text(
-                          'No specific recipe stages logged for this transformation.',
-                          style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
-                        ),
-                      )
-                    else
-                      Column(
-                        children: _currentJob.recipeStages.asMap().entries.map((entry) {
-                        final idx = entry.key;
-                        final stage = entry.value;
-                        final isExpanded = _expandedStageSpecs.contains(idx);
-                        final hasSpecs = stage.machine.isNotEmpty ||
-                            stage.pad.isNotEmpty ||
-                            stage.technique.isNotEmpty ||
-                            (stage.notes != null && stage.notes!.isNotEmpty);
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: AppTheme.surface,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: AppTheme.border),
+                      // Step-by-Step Process Recipe (Consolidated inside)
+                      const Row(
+                        children: [
+                          Icon(Icons.format_list_numbered_rounded, color: AppTheme.primary, size: 18),
+                          SizedBox(width: 8),
+                          Text(
+                            'Step-by-Step Process Recipe',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      if (_currentJob.recipeStages.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            'No specific recipe stages logged for this transformation.',
+                            style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                          ),
+                        )
+                      else
+                        Column(
+                          children: _currentJob.recipeStages.asMap().entries.map((entry) {
+                            final idx = entry.key;
+                            final stage = entry.value;
+                            final isExpanded = _expandedStageSpecs.contains(idx);
+                            final hasSpecs = stage.machine.isNotEmpty ||
+                                stage.pad.isNotEmpty ||
+                                stage.technique.isNotEmpty ||
+                                (stage.notes != null && stage.notes!.isNotEmpty);
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: AppTheme.surfaceLight,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppTheme.border.withAlpha(120)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // Green checked circle
-                                  Container(
-                                    width: 26,
-                                    height: 26,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF00E676).withAlpha(28),
-                                      shape: BoxShape.circle,
-                                      border: Border.all(color: const Color(0xFF00E676), width: 1.5),
-                                    ),
-                                    child: const Center(
-                                      child: Icon(
-                                        Icons.check_rounded,
-                                        size: 16,
-                                        color: Color(0xFF00E676),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'STAGE ${idx + 1}',
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w800,
-                                            color: AppTheme.primary,
-                                            letterSpacing: 0.8,
-                                          ),
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    children: [
+                                      // Green checked circle
+                                      Container(
+                                        width: 24,
+                                        height: 24,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF00E676).withAlpha(28),
+                                          shape: BoxShape.circle,
+                                          border: Border.all(color: const Color(0xFF00E676), width: 1.5),
                                         ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          stage.stageName,
-                                          style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w700,
-                                            color: AppTheme.textPrimary,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  // Pro completion status badge
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF00E676).withAlpha(22),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: const Color(0xFF00E676).withAlpha(80)),
-                                    ),
-                                    child: const Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.verified_rounded, size: 12, color: Color(0xFF00E676)),
-                                        SizedBox(width: 4),
-                                        Text(
-                                          'Completed',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
+                                        child: const Center(
+                                          child: Icon(
+                                            Icons.check_rounded,
+                                            size: 15,
                                             color: Color(0xFF00E676),
                                           ),
                                         ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if (stage.chemical.isNotEmpty) ...[
-                                const SizedBox(height: 10),
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    const Icon(Icons.science_rounded, size: 14, color: AppTheme.primary),
-                                    const SizedBox(width: 6),
-                                    const Text(
-                                      'Product: ',
-                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary),
-                                    ),
-                                    Expanded(
-                                      child: Text(
-                                        stage.chemical,
-                                        style: const TextStyle(fontSize: 12, color: Colors.white),
                                       ),
-                                    ),
-                                    if (stage.dilution != null && stage.dilution!.isNotEmpty)
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'STAGE ${idx + 1}',
+                                              style: const TextStyle(
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.w800,
+                                                color: AppTheme.primary,
+                                                letterSpacing: 0.8,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              stage.stageName,
+                                              style: const TextStyle(
+                                                fontSize: 13.5,
+                                                fontWeight: FontWeight.w700,
+                                                color: AppTheme.textPrimary,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      // Pro completion status badge
                                       Container(
-                                        margin: const EdgeInsets.only(left: 6),
-                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                                         decoration: BoxDecoration(
-                                          color: AppTheme.surfaceLight,
-                                          borderRadius: BorderRadius.circular(4),
-                                          border: Border.all(color: AppTheme.border),
+                                          color: const Color(0xFF00E676).withAlpha(22),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: const Color(0xFF00E676).withAlpha(80)),
                                         ),
-                                        child: Text(
-                                          stage.dilution!,
-                                          style: const TextStyle(fontSize: 10.5, color: AppTheme.primary, fontWeight: FontWeight.w600),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.verified_rounded, size: 11, color: Color(0xFF00E676)),
+                                            SizedBox(width: 4),
+                                            Text(
+                                              'Completed',
+                                              style: TextStyle(
+                                                fontSize: 10.5,
+                                                fontWeight: FontWeight.bold,
+                                                color: Color(0xFF00E676),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                  ],
-                                ),
-                              ],
-                              if (hasSpecs) ...[
-                                const SizedBox(height: 10),
-                                InkWell(
-                                  key: Key('craft_specs_toggle_$idx'),
-                                  onTap: () {
-                                    setState(() {
-                                      if (isExpanded) {
-                                        _expandedStageSpecs.remove(idx);
-                                      } else {
-                                        _expandedStageSpecs.add(idx);
-                                      }
-                                    });
-                                  },
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 4),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
+                                    ],
+                                  ),
+                                  if (stage.chemical.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.center,
                                       children: [
-                                        Icon(
-                                          isExpanded ? Icons.tune_rounded : Icons.build_outlined,
-                                          size: 13,
-                                          color: AppTheme.textMuted,
-                                        ),
-                                        const SizedBox(width: 5),
+                                        const Icon(Icons.science_rounded, size: 13, color: AppTheme.primary),
+                                        const SizedBox(width: 6),
                                         const Text(
-                                          'Detailer Craft Specs',
-                                          style: TextStyle(
-                                            fontSize: 11.5,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppTheme.textMuted,
+                                          'Product: ',
+                                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppTheme.textSecondary),
+                                        ),
+                                        Expanded(
+                                          child: Text(
+                                            stage.chemical,
+                                            style: const TextStyle(fontSize: 11.5, color: Colors.white),
                                           ),
                                         ),
-                                        const SizedBox(width: 2),
-                                        Icon(
-                                          isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                                          size: 16,
-                                          color: AppTheme.textMuted,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                if (isExpanded) ...[
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.surfaceLight,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: AppTheme.border.withAlpha(150)),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        if (stage.machine.isNotEmpty)
-                                          _buildRecipeField('Machine', stage.machine, Icons.build_rounded),
-                                        if (stage.pad.isNotEmpty)
-                                          _buildRecipeField('Pad', stage.pad, Icons.circle_outlined),
-                                        if (stage.technique.isNotEmpty)
-                                          _buildRecipeField('Technique / Passes', stage.technique, Icons.tune_rounded),
-                                        if (stage.notes != null && stage.notes!.isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(top: 4),
-                                            child: Row(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                const Icon(Icons.info_outline, size: 14, color: AppTheme.textMuted),
-                                                const SizedBox(width: 6),
-                                                Expanded(
-                                                  child: Text(
-                                                    'Pro Note: ${stage.notes}',
-                                                    style: const TextStyle(
-                                                      fontSize: 11.5,
-                                                      color: AppTheme.textMuted,
-                                                      fontStyle: FontStyle.italic,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
+                                        if (stage.dilution != null && stage.dilution!.isNotEmpty)
+                                          Container(
+                                            margin: const EdgeInsets.only(left: 6),
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.surface,
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(color: AppTheme.border),
+                                            ),
+                                            child: Text(
+                                              stage.dilution!,
+                                              style: const TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.w600),
                                             ),
                                           ),
                                       ],
                                     ),
-                                  ),
+                                  ],
+                                  if (hasSpecs) ...[
+                                    const SizedBox(height: 8),
+                                    InkWell(
+                                      key: Key('craft_specs_toggle_$idx'),
+                                      onTap: () {
+                                        setState(() {
+                                          if (isExpanded) {
+                                            _expandedStageSpecs.remove(idx);
+                                          } else {
+                                            _expandedStageSpecs.add(idx);
+                                          }
+                                        });
+                                      },
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 3),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              isExpanded ? Icons.tune_rounded : Icons.build_outlined,
+                                              size: 12,
+                                              color: AppTheme.textMuted,
+                                            ),
+                                            const SizedBox(width: 5),
+                                            const Text(
+                                              'Detailer Craft Specs',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: AppTheme.textMuted,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 2),
+                                            Icon(
+                                              isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                                              size: 15,
+                                              color: AppTheme.textMuted,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    if (isExpanded) ...[
+                                      const SizedBox(height: 8),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.surface,
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: AppTheme.border.withAlpha(150)),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            if (stage.machine.isNotEmpty)
+                                              _buildRecipeField('Machine', stage.machine, Icons.build_rounded),
+                                            if (stage.pad.isNotEmpty)
+                                              _buildRecipeField('Pad', stage.pad, Icons.circle_outlined),
+                                            if (stage.technique.isNotEmpty)
+                                              _buildRecipeField('Technique / Passes', stage.technique, Icons.tune_rounded),
+                                            if (stage.notes != null && stage.notes!.isNotEmpty)
+                                              Padding(
+                                                padding: const EdgeInsets.only(top: 4),
+                                                child: Row(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    const Icon(Icons.info_outline, size: 13, color: AppTheme.textMuted),
+                                                    const SizedBox(width: 6),
+                                                    Expanded(
+                                                      child: Text(
+                                                        'Pro Note: ${stage.notes}',
+                                                        style: const TextStyle(
+                                                          fontSize: 11,
+                                                          color: AppTheme.textMuted,
+                                                          fontStyle: FontStyle.italic,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ],
-                              ],
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Digital Inspection & Warranty Report Card
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primary.withAlpha(25),
-                          borderRadius: BorderRadius.circular(10),
+                              ),
+                            );
+                          }).toList(),
                         ),
-                        child: const Icon(Icons.verified_user_outlined, color: AppTheme.primary, size: 24),
-                      ),
-                      const SizedBox(width: 14),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Digital Inspection & Warranty Report',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'Verified paint thickness readings and ceramic coating warranty documentation for client handover.',
-                              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: _showExportSuccess,
-                        icon: const Icon(Icons.share_outlined, size: 16, color: AppTheme.primary),
-                        label: const Text('Share', style: TextStyle(color: AppTheme.primary, fontSize: 12)),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: AppTheme.border),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                      ),
                     ],
                   ),
                 ),
