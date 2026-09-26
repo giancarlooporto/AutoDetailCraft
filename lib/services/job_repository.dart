@@ -473,6 +473,133 @@ class JobRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Verification queue for Back Office admins
+  List<VerificationRequest> _verificationRequests = [
+    VerificationRequest(
+      id: 'ver_sample_01',
+      userId: 'usr_diego',
+      detailerName: 'Diego Morales',
+      businessName: 'Morales Elite Mobile Detail',
+      docType: 'insurance',
+      docUrl: 'https://images.unsplash.com/photo-1450133064473-71024230f91b?w=800&auto=format&fit=crop&q=80',
+      policyOrCertNumber: 'HISCOX-GK-99210-TX',
+      status: VerificationStatus.pending,
+      submittedAt: DateTime.now().subtract(const Duration(hours: 3)),
+    ),
+    VerificationRequest(
+      id: 'ver_sample_02',
+      userId: 'usr_marcus',
+      detailerName: 'Marcus Vance',
+      businessName: 'Apex Gloss Lab & Mobile',
+      docType: 'ida_certification',
+      docUrl: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=800&auto=format&fit=crop&q=80',
+      policyOrCertNumber: 'IDA-CDSV-2024-88',
+      status: VerificationStatus.approved,
+      submittedAt: DateTime.now().subtract(const Duration(days: 2)),
+      reviewedAt: DateTime.now().subtract(const Duration(days: 1)),
+      reviewerNotes: 'Official IDA credential validated with registry.',
+    ),
+  ];
+
+  List<VerificationRequest> get verificationRequests => _verificationRequests;
+
+  Future<void> loadVerificationRequests() async {
+    if (_isLoggedIn) {
+      final cloudList = await SupabaseDbService.fetchVerificationRequests();
+      if (cloudList.isNotEmpty) {
+        _verificationRequests = cloudList;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> submitDetailerVerification({
+    required String docType,
+    required String docUrl,
+    required String policyOrCertNumber,
+  }) async {
+    final req = VerificationRequest(
+      id: 'ver_${DateTime.now().millisecondsSinceEpoch}',
+      userId: _currentUser.id,
+      detailerName: _currentUser.displayName,
+      businessName: _currentUser.businessName,
+      docType: docType,
+      docUrl: docUrl,
+      policyOrCertNumber: policyOrCertNumber,
+      status: VerificationStatus.pending,
+      submittedAt: DateTime.now(),
+    );
+
+    _verificationRequests.insert(0, req);
+    if (_isLoggedIn) {
+      await SupabaseDbService.submitVerificationRequest(req);
+    }
+    notifyListeners();
+  }
+
+  Future<void> reviewVerification({
+    required String requestId,
+    required String detailerUserId,
+    required String docType,
+    required VerificationStatus newStatus,
+    required String notes,
+  }) async {
+    final idx = _verificationRequests.indexWhere((r) => r.id == requestId);
+    if (idx != -1) {
+      final old = _verificationRequests[idx];
+      _verificationRequests[idx] = VerificationRequest(
+        id: old.id,
+        userId: old.userId,
+        detailerName: old.detailerName,
+        businessName: old.businessName,
+        docType: old.docType,
+        docUrl: old.docUrl,
+        policyOrCertNumber: old.policyOrCertNumber,
+        status: newStatus,
+        reviewerNotes: notes,
+        submittedAt: old.submittedAt,
+        reviewedAt: DateTime.now(),
+      );
+
+      // If approved, update in-memory detailer profile badges
+      if (newStatus == VerificationStatus.approved) {
+        if (_currentUser.id == detailerUserId) {
+          _currentUser = _currentUser.copyWith(
+            isInsuranceVerified: docType == 'insurance' ? true : _currentUser.isInsuranceVerified,
+            isIdaCertified: docType == 'ida_certification' ? true : _currentUser.isIdaCertified,
+          );
+          _persistUser();
+        }
+
+        final pIdx = _publicDetailers.indexWhere((p) => p.id == detailerUserId);
+        if (pIdx != -1) {
+          _publicDetailers[pIdx] = _publicDetailers[pIdx].copyWith(
+            isInsuranceVerified: docType == 'insurance' ? true : _publicDetailers[pIdx].isInsuranceVerified,
+            isIdaCertified: docType == 'ida_certification' ? true : _publicDetailers[pIdx].isIdaCertified,
+          );
+        }
+      }
+
+      if (_isLoggedIn) {
+        await SupabaseDbService.reviewVerificationRequest(
+          requestId: requestId,
+          detailerUserId: detailerUserId,
+          docType: docType,
+          newStatus: newStatus,
+          reviewerNotes: notes,
+        );
+      }
+      notifyListeners();
+    }
+  }
+
+  // Update subscription tier (Free Starter, Pro Studio, Enterprise Shop)
+  void updateSubscriptionTier(SubscriptionTier tier) {
+    _currentUser = _currentUser.copyWith(subscriptionTier: tier);
+    _persistUser();
+    notifyListeners();
+  }
+
   // Detailer / Host Promotion / Mode Toggle
   void toggleHostMode() {
     final isNowHost = _currentUser.role == UserRole.client;
@@ -481,6 +608,114 @@ class JobRepository extends ChangeNotifier {
       isVerifiedHost: isNowHost,
     );
     _persistUser();
+    notifyListeners();
+  }
+
+  // Toggle Super Admin Mode (For Back Office simulation and management)
+  void toggleSuperAdminMode() {
+    final isSuper = _currentUser.role == UserRole.superAdmin;
+    _currentUser = _currentUser.copyWith(
+      role: isSuper ? UserRole.detailer : UserRole.superAdmin,
+    );
+    _persistUser();
+    notifyListeners();
+  }
+
+  // Active Staff & Delegated Admins (RBAC)
+  List<StaffMember> _staffMembers = [
+    StaffMember(
+      id: 'staff_founder',
+      username: 'giancarlooporto',
+      email: 'founder@autodetailcraft.com',
+      role: UserRole.superAdmin,
+      isActive: true,
+      createdAt: DateTime.now().subtract(const Duration(days: 30)),
+    ),
+    StaffMember(
+      id: 'staff_rep1',
+      username: 'sarah_support',
+      email: 'sarah.support@autodetailcraft.com',
+      role: UserRole.supportAgent,
+      isActive: true,
+      createdAt: DateTime.now().subtract(const Duration(days: 14)),
+    ),
+    StaffMember(
+      id: 'staff_temp',
+      username: 'alex_verifier',
+      email: 'alex.audit@verificationagency.com',
+      role: UserRole.supportAgent,
+      isActive: true,
+      createdAt: DateTime.now().subtract(const Duration(days: 5)),
+    ),
+  ];
+
+  List<StaffMember> get staffMembers => _staffMembers;
+
+  /// Delegate an existing user or add a new admin/agent with custom permissions
+  void delegateAdminRole({
+    required String username,
+    required String email,
+    required UserRole role,
+  }) {
+    final cleanEmail = email.trim();
+    final cleanUsername = username.trim().replaceAll('@', '');
+
+    // Check if user is already in staff list
+    final existingIdx = _staffMembers.indexWhere(
+      (m) => m.email.toLowerCase() == cleanEmail.toLowerCase() || m.username.toLowerCase() == cleanUsername.toLowerCase(),
+    );
+
+    if (existingIdx != -1) {
+      _staffMembers[existingIdx] = StaffMember(
+        id: _staffMembers[existingIdx].id,
+        username: cleanUsername,
+        email: cleanEmail,
+        role: role,
+        isActive: true,
+        createdAt: _staffMembers[existingIdx].createdAt,
+      );
+    } else {
+      _staffMembers.add(
+        StaffMember(
+          id: 'staff_${DateTime.now().millisecondsSinceEpoch}',
+          username: cleanUsername,
+          email: cleanEmail,
+          role: role,
+          isActive: true,
+          createdAt: DateTime.now(),
+        ),
+      );
+    }
+
+    // If detailer exists in public list with this username, promote their role badge
+    final dIdx = _publicDetailers.indexWhere((p) => p.username.toLowerCase() == cleanUsername.toLowerCase());
+    if (dIdx != -1) {
+      _publicDetailers[dIdx] = _publicDetailers[dIdx].copyWith(role: role);
+    }
+
+    notifyListeners();
+  }
+
+  /// One-click deactivation / access revocation of a delegated admin
+  void toggleStaffActiveStatus(String staffId) {
+    final idx = _staffMembers.indexWhere((m) => m.id == staffId);
+    if (idx != -1) {
+      final old = _staffMembers[idx];
+      _staffMembers[idx] = StaffMember(
+        id: old.id,
+        username: old.username,
+        email: old.email,
+        role: old.role,
+        isActive: !old.isActive,
+        createdAt: old.createdAt,
+      );
+      notifyListeners();
+    }
+  }
+
+  /// Delete a staff member entirely
+  void removeStaffMember(String staffId) {
+    _staffMembers.removeWhere((m) => m.id == staffId);
     notifyListeners();
   }
 

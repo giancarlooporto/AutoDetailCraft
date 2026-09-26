@@ -850,16 +850,34 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.shield_rounded, color: AppTheme.primary, size: 20),
-                  SizedBox(width: 8),
-                  Text('AutoDetailCraft Escrow & Guarantee', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  const Icon(Icons.shield_rounded, color: AppTheme.primary, size: 20),
+                  const SizedBox(width: 8),
+                  const Text('Direct Detailer Booking & Escrow Hold', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  const Spacer(),
+                  if (widget.detailer.isInsuranceVerified)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.greenAccent.withAlpha(20),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.greenAccent.withAlpha(80)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.security_rounded, size: 11, color: Colors.greenAccent),
+                          SizedBox(width: 3),
+                          Text('INSURED SHOP', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.greenAccent)),
+                        ],
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(height: 8),
               const Text(
-                '• 24-Hour Free Cancellation & No-Show Protection\n• Mandatory Pre-Inspection Photo Check-in\n• Digital Warranty Certificate logged upon completion\n• Funds released only after service is verified',
+                '• 24-Hour Free Cancellation & Deposit Protection\n• Mandatory Pre-Inspection Photo Walkaround\n• Digital Warranty Certificate logged upon completion\n• AutoDetailCraft provides SaaS scheduling tools; detailing workmanship is provided directly by the independent studio.',
                 style: TextStyle(fontSize: 12, color: AppTheme.textSecondary, height: 1.5),
               ),
               const Divider(color: AppTheme.border, height: 20),

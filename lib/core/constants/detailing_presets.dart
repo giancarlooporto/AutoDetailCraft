@@ -56,6 +56,7 @@ class StudioRecipePreset {
   final String serviceType;
   final String description;
   final List<RecipeStage> stages;
+  final bool isCustom;
 
   const StudioRecipePreset({
     required this.id,
@@ -63,7 +64,45 @@ class StudioRecipePreset {
     required this.serviceType,
     required this.description,
     required this.stages,
+    this.isCustom = false,
   });
+
+  StudioRecipePreset copyWith({
+    String? id,
+    String? name,
+    String? serviceType,
+    String? description,
+    List<RecipeStage>? stages,
+    bool? isCustom,
+  }) => StudioRecipePreset(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    serviceType: serviceType ?? this.serviceType,
+    description: description ?? this.description,
+    stages: stages ?? this.stages,
+    isCustom: isCustom ?? this.isCustom,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'serviceType': serviceType,
+    'description': description,
+    'stages': stages.map((s) => s.toJson()).toList(),
+    'isCustom': isCustom,
+  };
+
+  factory StudioRecipePreset.fromJson(Map<String, dynamic> json) => StudioRecipePreset(
+    id: json['id'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    serviceType: json['serviceType'] as String? ?? 'Paint Correction',
+    description: json['description'] as String? ?? '',
+    stages: (json['stages'] as List<dynamic>?)
+            ?.map((s) => RecipeStage.fromJson(s as Map<String, dynamic>))
+            .toList() ??
+        [],
+    isCustom: json['isCustom'] as bool? ?? false,
+  );
 }
 
 class DetailingPresets {

@@ -5,12 +5,14 @@ import '../models/user_profile.dart';
 import '../models/booking_models.dart';
 import '../models/detail_job.dart';
 import '../models/message_model.dart';
+import '../core/constants/detailing_presets.dart';
 
 class LocalStorageService {
   static const String _userKeyPrefix = 'adc_user_state_v3_';
   static const String _lastActiveUserKey = 'adc_last_active_user_id_v1';
   static const String _bookingsKey = 'adc_bookings_state_v3';
   static const String _customJobsKey = 'adc_custom_jobs_v1';
+  static const String _customPresetsKey = 'adc_custom_presets_v1';
   static const String _savedJobsKey = 'adc_saved_jobs_v3';
   static const String _likedJobsKey = 'adc_liked_jobs_v3';
   static const String _activeTabKey = 'adc_active_tab_index_v1';
@@ -247,16 +249,36 @@ class LocalStorageService {
     } catch (_) {}
   }
 
-  // Load messages for a conversation locally
-  static Future<List<DirectMessage>> loadMessages(String conversationId) async {
+  // Save custom studio recipe presets
+  static Future<void> saveCustomPresets(List<StudioRecipePreset> presets) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final jsonStr = prefs.getString('$_messagesKeyPrefix$conversationId');
+      final list = presets.map((p) => p.toJson()).toList();
+      await prefs.setString(_customPresetsKey, jsonEncode(list));
+      if (kDebugMode) {
+        print('[LocalStorageService] Successfully saved ${presets.length} custom presets.');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[LocalStorageService] Error saving custom presets: $e');
+      }
+    }
+  }
+
+  // Load custom studio recipe presets
+  static Future<List<StudioRecipePreset>> loadCustomPresets() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_customPresetsKey);
       if (jsonStr != null && jsonStr.isNotEmpty) {
         final List<dynamic> list = jsonDecode(jsonStr);
-        return list.map((item) => DirectMessage.fromJson(item as Map<String, dynamic>)).toList();
+        return list.map((item) => StudioRecipePreset.fromJson(item as Map<String, dynamic>)).toList();
       }
-    } catch (_) {}
+    } catch (e) {
+      if (kDebugMode) {
+        print('[LocalStorageService] Error loading custom presets: $e');
+      }
+    }
     return [];
   }
 }

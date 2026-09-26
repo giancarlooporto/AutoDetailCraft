@@ -14,6 +14,9 @@ import 'public_studio_screen.dart';
 import 'create_job_screen.dart';
 import 'service_package_editor_dialog.dart';
 import '../widgets/job_recipe_card.dart';
+import 'subscription_plans_dialog.dart';
+import 'verification_submission_dialog.dart';
+import 'admin/backoffice_dashboard_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final JobRepository repository;
@@ -511,7 +514,10 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Clean Mode Switch & Public Storefront Actions (No enclosing box)
-                        Row(
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             OutlinedButton.icon(
                               style: OutlinedButton.styleFrom(
@@ -537,7 +543,46 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                               ),
                             ),
                             if (isDetailer) ...[
-                              const SizedBox(width: 8),
+                              OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppTheme.primary,
+                                  side: const BorderSide(color: AppTheme.primary),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  backgroundColor: AppTheme.primary.withAlpha(20),
+                                ),
+                                onPressed: () => SubscriptionPlansDialog.show(context, repository: widget.repository),
+                                icon: const Icon(Icons.workspace_premium_rounded, size: 15, color: AppTheme.primary),
+                                label: Text(
+                                  'Plan: ${user.subscriptionTier.label}',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                                ),
+                              ),
+                              OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: user.isInsuranceVerified ? Colors.greenAccent : Colors.orangeAccent,
+                                  side: BorderSide(
+                                    color: user.isInsuranceVerified ? Colors.greenAccent : Colors.orangeAccent,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  backgroundColor: (user.isInsuranceVerified ? Colors.greenAccent : Colors.orangeAccent).withAlpha(15),
+                                ),
+                                onPressed: () => VerificationSubmissionDialog.show(context, repository: widget.repository),
+                                icon: Icon(
+                                  user.isInsuranceVerified ? Icons.security_rounded : Icons.file_upload_outlined,
+                                  size: 15,
+                                  color: user.isInsuranceVerified ? Colors.greenAccent : Colors.orangeAccent,
+                                ),
+                                label: Text(
+                                  user.isInsuranceVerified ? 'Insured Verified' : 'Submit Insurance',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: user.isInsuranceVerified ? Colors.greenAccent : Colors.orangeAccent,
+                                  ),
+                                ),
+                              ),
                               OutlinedButton.icon(
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: Colors.white70,
@@ -563,6 +608,29 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                                 ),
                               ),
                             ],
+                            // Admin Back Office launcher / simulator button
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.redAccent,
+                                side: const BorderSide(color: Colors.redAccent),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                backgroundColor: Colors.redAccent.withAlpha(15),
+                              ),
+                              onPressed: () {
+                                widget.repository.toggleSuperAdminMode();
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => BackofficeDashboardScreen(repository: widget.repository),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.admin_panel_settings_rounded, size: 15, color: Colors.redAccent),
+                              label: const Text(
+                                'Back Office Portal',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.redAccent),
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 12),

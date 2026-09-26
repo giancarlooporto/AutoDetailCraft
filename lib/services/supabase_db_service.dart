@@ -66,9 +66,17 @@ class SupabaseDbService {
         orElse: () => SubscriptionTier.free,
       );
 
+      final roleStr = res['role'] as String?;
+      UserRole parsedRole = UserRole.client;
+      if (roleStr == 'superAdmin' || roleStr == 'super_admin') {
+        parsedRole = UserRole.superAdmin;
+      } else if (roleStr == 'detailer') {
+        parsedRole = UserRole.detailer;
+      }
+
       return UserProfile(
         id: res['id'] as String,
-        role: (res['role'] as String?) == 'detailer' ? UserRole.detailer : UserRole.client,
+        role: parsedRole,
         username: (res['email'] as String?)?.split('@').first ?? 'user',
         displayName: res['display_name'] as String? ?? 'Vehicle Owner',
         businessName: res['business_name'] as String? ?? 'My Detailing Studio',
@@ -81,6 +89,8 @@ class SupabaseDbService {
         instagramHandle: res['instagram_handle'] as String? ?? '@detailcraft',
         isVerifiedHost: res['is_verified_host'] as bool? ?? false,
         isIdaCertified: res['is_ida_certified'] as bool? ?? false,
+        isInsuranceVerified: res['is_insurance_verified'] as bool? ?? false,
+        insurancePolicyNumber: res['insurance_policy_number'] as String? ?? '',
         servicePackages: packages,
         startingPrice: (res['starting_price'] as num?)?.toDouble() ?? 150.0,
         subscriptionTier: subscriptionTier,
@@ -102,11 +112,18 @@ class SupabaseDbService {
     if (client == null) return;
 
     try {
+      String roleStr = 'client';
+      if (user.role == UserRole.superAdmin) {
+        roleStr = 'super_admin';
+      } else if (user.role == UserRole.detailer) {
+        roleStr = 'detailer';
+      }
+
       await client.from('profiles').upsert({
         'id': user.id,
         'display_name': user.displayName,
         'business_name': user.businessName,
-        'role': user.role == UserRole.detailer ? 'detailer' : 'client',
+        'role': roleStr,
         'avatar_url': user.avatarUrl,
         'cover_url': user.coverUrl,
         'location': user.location,
@@ -116,6 +133,8 @@ class SupabaseDbService {
         'instagram_handle': user.instagramHandle,
         'is_verified_host': user.isVerifiedHost,
         'is_ida_certified': user.isIdaCertified,
+        'is_insurance_verified': user.isInsuranceVerified,
+        'insurance_policy_number': user.insurancePolicyNumber,
         'rating': user.averageRating,
         'review_count': user.reviewCount,
         'total_jobs_count': user.totalJobsCount,
@@ -126,6 +145,63 @@ class SupabaseDbService {
       });
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error saving profile: $e');
+    }
+  }
+
+  /// Submit a verification request (Insurance or IDA cert)
+  static Future<void> submitVerificationRequest(VerificationRequest req) async {
+    final client = _client;
+    if (client == null) return;
+    try {
+      await client.from('verification_requests').upsert(req.toJson());
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error submitting verification: $e');
+    }
+  }
+
+  /// Fetch all verification requests (For Back Office Admins)
+  static Future<List<VerificationRequest>> fetchVerificationRequests() async {
+    final client = _client;
+    if (client == null) return [];
+    try {
+      final res = await client.from('verification_requests').select().order('submitted_at', ascending: false);
+      return (res as List<dynamic>).map((json) => VerificationRequest.fromJson(json as Map<String, dynamic>)).toList();
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error fetching verifications: $e');
+      return [];
+    }
+  }
+
+  /// Review (Approve or Reject) a verification request and update the detailer's profile badge
+  static Future<void> reviewVerificationRequest({
+    required String requestId,
+    required String detailerUserId,
+    required String docType,
+    required VerificationStatus newStatus,
+    required String reviewerNotes,
+  }) async {
+    final client = _client;
+    if (client == null) return;
+    try {
+      await client.from('verification_requests').update({
+        'status': newStatus.name,
+        'reviewer_notes': reviewerNotes,
+        'reviewed_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', requestId);
+
+      if (newStatus == VerificationStatus.approved) {
+        if (docType == 'insurance') {
+          await client.from('profiles').update({
+            'is_insurance_verified': true,
+          }).eq('id', detailerUserId);
+        } else if (docType == 'ida_certification') {
+          await client.from('profiles').update({
+            'is_ida_certified': true,
+          }).eq('id', detailerUserId);
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error reviewing verification: $e');
     }
   }
 

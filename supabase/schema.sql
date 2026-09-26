@@ -226,3 +226,32 @@ alter table public.user_interactions enable row level security;
 create policy "Allow read on user_interactions" on public.user_interactions for select using (true);
 create policy "Allow insert on user_interactions" on public.user_interactions for insert with check (true);
 create policy "Allow update on user_interactions" on public.user_interactions for update using (true);
+
+-- 10. VERIFICATION REQUESTS (Admin Back Office Document Review)
+-- Used by Back Office admins to review detailer Garage Keepers Insurance and IDA certifications
+alter table public.profiles
+  add column if not exists is_insurance_verified boolean default false,
+  add column if not exists insurance_policy_number text default '',
+  add column if not exists insurance_expiry_date date;
+
+create table if not exists public.verification_requests (
+  id text primary key default gen_random_uuid()::text,
+  user_id text not null,
+  detailer_name text not null,
+  business_name text not null,
+  doc_type text not null, -- 'insurance' or 'ida_certification'
+  doc_url text not null,
+  policy_or_cert_number text default '',
+  status text not null default 'pending', -- 'pending', 'approved', 'rejected'
+  reviewer_notes text default '',
+  submitted_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  reviewed_at timestamp with time zone
+);
+
+alter table public.verification_requests enable row level security;
+
+create policy "Allow read on verification_requests" on public.verification_requests for select using (true);
+create policy "Allow insert on verification_requests" on public.verification_requests for insert with check (true);
+create policy "Allow update on verification_requests" on public.verification_requests for update using (true);
+create policy "Allow delete on verification_requests" on public.verification_requests for delete using (true);
+

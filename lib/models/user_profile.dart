@@ -6,10 +6,122 @@ import 'user_vehicle.dart';
 
 enum UserRole {
   client('Vehicle Owner (Client)'),
-  detailer('Detailer (Pro Host / Business)');
+  detailer('Detailer (Pro Host / Business)'),
+  supportAgent('Support Agent (Verification & Tickets)'),
+  superAdmin('Super Admin (Platform Owner)');
 
   final String label;
   const UserRole(this.label);
+}
+
+class StaffMember {
+  final String id;
+  final String username;
+  final String email;
+  final UserRole role; // superAdmin or supportAgent
+  final bool isActive;
+  final DateTime createdAt;
+
+  const StaffMember({
+    required this.id,
+    required this.username,
+    required this.email,
+    required this.role,
+    this.isActive = true,
+    required this.createdAt,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'username': username,
+    'email': email,
+    'role': role.name,
+    'is_active': isActive,
+    'created_at': createdAt.toIso8601String(),
+  };
+
+  factory StaffMember.fromJson(Map<String, dynamic> json) => StaffMember(
+    id: json['id'] as String? ?? 'staff_${DateTime.now().millisecondsSinceEpoch}',
+    username: json['username'] as String? ?? 'staff_member',
+    email: json['email'] as String? ?? '',
+    role: (json['role'] as String?) == 'superAdmin' || (json['role'] as String?) == 'super_admin'
+        ? UserRole.superAdmin
+        : UserRole.supportAgent,
+    isActive: json['is_active'] as bool? ?? true,
+    createdAt: json['created_at'] != null
+        ? DateTime.tryParse(json['created_at'] as String) ?? DateTime.now()
+        : DateTime.now(),
+  );
+}
+
+enum VerificationStatus {
+  none,
+  pending,
+  approved,
+  rejected;
+}
+
+class VerificationRequest {
+  final String id;
+  final String userId;
+  final String detailerName;
+  final String businessName;
+  final String docType; // 'insurance' or 'ida_certification'
+  final String docUrl;
+  final String policyOrCertNumber;
+  final VerificationStatus status;
+  final String reviewerNotes;
+  final DateTime submittedAt;
+  final DateTime? reviewedAt;
+
+  const VerificationRequest({
+    required this.id,
+    required this.userId,
+    required this.detailerName,
+    required this.businessName,
+    required this.docType,
+    required this.docUrl,
+    this.policyOrCertNumber = '',
+    this.status = VerificationStatus.pending,
+    this.reviewerNotes = '',
+    required this.submittedAt,
+    this.reviewedAt,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'user_id': userId,
+    'detailer_name': detailerName,
+    'business_name': businessName,
+    'doc_type': docType,
+    'doc_url': docUrl,
+    'policy_or_cert_number': policyOrCertNumber,
+    'status': status.name,
+    'reviewer_notes': reviewerNotes,
+    'submitted_at': submittedAt.toIso8601String(),
+    'reviewed_at': reviewedAt?.toIso8601String(),
+  };
+
+  factory VerificationRequest.fromJson(Map<String, dynamic> json) => VerificationRequest(
+    id: json['id'] as String? ?? 'ver_${DateTime.now().millisecondsSinceEpoch}',
+    userId: json['user_id'] as String? ?? '',
+    detailerName: json['detailer_name'] as String? ?? '',
+    businessName: json['business_name'] as String? ?? '',
+    docType: json['doc_type'] as String? ?? 'insurance',
+    docUrl: json['doc_url'] as String? ?? '',
+    policyOrCertNumber: json['policy_or_cert_number'] as String? ?? '',
+    status: VerificationStatus.values.firstWhere(
+      (s) => s.name == (json['status'] as String?),
+      orElse: () => VerificationStatus.pending,
+    ),
+    reviewerNotes: json['reviewer_notes'] as String? ?? '',
+    submittedAt: json['submitted_at'] != null
+        ? DateTime.tryParse(json['submitted_at'] as String) ?? DateTime.now()
+        : DateTime.now(),
+    reviewedAt: json['reviewed_at'] != null
+        ? DateTime.tryParse(json['reviewed_at'] as String)
+        : null,
+  );
 }
 
 enum SubscriptionTier {
@@ -67,6 +179,8 @@ class UserProfile {
   final String instagramHandle;
   final bool isIdaCertified;
   final bool isVerifiedHost;
+  final bool isInsuranceVerified;
+  final String insurancePolicyNumber;
   final List<UserCertification> certifications;
   final List<ServicePackage> servicePackages;
   final List<TeamMember> teamMembers; // Hired team members under this company
@@ -96,6 +210,8 @@ class UserProfile {
     this.instagramHandle = '@detailcraft',
     this.isIdaCertified = false,
     this.isVerifiedHost = false,
+    this.isInsuranceVerified = false,
+    this.insurancePolicyNumber = '',
     this.certifications = const [],
     this.servicePackages = const [],
     this.teamMembers = const [],
@@ -126,6 +242,8 @@ class UserProfile {
     String? instagramHandle,
     bool? isIdaCertified,
     bool? isVerifiedHost,
+    bool? isInsuranceVerified,
+    String? insurancePolicyNumber,
     List<UserCertification>? certifications,
     List<ServicePackage>? servicePackages,
     List<TeamMember>? teamMembers,
@@ -155,6 +273,8 @@ class UserProfile {
       instagramHandle: instagramHandle ?? this.instagramHandle,
       isIdaCertified: isIdaCertified ?? this.isIdaCertified,
       isVerifiedHost: isVerifiedHost ?? this.isVerifiedHost,
+      isInsuranceVerified: isInsuranceVerified ?? this.isInsuranceVerified,
+      insurancePolicyNumber: insurancePolicyNumber ?? this.insurancePolicyNumber,
       certifications: certifications ?? this.certifications,
       servicePackages: servicePackages ?? this.servicePackages,
       teamMembers: teamMembers ?? this.teamMembers,
@@ -187,6 +307,8 @@ class UserProfile {
       'instagramHandle': instagramHandle,
       'isIdaCertified': isIdaCertified,
       'isVerifiedHost': isVerifiedHost,
+      'is_insurance_verified': isInsuranceVerified,
+      'insurance_policy_number': insurancePolicyNumber,
       'certifications': certifications.map((c) => c.toJson()).toList(),
       'servicePackages': servicePackages.map((s) => s.toJson()).toList(),
       'teamMembers': teamMembers.map((t) => t.toJson()).toList(),
@@ -202,9 +324,19 @@ class UserProfile {
   }
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
+    final roleStr = json['role'] as String?;
+    UserRole parsedRole = UserRole.client;
+    if (roleStr == 'superAdmin' || roleStr == 'super_admin') {
+      parsedRole = UserRole.superAdmin;
+    } else if (roleStr == 'supportAgent' || roleStr == 'support_agent') {
+      parsedRole = UserRole.supportAgent;
+    } else if (roleStr == 'detailer') {
+      parsedRole = UserRole.detailer;
+    }
+
     return UserProfile(
       id: json['id'] as String? ?? 'usr_you',
-      role: (json['role'] as String?) == 'detailer' ? UserRole.detailer : UserRole.client,
+      role: parsedRole,
       username: json['username'] as String? ?? 'user',
       displayName: json['displayName'] as String? ?? 'Vehicle Owner',
       businessName: json['businessName'] as String? ?? 'My Detailing Studio',
@@ -219,6 +351,8 @@ class UserProfile {
       instagramHandle: json['instagramHandle'] as String? ?? '@detailcraft',
       isIdaCertified: json['isIdaCertified'] as bool? ?? false,
       isVerifiedHost: json['isVerifiedHost'] as bool? ?? false,
+      isInsuranceVerified: json['is_insurance_verified'] as bool? ?? false,
+      insurancePolicyNumber: json['insurance_policy_number'] as String? ?? '',
       certifications: (json['certifications'] as List<dynamic>?)
               ?.map((c) => UserCertification.fromJson(c as Map<String, dynamic>))
               .toList() ??
