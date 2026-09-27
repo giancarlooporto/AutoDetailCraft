@@ -655,8 +655,8 @@ class JobRepository extends ChangeNotifier {
   final List<StaffMember> _staffMembers = [
     StaffMember(
       id: 'staff_founder',
-      username: 'giancarlooporto',
-      email: 'founder@autodetailcraft.com',
+      username: 'platform_owner',
+      email: 'owner@autodetailcraft.com',
       role: UserRole.superAdmin,
       isActive: true,
       createdAt: DateTime.now().subtract(const Duration(days: 30)),

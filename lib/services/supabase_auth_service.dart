@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_profile.dart';
-import '../core/constants/app_constants.dart';
 import 'mock_data_service.dart';
 import 'supabase_service.dart';
 import 'supabase_db_service.dart';
@@ -106,28 +105,17 @@ class SupabaseAuthService {
         return (success: false, error: 'User not found.', profile: null);
       }
 
-      final isOwner = AppConstants.isSuperAdminEmail(email);
-
       // 1. Query SupabaseDbService.fetchUserProfile(user.id) FIRST on sign-in before falling back
       final cloudProfile = await SupabaseDbService.fetchUserProfile(user.id);
       if (cloudProfile != null) {
-        final resolvedProfile = isOwner && cloudProfile.role != UserRole.superAdmin
-            ? cloudProfile.copyWith(role: UserRole.superAdmin)
-            : cloudProfile;
-        if (isOwner && cloudProfile.role != UserRole.superAdmin) {
-          SupabaseDbService.saveUserProfile(resolvedProfile);
-        }
-        await LocalStorageService.saveCurrentUser(resolvedProfile);
-        return (success: true, error: null, profile: resolvedProfile);
+        await LocalStorageService.saveCurrentUser(cloudProfile);
+        return (success: true, error: null, profile: cloudProfile);
       }
 
       // 2. Check if we have the user's saved garage, team, bio, location, etc. in local storage
       final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
       if (existingLocalProfile != null) {
-        final resolvedProfile = isOwner && existingLocalProfile.role != UserRole.superAdmin
-            ? existingLocalProfile.copyWith(role: UserRole.superAdmin)
-            : existingLocalProfile;
-        return (success: true, error: null, profile: resolvedProfile);
+        return (success: true, error: null, profile: existingLocalProfile);
       }
 
       final displayName = (user.userMetadata?['display_name'] as String?) ?? email.split('@').first;
@@ -135,7 +123,7 @@ class SupabaseAuthService {
 
       final profile = UserProfile(
         id: user.id,
-        role: isOwner ? UserRole.superAdmin : UserRole.client,
+        role: UserRole.client,
         username: email.split('@').first,
         displayName: displayName,
         businessName: '$displayName Detailing Studio',
@@ -148,10 +136,6 @@ class SupabaseAuthService {
         myGarage: const [],
         teamMembers: const [],
       );
-
-      if (isOwner) {
-        SupabaseDbService.saveUserProfile(profile);
-      }
 
       return (success: true, error: null, profile: profile);
     } on AuthException catch (e) {
