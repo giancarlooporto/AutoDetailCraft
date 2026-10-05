@@ -2368,5 +2368,93 @@ void main() {
 
     debugNetworkImageHttpClientProvider = null;
   });
+
+  testWidgets('Detailer Workbench mixes hardware & chemical ingredients in recipe stages and supports chemical Full/Half/Empty status', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final repository = JobRepository();
+    repository.isLoggedIn = true;
+    if (repository.currentUser.role != UserRole.detailer) {
+      repository.toggleHostMode();
+    }
+
+    tester.view.physicalSize = const Size(1200, 1600);
+    tester.view.devicePixelRatio = 1.0;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: DetailerWorkbenchView(repository: repository),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // 1. Go to Inventory -> CHEMICALS
+    await tester.tap(find.text('Inventory'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('CHEMICALS'));
+    await tester.pumpAndSettle();
+
+    // Verify Chemical statuses: Full and Half
+    expect(find.text('Full'), findsWidgets);
+    expect(find.text('Half'), findsWidgets);
+
+    // Open [EDIT] on first chemical
+    await tester.tap(find.widgetWithText(ElevatedButton, '[EDIT]').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit CHEMICALS'), findsOneWidget);
+    expect(find.text('Notes'), findsOneWidget);
+    // Dilution specs should be removed
+    expect(find.text('Dilution Specs'), findsNothing);
+
+    // Cancel chemical modal
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    // 2. Go to RECIPE category
+    await tester.tap(find.text('RECIPE'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('RECIPE INVENTORY'), findsOneWidget);
+    expect(find.text('German Ceramic Clear 2-Stage Formula'), findsOneWidget);
+    expect(find.textContaining('Formula Steps'), findsWidgets);
+
+    // Open [EDIT] on recipe
+    await tester.tap(find.widgetWithText(ElevatedButton, '[EDIT]').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit RECIPE'), findsOneWidget);
+    expect(find.text('Formula / Recipe Name *'), findsOneWidget);
+    expect(find.text('Notes'), findsOneWidget);
+
+    // Redundant fields removed from Recipe modal
+    expect(find.text('Brand / Manufacturer'), findsNothing);
+    expect(find.text('Subcategory / Type'), findsNothing);
+    expect(find.text('Studio Location / Wall Bay'), findsNothing);
+
+    // Open step editor to add step
+    await tester.tap(find.text('+ Add Step'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add Formula Step'), findsOneWidget);
+    expect(find.text('Machine / Tool (from Hardware)'), findsOneWidget);
+    expect(find.text('Chemical / Product (from Chemicals)'), findsOneWidget);
+
+    // Close step editor & close recipe dialog
+    await tester.tap(find.text('Cancel').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    debugNetworkImageHttpClientProvider = null;
+  });
 }
 

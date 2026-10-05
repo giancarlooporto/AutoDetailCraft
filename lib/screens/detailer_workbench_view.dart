@@ -144,9 +144,19 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         InventoryCategory cat = InventoryCategory.hardware;
         if (_inventoryCategoryFilter == 'CHEMICALS') cat = InventoryCategory.chemicals;
         if (_inventoryCategoryFilter == 'RECIPE') cat = InventoryCategory.recipe;
+        final hardwareOptions = widget.repository.inventoryItems
+            .where((i) => i.category == InventoryCategory.hardware)
+            .map((i) => i.name)
+            .toList();
+        final chemicalOptions = widget.repository.inventoryItems
+            .where((i) => i.category == InventoryCategory.chemicals)
+            .map((i) => i.name)
+            .toList();
         InventoryItemEditorDialog.show(
           context,
           initialCategory: cat,
+          hardwareOptions: hardwareOptions,
+          chemicalOptions: chemicalOptions,
           onSave: (newItem) {
             widget.repository.addInventoryItem(newItem);
             setState(() {
@@ -202,9 +212,19 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           (i) => i.id == _selectedInventoryId,
           orElse: () => inventory.first,
         );
+        final hardwareOptions = widget.repository.inventoryItems
+            .where((i) => i.category == InventoryCategory.hardware)
+            .map((i) => i.name)
+            .toList();
+        final chemicalOptions = widget.repository.inventoryItems
+            .where((i) => i.category == InventoryCategory.chemicals)
+            .map((i) => i.name)
+            .toList();
         InventoryItemEditorDialog.show(
           context,
           itemToEdit: item,
+          hardwareOptions: hardwareOptions,
+          chemicalOptions: chemicalOptions,
           onSave: (updated) => widget.repository.updateInventoryItem(updated),
           onDelete: () {
             widget.repository.removeInventoryItem(item.id);
@@ -1689,41 +1709,61 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                       ],
                     ),
                     const SizedBox(height: 3),
-                    Text(
-                      '${item.brand.isNotEmpty ? "${item.brand} • " : ""}${item.subCategory}',
-                      style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
-                    ),
+                    if (item.category != InventoryCategory.recipe) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        '${item.brand.isNotEmpty ? "${item.brand} • " : ""}${item.subCategory}',
+                        style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
+                      ),
+                    ],
                     if (item.category == InventoryCategory.hardware && item.notes != null && item.notes!.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
                         item.notes!,
                         style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted),
                       ),
-                    ] else if (item.category == InventoryCategory.chemicals) ...[
+                    ] else if (item.category == InventoryCategory.chemicals && item.notes != null && item.notes!.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 2,
-                        children: [
-                          if (item.dilutionSpecs.isNotEmpty)
-                            Text('Dilution: ${item.dilutionSpecs}', style: const TextStyle(fontSize: 10.5, color: AppTheme.primary)),
-                          if (item.cureTimeOrFlashTime != null)
-                            Text('Flash: ${item.cureTimeOrFlashTime}', style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted)),
-                          if (item.specs['Stock Volume'] != null)
-                            Text('Stock: ${item.specs['Stock Volume']}', style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted)),
-                        ],
+                      Text(
+                        item.notes!,
+                        style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted),
                       ),
                     ] else if (item.category == InventoryCategory.recipe) ...[
                       const SizedBox(height: 4),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 2,
-                        children: [
-                          Text('${item.recipeStages.length} Stages', style: const TextStyle(fontSize: 10.5, color: AppTheme.primary, fontWeight: FontWeight.bold)),
-                          if (item.specs['Target Hardness'] != null)
-                            Text('Target: ${item.specs['Target Hardness']}', style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted)),
-                        ],
+                      Text(
+                        '${item.recipeStages.length} Formula Steps',
+                        style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.bold),
                       ),
+                      if (item.recipeStages.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            for (int i = 0; i < item.recipeStages.length; i++) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.surfaceLight,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: AppTheme.border),
+                                ),
+                                child: Text(
+                                  '#${i + 1} ${item.recipeStages[i].stageName}: ${item.recipeStages[i].chemical}${item.recipeStages[i].machine.isNotEmpty ? " + ${item.recipeStages[i].machine}" : ""}',
+                                  style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                      if (item.notes != null && item.notes!.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          item.notes!,
+                          style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted),
+                        ),
+                      ],
                     ],
                   ],
                 ),
@@ -1734,8 +1774,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           final controlsWidget = Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildStatusDropdown(item),
-              const SizedBox(width: 8),
+              if (item.category != InventoryCategory.recipe) ...[
+                _buildStatusDropdown(item),
+                const SizedBox(width: 8),
+              ],
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.surfaceLight,
@@ -1772,7 +1814,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _buildStatusDropdown(item),
+                    if (item.category != InventoryCategory.recipe)
+                      _buildStatusDropdown(item)
+                    else
+                      const SizedBox.shrink(),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1820,6 +1865,75 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   }
 
   Widget _buildStatusDropdown(InventoryItem item) {
+    if (item.category == InventoryCategory.recipe) {
+      return const SizedBox.shrink();
+    }
+
+    if (item.category == InventoryCategory.chemicals) {
+      final currentStatus = const ['Full', 'Half', 'Empty'].contains(item.status)
+          ? item.status
+          : 'Full';
+
+      Color getChemicalStatusColor(String status) {
+        switch (status) {
+          case 'Full':
+            return Colors.greenAccent;
+          case 'Half':
+            return Colors.orangeAccent;
+          case 'Empty':
+            return Colors.redAccent;
+          default:
+            return AppTheme.textMuted;
+        }
+      }
+
+      final color = getChemicalStatusColor(currentStatus);
+
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: color.withAlpha(25),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withAlpha(120), width: 1),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: currentStatus,
+            isDense: true,
+            dropdownColor: AppTheme.surface,
+            icon: Icon(Icons.arrow_drop_down_rounded, size: 18, color: color),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+            onChanged: (newStatus) {
+              if (newStatus != null && newStatus != item.status) {
+                final updated = item.copyWith(status: newStatus);
+                widget.repository.updateInventoryItem(updated);
+                setState(() {});
+              }
+            },
+            items: const [
+              DropdownMenuItem(
+                value: 'Full',
+                child: Text('Full', style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 11)),
+              ),
+              DropdownMenuItem(
+                value: 'Half',
+                child: Text('Half', style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 11)),
+              ),
+              DropdownMenuItem(
+                value: 'Empty',
+                child: Text('Empty', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 11)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Hardware status: In Service, Repair, Optimal, Retired
     final currentStatus = const ['In Service', 'Repair', 'Optimal', 'Retired'].contains(item.status)
         ? item.status
         : 'In Service';
@@ -1889,9 +2003,19 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   }
 
   void _openEditInventoryItem(InventoryItem item) {
+    final hardwareOptions = widget.repository.inventoryItems
+        .where((i) => i.category == InventoryCategory.hardware)
+        .map((i) => i.name)
+        .toList();
+    final chemicalOptions = widget.repository.inventoryItems
+        .where((i) => i.category == InventoryCategory.chemicals)
+        .map((i) => i.name)
+        .toList();
     InventoryItemEditorDialog.show(
       context,
       itemToEdit: item,
+      hardwareOptions: hardwareOptions,
+      chemicalOptions: chemicalOptions,
       onSave: (updated) => widget.repository.updateInventoryItem(updated),
       onDelete: () => widget.repository.removeInventoryItem(item.id),
     );
