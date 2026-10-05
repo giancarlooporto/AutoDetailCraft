@@ -48,16 +48,8 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
   late TextEditingController _nameController;
   late TextEditingController _brandController;
   late TextEditingController _subCategoryController;
-  late TextEditingController _statusController;
+  String _status = 'In Service';
   late TextEditingController _locationController;
-
-  // Hardware specific
-  late TextEditingController _maintenanceController;
-  late TextEditingController _assignedPadChemicalController;
-  late TextEditingController _throwController;
-  late TextEditingController _backingPlateController;
-  late TextEditingController _opmController;
-  late TextEditingController _powerController;
 
   // Chemical specific
   late TextEditingController _dilutionSpecsController;
@@ -67,6 +59,7 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
   late TextEditingController _glossLevelController;
   late TextEditingController _stockController;
   late TextEditingController _safetyNotesController;
+  late TextEditingController _assignedPadChemicalController;
 
   // Recipe specific
   late TextEditingController _targetHardnessController;
@@ -91,16 +84,9 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
               ? 'Heavy Cut Compound'
               : 'Multi-Step Paint Correction'),
     );
-    _statusController = TextEditingController(text: item?.status ?? 'In Service');
+    final rawStatus = item?.status ?? 'In Service';
+    _status = const ['In Service', 'Repair', 'Optimal', 'Retired'].contains(rawStatus) ? rawStatus : 'In Service';
     _locationController = TextEditingController(text: item?.location ?? 'Studio Bay 1');
-
-    // Hardware
-    _maintenanceController = TextEditingController(text: item?.maintenance ?? '');
-    _assignedPadChemicalController = TextEditingController(text: item?.assignedPadOrChemical ?? '');
-    _throwController = TextEditingController(text: item?.specs['Orbit / Throw'] ?? item?.specs['Throw'] ?? '15 mm');
-    _backingPlateController = TextEditingController(text: item?.specs['Backing Plate'] ?? '5 inch (125mm)');
-    _opmController = TextEditingController(text: item?.specs['OPM Range'] ?? item?.specs['Speed'] ?? '3,000 - 5,200 OPM');
-    _powerController = TextEditingController(text: item?.specs['Power'] ?? '500 Watts');
 
     // Chemical
     _dilutionSpecsController = TextEditingController(text: item?.dilutionSpecs ?? 'Ready to Use (Neat 1:0)');
@@ -110,6 +96,7 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
     _glossLevelController = TextEditingController(text: item?.specs['Gloss Level'] ?? '5.0 / 10');
     _stockController = TextEditingController(text: item?.specs['Stock Volume'] ?? item?.specs['Stock Level'] ?? '1,000 ml (80%)');
     _safetyNotesController = TextEditingController(text: item?.safetyNotes ?? 'Nitrile gloves & safety glasses recommended.');
+    _assignedPadChemicalController = TextEditingController(text: item?.assignedPadOrChemical ?? 'Microfiber Cutting Pad');
 
     // Recipe
     _targetHardnessController = TextEditingController(text: item?.specs['Target Hardness'] ?? 'Hard Ceramic Clear (Porsche / BMW)');
@@ -145,14 +132,7 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
     _nameController.dispose();
     _brandController.dispose();
     _subCategoryController.dispose();
-    _statusController.dispose();
     _locationController.dispose();
-    _maintenanceController.dispose();
-    _assignedPadChemicalController.dispose();
-    _throwController.dispose();
-    _backingPlateController.dispose();
-    _opmController.dispose();
-    _powerController.dispose();
     _dilutionSpecsController.dispose();
     _dilutionRatioController.dispose();
     _flashTimeController.dispose();
@@ -160,6 +140,7 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
     _glossLevelController.dispose();
     _stockController.dispose();
     _safetyNotesController.dispose();
+    _assignedPadChemicalController.dispose();
     _targetHardnessController.dispose();
     _expectedCutController.dispose();
     _laborTimeController.dispose();
@@ -171,16 +152,11 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
     if (!_formKey.currentState!.validate()) return;
 
     final Map<String, String> specs = Map<String, String>.from(widget.itemToEdit?.specs ?? {});
-    if (_category == InventoryCategory.hardware) {
-      if (_throwController.text.isNotEmpty) specs['Orbit / Throw'] = _throwController.text.trim();
-      if (_backingPlateController.text.isNotEmpty) specs['Backing Plate'] = _backingPlateController.text.trim();
-      if (_opmController.text.isNotEmpty) specs['OPM Range'] = _opmController.text.trim();
-      if (_powerController.text.isNotEmpty) specs['Power'] = _powerController.text.trim();
-    } else if (_category == InventoryCategory.chemicals) {
+    if (_category == InventoryCategory.chemicals) {
       if (_cutLevelController.text.isNotEmpty) specs['Cut Level'] = _cutLevelController.text.trim();
       if (_glossLevelController.text.isNotEmpty) specs['Gloss Level'] = _glossLevelController.text.trim();
       if (_stockController.text.isNotEmpty) specs['Stock Volume'] = _stockController.text.trim();
-    } else {
+    } else if (_category == InventoryCategory.recipe) {
       if (_targetHardnessController.text.isNotEmpty) specs['Target Hardness'] = _targetHardnessController.text.trim();
       if (_expectedCutController.text.isNotEmpty) specs['Target Defect Elimination'] = _expectedCutController.text.trim();
       if (_laborTimeController.text.isNotEmpty) specs['Estimated Labor Time'] = _laborTimeController.text.trim();
@@ -193,14 +169,16 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
       brand: _brandController.text.trim(),
       subCategory: _subCategoryController.text.trim(),
       specs: specs,
-      maintenance: _maintenanceController.text.trim(),
-      assignedPadOrChemical: _assignedPadChemicalController.text.trim(),
+      maintenance: widget.itemToEdit?.maintenance ?? '',
+      assignedPadOrChemical: _category == InventoryCategory.chemicals
+          ? _assignedPadChemicalController.text.trim()
+          : (widget.itemToEdit?.assignedPadOrChemical ?? ''),
       dilutionSpecs: _dilutionSpecsController.text.trim(),
       dilutionRatio: _dilutionRatioController.text.trim().isNotEmpty ? _dilutionRatioController.text.trim() : null,
       cureTimeOrFlashTime: _flashTimeController.text.trim().isNotEmpty ? _flashTimeController.text.trim() : null,
       safetyNotes: _safetyNotesController.text.trim().isNotEmpty ? _safetyNotesController.text.trim() : null,
       recipeStages: _category == InventoryCategory.recipe ? _recipeStages : const [],
-      status: _statusController.text.trim().isNotEmpty ? _statusController.text.trim() : 'In Service',
+      status: _status,
       location: _locationController.text.trim(),
       notes: _notesController.text.trim().isNotEmpty ? _notesController.text.trim() : null,
     );
@@ -475,12 +453,19 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
                         Row(
                           children: [
                             Expanded(
-                              child: TextFormField(
-                                controller: _statusController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Status Badge',
-                                  hintText: 'e.g. In Service, Optimal, Ready',
-                                ),
+                              child: DropdownButtonFormField<String>(
+                                initialValue: _status,
+                                decoration: const InputDecoration(labelText: 'Status'),
+                                dropdownColor: AppTheme.surface,
+                                items: const [
+                                  DropdownMenuItem(value: 'In Service', child: Text('In Service', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold))),
+                                  DropdownMenuItem(value: 'Repair', child: Text('Repair', style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold))),
+                                  DropdownMenuItem(value: 'Optimal', child: Text('Optimal', style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold))),
+                                  DropdownMenuItem(value: 'Retired', child: Text('Retired', style: TextStyle(color: AppTheme.textMuted, fontWeight: FontWeight.bold))),
+                                ],
+                                onChanged: (val) {
+                                  if (val != null) setState(() => _status = val);
+                                },
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -489,7 +474,7 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
                                 controller: _locationController,
                                 decoration: const InputDecoration(
                                   labelText: 'Studio Location / Wall Bay',
-                                  hintText: 'e.g. Bay 1 Tool Wall, Rack A',
+                                  hintText: 'e.g. Bay 1 Tool Wall, Wash Bay Alpha',
                                 ),
                               ),
                             ),
@@ -500,72 +485,16 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
                         // CATEGORY SPECIFIC FIELDS
                         if (_category == InventoryCategory.hardware) ...[
                           const Text(
-                            'HARDWARE SPECIFICATIONS & MAINTENANCE',
+                            'HARDWARE NOTES & USAGE',
                             style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
                           ),
                           const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _throwController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Orbit / Throw',
-                                    hintText: 'e.g. 15 mm',
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _backingPlateController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Backing Plate',
-                                    hintText: 'e.g. 5 in (125mm)',
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _opmController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'OPM / Speed Range',
-                                    hintText: 'e.g. 3000 - 5200 OPM',
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _powerController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Power Consumption',
-                                    hintText: 'e.g. 500 Watts',
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
                           TextFormField(
-                            controller: _assignedPadChemicalController,
+                            controller: _notesController,
+                            maxLines: 3,
                             decoration: const InputDecoration(
-                              labelText: 'Assigned Pad & Chemical Match',
-                              hintText: 'e.g. Lake Country HDO Microfiber + Koch Chemie H9.02',
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _maintenanceController,
-                            maxLines: 2,
-                            decoration: const InputDecoration(
-                              labelText: 'Maintenance Schedule & Service Log',
-                              hintText: 'e.g. Carbon brushes inspected @ 150 hrs. Backing plate bearing lubricated monthly.',
+                              labelText: 'Equipment Notes & Purpose',
+                              hintText: 'e.g. Dual grit guard inserts for two-bucket wash, or primary 15mm DA polisher',
                             ),
                           ),
                         ] else if (_category == InventoryCategory.chemicals) ...[

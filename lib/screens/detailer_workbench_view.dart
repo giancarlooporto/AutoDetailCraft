@@ -734,33 +734,30 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
           // Category Selector (When INVENTORY selected: HARDWARE, CHEMICALS, RECIPE)
           if (_selectedHub == StudioHubSection.inventory) ...[
-            Container(
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-              decoration: const BoxDecoration(
-                color: AppTheme.surfaceLight,
-                border: Border(bottom: BorderSide(color: AppTheme.border)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(12),
                 children: [
                   _buildInventoryCategoryRow(
                     category: 'HARDWARE',
                     label: 'HARDWARE',
-                    subtitle: 'Polishers, pads, lights & meters',
+                    subtitle: 'General equipment, mitts, buckets, polishers',
                     icon: Icons.handyman_rounded,
                     count: widget.repository.hardwareItems.length,
                     isSelected: _inventoryCategoryFilter == 'HARDWARE',
+                    isMobile: isMobile,
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 10),
                   _buildInventoryCategoryRow(
                     category: 'CHEMICALS',
                     label: 'CHEMICALS',
-                    subtitle: 'Compounds, coatings, prep sprays',
+                    subtitle: 'Compounds, coatings, prep sprays, APC',
                     icon: Icons.science_rounded,
                     count: widget.repository.chemicalItems.length,
                     isSelected: _inventoryCategoryFilter == 'CHEMICALS',
+                    isMobile: isMobile,
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 10),
                   _buildInventoryCategoryRow(
                     category: 'RECIPE',
                     label: 'RECIPE',
@@ -768,16 +765,17 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     icon: Icons.auto_stories_rounded,
                     count: widget.repository.recipeItems.length,
                     isSelected: _inventoryCategoryFilter == 'RECIPE',
+                    isMobile: isMobile,
                   ),
                 ],
               ),
             ),
+          ] else ...[
+            // Item List Body for other hub sections
+            Expanded(
+              child: _buildPane2Content(context, isMobile: isMobile),
+            ),
           ],
-
-          // Item List Body
-          Expanded(
-            child: _buildPane2Content(context, isMobile: isMobile),
-          ),
 
           // Bottom: [ + ADD ] button to add new equipment, chemical, formula, team, or service
           if (_selectedHub != StudioHubSection.savedRecipes) ...[
@@ -831,11 +829,12 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     required IconData icon,
     required int count,
     required bool isSelected,
+    required bool isMobile,
   }) {
     return Container(
       decoration: BoxDecoration(
         color: isSelected ? AppTheme.primary.withAlpha(25) : AppTheme.surface,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: isSelected ? AppTheme.primary : AppTheme.border,
           width: isSelected ? 1.5 : 1,
@@ -844,40 +843,32 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           onTap: () {
             setState(() {
               _inventoryCategoryFilter = category;
-              List<InventoryItem> filtered = [];
-              if (category == 'HARDWARE') {
-                filtered = widget.repository.hardwareItems;
-              } else if (category == 'CHEMICALS') {
-                filtered = widget.repository.chemicalItems;
-              } else if (category == 'RECIPE') {
-                filtered = widget.repository.recipeItems;
-              }
-              if (filtered.isNotEmpty) {
-                _selectedInventoryId = filtered.first.id;
+              if (isMobile) {
+                _mobileStep = 2;
               }
             });
           },
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: isSelected ? AppTheme.primary : AppTheme.surfaceLight,
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
                     icon,
-                    size: 15,
+                    size: 18,
                     color: isSelected ? Colors.black : AppTheme.textSecondary,
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -886,12 +877,13 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                       Text(
                         label,
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 12.5,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 0.5,
                           color: isSelected ? Colors.white : AppTheme.textPrimary,
                         ),
                       ),
+                      const SizedBox(height: 2),
                       Text(
                         subtitle,
                         style: const TextStyle(
@@ -905,7 +897,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: isSelected ? AppTheme.primary : AppTheme.surfaceLight,
                     borderRadius: BorderRadius.circular(10),
@@ -919,6 +911,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     ),
                   ),
                 ),
+                if (isMobile) ...[
+                  const SizedBox(width: 6),
+                  const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: AppTheme.textMuted),
+                ],
               ],
             ),
           ),
@@ -930,7 +926,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   Widget _buildPane2Content(BuildContext context, {bool isMobile = false}) {
     switch (_selectedHub) {
       case StudioHubSection.inventory:
-        return _buildInventoryList(isMobile: isMobile);
+        return const SizedBox.shrink();
       case StudioHubSection.teams:
         return _buildTeamsList(isMobile: isMobile);
       case StudioHubSection.portfolio:
@@ -940,146 +936,6 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       case StudioHubSection.savedRecipes:
         return _buildSavedRecipesList(isMobile: isMobile);
     }
-  }
-
-  // --- INVENTORY LIST ---
-  Widget _buildInventoryList({bool isMobile = false}) {
-    List<InventoryItem> items = widget.repository.inventoryItems;
-    if (_inventoryCategoryFilter == 'HARDWARE') {
-      items = items.where((i) => i.category == InventoryCategory.hardware).toList();
-    } else if (_inventoryCategoryFilter == 'CHEMICALS') {
-      items = items.where((i) => i.category == InventoryCategory.chemicals).toList();
-    } else if (_inventoryCategoryFilter == 'RECIPE') {
-      items = items.where((i) => i.category == InventoryCategory.recipe).toList();
-    }
-
-    if (items.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.inventory_2_outlined, size: 36, color: AppTheme.textMuted),
-              SizedBox(height: 10),
-              Text('No Items in This Category', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-              SizedBox(height: 6),
-              Text('Use "[ + ADD ]" below to record new hardware, chemicals, or formula steps.', textAlign: TextAlign.center, style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(10),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
-        final isSelected = item.id == _selectedInventoryId;
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          decoration: BoxDecoration(
-            color: isSelected ? AppTheme.primary.withAlpha(20) : AppTheme.surface,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: isSelected ? AppTheme.primary : AppTheme.border,
-              width: isSelected ? 1.5 : 1,
-            ),
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: ListTile(
-              dense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: item.category == InventoryCategory.hardware
-                      ? Colors.blueAccent.withAlpha(30)
-                      : item.category == InventoryCategory.chemicals
-                          ? Colors.tealAccent.withAlpha(30)
-                          : Colors.purpleAccent.withAlpha(30),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  item.category == InventoryCategory.hardware
-                      ? Icons.handyman_rounded
-                      : item.category == InventoryCategory.chemicals
-                          ? Icons.science_rounded
-                          : Icons.auto_stories_rounded,
-                  size: 16,
-                  color: item.category == InventoryCategory.hardware
-                      ? Colors.blueAccent
-                      : item.category == InventoryCategory.chemicals
-                          ? Colors.tealAccent
-                          : Colors.purpleAccent,
-                ),
-              ),
-              title: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      item.name,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withAlpha(25),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      item.status,
-                      style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                    ),
-                  ),
-                ],
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 2),
-                  Text(
-                    '${item.brand.isNotEmpty ? "${item.brand} • " : ""}${item.subCategory}',
-                    style: const TextStyle(fontSize: 10.5, color: AppTheme.textSecondary),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (item.category == InventoryCategory.hardware && item.assignedPadOrChemical.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      item.assignedPadOrChemical,
-                      style: const TextStyle(fontSize: 9.5, color: AppTheme.textMuted),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ] else if (item.category == InventoryCategory.chemicals && item.dilutionSpecs.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      item.dilutionSpecs,
-                      style: const TextStyle(fontSize: 9.5, color: AppTheme.textMuted),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
-              onTap: () {
-                setState(() {
-                  _selectedInventoryId = item.id;
-                  if (isMobile) _mobileStep = 2;
-                });
-              },
-            ),
-          ),
-        );
-      },
-    );
   }
 
   // --- TEAMS LIST ---
@@ -1586,7 +1442,9 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 ],
                 Expanded(
                   child: Text(
-                    '${_selectedHub.tag} INSPECTOR',
+                    _selectedHub == StudioHubSection.inventory
+                        ? '$_inventoryCategoryFilter INVENTORY'
+                        : '${_selectedHub.tag} INSPECTOR',
                     style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
@@ -1622,8 +1480,17 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   const SizedBox(width: 8),
                 ],
 
-                // Top Right: [EDIT] button and Delete action
-                if (_hasActiveItemToInspect() && _selectedHub != StudioHubSection.savedRecipes) ...[
+                // Action controls for Inventory vs other hubs
+                if (_selectedHub == StudioHubSection.inventory) ...[
+                  if (_inventoryCategoryFilter == 'CHEMICALS') ...[
+                    IconButton(
+                      icon: const Icon(Icons.calculate_outlined, size: 18, color: AppTheme.primary),
+                      tooltip: 'Dilution Calculator',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => showDialog(context: context, builder: (_) => const DilutionDialog()),
+                    ),
+                  ],
+                ] else if (_hasActiveItemToInspect() && _selectedHub != StudioHubSection.savedRecipes) ...[
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.surfaceLight,
@@ -1653,10 +1520,12 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
           // Inspector Canvas Body
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: _buildInspectorBody(context),
-            ),
+            child: _selectedHub == StudioHubSection.inventory
+                ? _buildInventoryItemsPane3(isMobile: isMobile)
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: _buildInspectorBody(context),
+                  ),
           ),
         ],
       ),
@@ -1666,7 +1535,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   Widget _buildInspectorBody(BuildContext context) {
     switch (_selectedHub) {
       case StudioHubSection.inventory:
-        return _buildInventoryInspector(context);
+        return const SizedBox.shrink();
       case StudioHubSection.teams:
         return _buildTeamInspector(context);
       case StudioHubSection.portfolio:
@@ -1678,284 +1547,396 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     }
   }
 
-  // --- INVENTORY INSPECTOR ---
-  Widget _buildInventoryInspector(BuildContext context) {
-    final items = widget.repository.inventoryItems;
-    if (items.isEmpty) {
-      return const Center(child: Text('No inventory items to inspect. Click "[ + ADD ]" to create.'));
+  // --- INVENTORY ITEMS (PANE 3) ---
+  Widget _buildInventoryItemsPane3({bool isMobile = false}) {
+    List<InventoryItem> items = widget.repository.inventoryItems;
+    if (_inventoryCategoryFilter == 'HARDWARE') {
+      items = items.where((i) => i.category == InventoryCategory.hardware).toList();
+    } else if (_inventoryCategoryFilter == 'CHEMICALS') {
+      items = items.where((i) => i.category == InventoryCategory.chemicals).toList();
+    } else if (_inventoryCategoryFilter == 'RECIPE') {
+      items = items.where((i) => i.category == InventoryCategory.recipe).toList();
     }
 
-    final item = items.firstWhere(
-      (i) => i.id == _selectedInventoryId,
-      orElse: () => items.first,
-    );
+    if (items.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                _inventoryCategoryFilter == 'HARDWARE'
+                    ? Icons.handyman_outlined
+                    : _inventoryCategoryFilter == 'CHEMICALS'
+                        ? Icons.science_outlined
+                        : Icons.auto_stories_outlined,
+                size: 40,
+                color: AppTheme.textMuted,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'No $_inventoryCategoryFilter Items Recorded',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Use "[ + ADD ]" to record new $_inventoryCategoryFilter for your studio.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.black,
+                ),
+                icon: const Icon(Icons.add_rounded, size: 16),
+                label: const Text('[ + ADD ]', style: TextStyle(fontWeight: FontWeight.bold)),
+                onPressed: () => _openAdd(isMobile: isMobile),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Title & Badges
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withAlpha(30),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.primary.withAlpha(80)),
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
+        return _buildInventoryItemRow(item, isMobile: isMobile);
+      },
+    );
+  }
+
+  Widget _buildInventoryItemRow(InventoryItem item, {bool isMobile = false}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth < 620;
+
+          final contentWidget = Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: item.category == InventoryCategory.hardware
+                      ? Colors.blueAccent.withAlpha(30)
+                      : item.category == InventoryCategory.chemicals
+                          ? Colors.tealAccent.withAlpha(30)
+                          : Colors.purpleAccent.withAlpha(30),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  item.category == InventoryCategory.hardware
+                      ? Icons.handyman_rounded
+                      : item.category == InventoryCategory.chemicals
+                          ? Icons.science_rounded
+                          : Icons.auto_stories_rounded,
+                  size: 18,
+                  color: item.category == InventoryCategory.hardware
+                      ? Colors.blueAccent
+                      : item.category == InventoryCategory.chemicals
+                          ? Colors.tealAccent
+                          : Colors.purpleAccent,
+                ),
               ),
-              child: Icon(
-                item.category == InventoryCategory.hardware
-                    ? Icons.handyman_rounded
-                    : item.category == InventoryCategory.chemicals
-                        ? Icons.science_rounded
-                        : Icons.auto_stories_rounded,
-                color: AppTheme.primary,
-                size: 28,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.name,
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                  const SizedBox(height: 4),
-                  Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      if (item.brand.isNotEmpty) ...[
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
                         Text(
-                          item.brand,
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.primary),
+                          item.name,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: Colors.white),
                         ),
-                        const SizedBox(width: 6),
-                        const Text('•', style: TextStyle(color: AppTheme.textMuted)),
-                        const SizedBox(width: 6),
+                        if (item.location.isNotEmpty) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: Colors.blueAccent.withAlpha(25),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.blueAccent.withAlpha(80)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.location_on_outlined, size: 10, color: Colors.blueAccent),
+                                const SizedBox(width: 3),
+                                Text(
+                                  item.location,
+                                  style: const TextStyle(fontSize: 9.5, color: Colors.blueAccent, fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${item.brand.isNotEmpty ? "${item.brand} • " : ""}${item.subCategory}',
+                      style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
+                    ),
+                    if (item.category == InventoryCategory.hardware && item.notes != null && item.notes!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
                       Text(
-                        item.subCategory,
-                        style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                        item.notes!,
+                        style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted),
+                      ),
+                    ] else if (item.category == InventoryCategory.chemicals) ...[
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 2,
+                        children: [
+                          if (item.dilutionSpecs.isNotEmpty)
+                            Text('Dilution: ${item.dilutionSpecs}', style: const TextStyle(fontSize: 10.5, color: AppTheme.primary)),
+                          if (item.cureTimeOrFlashTime != null)
+                            Text('Flash: ${item.cureTimeOrFlashTime}', style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted)),
+                          if (item.specs['Stock Volume'] != null)
+                            Text('Stock: ${item.specs['Stock Volume']}', style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted)),
+                        ],
+                      ),
+                    ] else if (item.category == InventoryCategory.recipe) ...[
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 2,
+                        children: [
+                          Text('${item.recipeStages.length} Stages', style: const TextStyle(fontSize: 10.5, color: AppTheme.primary, fontWeight: FontWeight.bold)),
+                          if (item.specs['Target Hardness'] != null)
+                            Text('Target: ${item.specs['Target Hardness']}', style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted)),
+                        ],
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: [
-                      _badge(item.status, Colors.greenAccent),
-                      if (item.location.isNotEmpty) _badge(item.location, Colors.blueAccent),
-                      _badge(item.category.label, Colors.purpleAccent),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
+              ),
+            ],
+          );
+
+          final controlsWidget = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildStatusDropdown(item),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.surfaceLight,
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: AppTheme.border),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.edit_outlined, size: 13, color: AppTheme.primary),
+                label: const Text('[EDIT]', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                onPressed: () => _openEditInventoryItem(item),
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
+                tooltip: 'Delete Item',
+                onPressed: () => _confirmDeleteInventoryItem(item),
+              ),
+            ],
+          );
+
+          if (isCompact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                contentWidget,
+                const SizedBox(height: 10),
+                const Divider(color: AppTheme.border, height: 1),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _buildStatusDropdown(item),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.surfaceLight,
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: AppTheme.border),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          icon: const Icon(Icons.edit_outlined, size: 13, color: AppTheme.primary),
+                          label: const Text('[EDIT]', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                          onPressed: () => _openEditInventoryItem(item),
+                        ),
+                        const SizedBox(width: 6),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
+                          tooltip: 'Delete Item',
+                          onPressed: () => _confirmDeleteInventoryItem(item),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: contentWidget),
+              const SizedBox(width: 12),
+              controlsWidget,
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildStatusDropdown(InventoryItem item) {
+    final currentStatus = const ['In Service', 'Repair', 'Optimal', 'Retired'].contains(item.status)
+        ? item.status
+        : 'In Service';
+
+    Color getStatusColor(String status) {
+      switch (status) {
+        case 'In Service':
+          return AppTheme.primary;
+        case 'Repair':
+          return Colors.orangeAccent;
+        case 'Optimal':
+          return Colors.greenAccent;
+        case 'Retired':
+        default:
+          return AppTheme.textMuted;
+      }
+    }
+
+    final color = getStatusColor(currentStatus);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withAlpha(25),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withAlpha(120), width: 1),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: currentStatus,
+          isDense: true,
+          dropdownColor: AppTheme.surface,
+          icon: Icon(Icons.arrow_drop_down_rounded, size: 18, color: color),
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+          onChanged: (newStatus) {
+            if (newStatus != null && newStatus != item.status) {
+              final updated = item.copyWith(status: newStatus);
+              widget.repository.updateInventoryItem(updated);
+              setState(() {});
+            }
+          },
+          items: const [
+            DropdownMenuItem(
+              value: 'In Service',
+              child: Text('In Service', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold, fontSize: 11)),
+            ),
+            DropdownMenuItem(
+              value: 'Repair',
+              child: Text('Repair', style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 11)),
+            ),
+            DropdownMenuItem(
+              value: 'Optimal',
+              child: Text('Optimal', style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 11)),
+            ),
+            DropdownMenuItem(
+              value: 'Retired',
+              child: Text('Retired', style: TextStyle(color: AppTheme.textMuted, fontWeight: FontWeight.bold, fontSize: 11)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openEditInventoryItem(InventoryItem item) {
+    InventoryItemEditorDialog.show(
+      context,
+      itemToEdit: item,
+      onSave: (updated) => widget.repository.updateInventoryItem(updated),
+      onDelete: () => widget.repository.removeInventoryItem(item.id),
+    );
+  }
+
+  void _confirmDeleteInventoryItem(InventoryItem item) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 22),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Confirm Deletion',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 20),
-        const Divider(color: AppTheme.border),
-        const SizedBox(height: 16),
-
-        // Specs Grid
-        if (item.specs.isNotEmpty) ...[
-          Text(
-            item.category == InventoryCategory.hardware
-                ? 'TECHNICAL HARDWARE SPECIFICATIONS'
-                : item.category == InventoryCategory.chemicals
-                    ? 'CHEMICAL CHARACTERISTICS'
-                    : 'FORMULA TARGETS & CLEAR HARDNESS',
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.8),
+        content: Text(
+          'Are you sure you want to remove "${item.name}"? This action cannot be undone.',
+          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              for (final entry in item.specs.entries) ...[
-                Container(
-                  width: 180,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surface,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(entry.key, style: const TextStyle(fontSize: 10, color: AppTheme.textMuted, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 4),
-                      Text(entry.value, style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 20),
-        ],
-
-        // Hardware Specific Sections
-        if (item.category == InventoryCategory.hardware) ...[
-          _buildInfoSection(
-            title: 'MAINTENANCE SCHEDULE & SERVICE LOG',
-            content: item.maintenance.isNotEmpty ? item.maintenance : 'Standard routine inspection performed.',
-            icon: Icons.build_circle_outlined,
-          ),
-          const SizedBox(height: 16),
-          _buildInfoSection(
-            title: 'ASSIGNED PAD & CHEMICAL PAIRING',
-            content: item.assignedPadOrChemical.isNotEmpty ? item.assignedPadOrChemical : 'None assigned yet.',
-            icon: Icons.layers_outlined,
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              widget.repository.removeInventoryItem(item.id);
+            },
+            child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
-
-        // Chemical Specific Sections
-        if (item.category == InventoryCategory.chemicals) ...[
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.primary.withAlpha(60)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: [
-                    const Text(
-                      'DILUTION SPECS & MIXING RATIO',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                    ),
-                    TextButton.icon(
-                      style: TextButton.styleFrom(
-                        foregroundColor: AppTheme.primary,
-                        padding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      icon: const Icon(Icons.calculate_outlined, size: 15),
-                      label: const Text('Open Dilution Calculator', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                      onPressed: () => showDialog(context: context, builder: (_) => const DilutionDialog()),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  item.dilutionSpecs.isNotEmpty ? item.dilutionSpecs : 'Neat (1:0)',
-                  style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w600),
-                ),
-                if (item.cureTimeOrFlashTime != null) ...[
-                  const SizedBox(height: 10),
-                  Text('Working & Flash Cycle: ${item.cureTimeOrFlashTime}', style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                ],
-              ],
-            ),
-          ),
-          if (item.assignedPadOrChemical.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _buildInfoSection(
-              title: 'RECOMMENDED APPLICATION PADS',
-              content: item.assignedPadOrChemical,
-              icon: Icons.brush_outlined,
-            ),
-          ],
-          if (item.safetyNotes != null) ...[
-            const SizedBox(height: 16),
-            _buildInfoSection(
-              title: 'SAFETY PPE & BAY HANDLING',
-              content: item.safetyNotes!,
-              icon: Icons.health_and_safety_outlined,
-              color: Colors.orangeAccent,
-            ),
-          ],
-        ],
-
-        // Recipe Specific Sections
-        if (item.category == InventoryCategory.recipe && item.recipeStages.isNotEmpty) ...[
-          const Text(
-            'STEP-BY-STEP PAINT CORRECTION SEQUENCE',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.8),
-          ),
-          const SizedBox(height: 12),
-          for (int i = 0; i < item.recipeStages.length; i++) ...[
-            Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppTheme.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.border),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withAlpha(25),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: AppTheme.primary.withAlpha(100)),
-                    ),
-                    child: Text(
-                      'STEP ${i + 1}',
-                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.recipeStages[i].stageName,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
-                        ),
-                        const SizedBox(height: 4),
-                        if (item.recipeStages[i].chemical.isNotEmpty) ...[
-                          Text('Chemical: ${item.recipeStages[i].chemical}', style: const TextStyle(fontSize: 12, color: AppTheme.primary)),
-                        ],
-                        if (item.recipeStages[i].machine.isNotEmpty) ...[
-                          Text('Machine: ${item.recipeStages[i].machine}', style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                        ],
-                        if (item.recipeStages[i].pad.isNotEmpty) ...[
-                          Text('Pad: ${item.recipeStages[i].pad}', style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                        ],
-                        if (item.recipeStages[i].technique.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text('Technique: ${item.recipeStages[i].technique}', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-                        ],
-                        if (item.recipeStages[i].notes != null) ...[
-                          const SizedBox(height: 2),
-                          Text('Wipe / Note: ${item.recipeStages[i].notes}', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted, fontStyle: FontStyle.italic)),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-
-        if (item.notes != null) ...[
-          const SizedBox(height: 16),
-          _buildInfoSection(
-            title: 'OPERATOR PRO TIPS & NOTES',
-            content: item.notes!,
-            icon: Icons.lightbulb_outline_rounded,
-          ),
-        ],
-      ],
+      ),
     );
   }
 

@@ -2214,18 +2214,19 @@ void main() {
     // In mobile step 0: Studio Hub is shown
     expect(find.text('STUDIO WORKBENCH HUB'), findsOneWidget);
 
-    // Tap Inventory -> drill down to Step 1 (List)
+    // Tap Inventory -> drill down to Step 1 (Categories)
     await tester.tap(find.text('Inventory'));
     await tester.pumpAndSettle();
     expect(find.text('Polishers, chemicals, formulas'), findsOneWidget);
     expect(find.byIcon(Icons.arrow_back_rounded), findsOneWidget);
 
-    // Tap item -> drill down to Step 2 (Inspector)
-    await tester.tap(find.text('Flex XFE 7-15 150'));
+    // Tap HARDWARE category -> drill down to Step 2 (Pane 3 items list)
+    await tester.tap(find.text('HARDWARE'));
     await tester.pumpAndSettle();
-    expect(find.text('TECHNICAL HARDWARE SPECIFICATIONS'), findsOneWidget);
+    expect(find.text('HARDWARE INVENTORY'), findsOneWidget);
+    expect(find.text('Flex XFE 7-15 150'), findsOneWidget);
 
-    // Tap back button -> back to Step 1 (List)
+    // Tap back button -> back to Step 1 (Categories)
     await tester.tap(find.byIcon(Icons.arrow_back_rounded));
     await tester.pumpAndSettle();
     expect(find.text('Polishers, chemicals, formulas'), findsOneWidget);
@@ -2253,7 +2254,7 @@ void main() {
     }
 
     // 1. DESKTOP VIEW
-    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.physicalSize = const Size(1200, 1600);
     tester.view.devicePixelRatio = 1.0;
 
     await tester.pumpWidget(MaterialApp(
@@ -2268,16 +2269,18 @@ void main() {
     await tester.tap(find.text('Inventory'));
     await tester.pumpAndSettle();
 
-    // Active item is initial hardware polisher
+    // Verify Pane 3 shows HARDWARE items line by line with status dropdown and [EDIT]
+    expect(find.text('HARDWARE INVENTORY'), findsOneWidget);
     expect(find.text('Rupes LHR15 Mark III (15mm)'), findsWidgets);
-    expect(find.text('TECHNICAL HARDWARE SPECIFICATIONS'), findsOneWidget);
+    expect(find.text('In Service'), findsWidgets);
+    expect(find.text('[EDIT]'), findsWidgets);
 
-    // Verify Delete action exists in Pane 3 Top Right
+    // Verify Delete action exists on the item line in Pane 3
     final deleteFinder = find.byTooltip('Delete Item');
-    expect(deleteFinder, findsOneWidget);
+    expect(deleteFinder, findsWidgets);
 
     // Tap Delete -> Confirmation Dialog
-    await tester.tap(deleteFinder);
+    await tester.tap(deleteFinder.first);
     await tester.pumpAndSettle();
     expect(find.text('Confirm Deletion'), findsOneWidget);
     expect(find.textContaining('Are you sure you want to remove "Rupes LHR15 Mark III (15mm)"?'), findsOneWidget);
@@ -2286,12 +2289,9 @@ void main() {
     await tester.tap(find.widgetWithText(ElevatedButton, 'Delete'));
     await tester.pumpAndSettle();
 
-    // Verify Rupes is deleted from repository and Pane 2
+    // Verify Rupes is deleted from repository and Pane 3
     expect(repository.inventoryItems.any((i) => i.name.contains('Rupes LHR15 Mark III')), isFalse);
     expect(find.text('Rupes LHR15 Mark III (15mm)'), findsNothing);
-
-    // Verify fallback selection gracefully selected the next item without errors
-    expect(find.byType(DetailerWorkbenchView), findsOneWidget);
     expect(find.text('Flex PXE 80 10.8-EC'), findsWidgets);
 
     // 2. Test specs preservation in InventoryItemEditorDialog
@@ -2313,13 +2313,12 @@ void main() {
     await tester.tap(find.text('CHEMICALS'));
     await tester.pumpAndSettle();
 
-    // Tap to select Custom Coating X
-    await tester.tap(find.text('Custom Coating X').first);
-    await tester.pumpAndSettle();
-    expect(find.text('SiO2 Concentration'), findsOneWidget);
+    // Custom Coating X is listed in Pane 3
+    expect(find.text('Custom Coating X'), findsWidgets);
 
-    // Open [EDIT] in Pane 3
-    await tester.tap(find.text('[EDIT]'));
+    // Open [EDIT] on Custom Coating X
+    final editButtonFinder = find.widgetWithText(ElevatedButton, '[EDIT]').first;
+    await tester.tap(editButtonFinder);
     await tester.pumpAndSettle();
     expect(find.text('Edit CHEMICALS'), findsOneWidget);
 
@@ -2333,35 +2332,36 @@ void main() {
     expect(savedItem.specs['Hardness'], equals('9H Pencil'));
 
     // 3. Test Mobile Drill-Down Delete Step-Back
-    tester.view.physicalSize = const Size(400, 800);
+    tester.view.physicalSize = const Size(400, 2200);
     tester.view.devicePixelRatio = 1.0;
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    // Mobile Step 0: Tap Inventory -> Step 1 (List)
+    // Mobile Step 0: Tap Inventory -> Step 1 (Categories)
     await tester.tap(find.text('Inventory'));
     await tester.pumpAndSettle();
     expect(find.text('Polishers, chemicals, formulas'), findsOneWidget);
 
-    // Tap CHEMICALS category on mobile
+    // Tap CHEMICALS category on mobile -> Step 2 (Pane 3 items list)
     await tester.tap(find.text('CHEMICALS'));
     await tester.pumpAndSettle();
-
-    // Step 1: Tap item -> Step 2 (Inspector)
-    await tester.tap(find.text('Custom Coating X').first);
-    await tester.pumpAndSettle();
-    expect(find.text('CHEMICAL CHARACTERISTICS'), findsOneWidget);
+    expect(find.text('CHEMICALS INVENTORY'), findsOneWidget);
+    expect(find.text('Custom Coating X'), findsWidgets);
 
     // Step 2: Delete item from Pane 3
     final mobileDeleteFinder = find.byTooltip('Delete Item');
-    await tester.tap(mobileDeleteFinder);
+    await tester.tap(mobileDeleteFinder.first);
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ElevatedButton, 'Delete'));
     await tester.pumpAndSettle();
 
-    // Verify view automatically stepped back to Step 1 (List)
-    expect(find.text('Polishers, chemicals, formulas'), findsOneWidget);
+    // Verify item is removed from view and repo
     expect(find.text('Custom Coating X'), findsNothing);
+
+    // Step back to Step 1 (Categories)
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('Polishers, chemicals, formulas'), findsOneWidget);
 
     // Verify SafeArea exists in tree for mobile view
     expect(find.byType(SafeArea), findsWidgets);
