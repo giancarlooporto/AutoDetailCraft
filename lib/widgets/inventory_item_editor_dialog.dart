@@ -144,6 +144,96 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
     Navigator.of(context).pop();
   }
 
+  bool _containsItem(String text, String item) {
+    if (text.isEmpty) return false;
+    final parts = text.split(RegExp(r'\s*\+\s*|\s*,\s*')).map((s) => s.trim().toLowerCase());
+    return parts.contains(item.trim().toLowerCase());
+  }
+
+  String _toggleItem(String text, String item, bool add) {
+    final parts = text.split(RegExp(r'\s*\+\s*|\s*,\s*')).map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    if (add) {
+      if (!parts.any((p) => p.toLowerCase() == item.trim().toLowerCase())) {
+        parts.add(item.trim());
+      }
+    } else {
+      parts.removeWhere((p) => p.toLowerCase() == item.trim().toLowerCase());
+    }
+    return parts.join(' + ');
+  }
+
+  void _openMultiSelectPicker({
+    required BuildContext context,
+    required String title,
+    required List<String> options,
+    required String currentText,
+    required ValueChanged<String> onSelected,
+  }) {
+    final selectedItems = currentText
+        .split(RegExp(r'\s*\+\s*|\s*,\s*'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setPickerState) {
+          return AlertDialog(
+            backgroundColor: AppTheme.surface,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 380, maxHeight: 420),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final opt in options) ...[
+                      CheckboxListTile(
+                        value: selectedItems.any((s) => s.toLowerCase() == opt.toLowerCase()),
+                        title: Text(opt, style: const TextStyle(fontSize: 12.5, color: Colors.white)),
+                        activeColor: AppTheme.primary,
+                        checkColor: Colors.black,
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        onChanged: (val) {
+                          setPickerState(() {
+                            if (val == true) {
+                              if (!selectedItems.any((s) => s.toLowerCase() == opt.toLowerCase())) {
+                                selectedItems.add(opt);
+                              }
+                            } else {
+                              selectedItems.removeWhere((s) => s.toLowerCase() == opt.toLowerCase());
+                            }
+                          });
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary, foregroundColor: Colors.black),
+                onPressed: () {
+                  onSelected(selectedItems.join(' + '));
+                  Navigator.of(ctx).pop();
+                },
+                child: const Text('Done', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   void _openRecipeStageEditor({int? editIndex}) {
     final isNew = editIndex == null;
     final stage = isNew
@@ -188,84 +278,130 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
                     ),
                     const SizedBox(height: 12),
 
-                    // Machine / Tool (Hardware dropdown + editable text)
+                    // Machine / Tool(s) (Multi-select from Hardware + editable text)
                     TextField(
                       controller: machCtrl,
                       decoration: InputDecoration(
-                        labelText: 'Machine / Tool (from Hardware)',
-                        hintText: 'Select saved Hardware or type custom tool',
+                        labelText: 'Machine / Tool(s)',
+                        hintText: 'e.g. Rupes LHR15 + Flex PXE 80, or select below',
                         prefixIcon: const Icon(Icons.handyman_rounded, size: 18, color: AppTheme.primary),
                         suffixIcon: widget.hardwareOptions.isNotEmpty
-                            ? PopupMenuButton<String>(
-                                icon: const Icon(Icons.arrow_drop_down_circle_outlined, color: AppTheme.primary, size: 20),
-                                tooltip: 'Select from saved Hardware',
-                                onSelected: (val) {
-                                  machCtrl.text = val;
-                                  setDialogState(() {});
-                                },
-                                itemBuilder: (ctx) => [
-                                  for (final h in widget.hardwareOptions)
-                                    PopupMenuItem(
-                                      value: h,
-                                      child: Row(
-                                        children: [
-                                          const Icon(Icons.handyman_rounded, size: 14, color: AppTheme.primary),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(
-                                              h,
-                                              style: const TextStyle(fontSize: 12),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                ],
+                            ? IconButton(
+                                icon: const Icon(Icons.playlist_add_check_rounded, color: AppTheme.primary),
+                                tooltip: 'Check multiple from saved Hardware',
+                                onPressed: () => _openMultiSelectPicker(
+                                  context: ctx,
+                                  title: 'Select Machines / Tools',
+                                  options: widget.hardwareOptions,
+                                  currentText: machCtrl.text,
+                                  onSelected: (combined) {
+                                    machCtrl.text = combined;
+                                    setDialogState(() {});
+                                  },
+                                ),
                               )
                             : null,
                       ),
+                      onChanged: (_) => setDialogState(() {}),
                     ),
+                    if (widget.hardwareOptions.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (final h in widget.hardwareOptions) ...[
+                              FilterChip(
+                                selected: _containsItem(machCtrl.text, h),
+                                label: Text(
+                                  h,
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: _containsItem(machCtrl.text, h) ? Colors.black : AppTheme.textSecondary,
+                                    fontWeight: _containsItem(machCtrl.text, h) ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                ),
+                                selectedColor: AppTheme.primary,
+                                checkmarkColor: Colors.black,
+                                backgroundColor: AppTheme.surfaceLight,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                visualDensity: VisualDensity.compact,
+                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                onSelected: (selected) {
+                                  setDialogState(() {
+                                    machCtrl.text = _toggleItem(machCtrl.text, h, selected);
+                                  });
+                                },
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
 
-                    // Chemical / Product (Chemicals dropdown + editable text)
+                    // Chemical / Product(s) (Multi-select from Chemicals + editable text)
                     TextField(
                       controller: chemCtrl,
                       decoration: InputDecoration(
-                        labelText: 'Chemical / Product (from Chemicals)',
-                        hintText: 'Select saved Chemical or type compound',
+                        labelText: 'Chemical / Product(s)',
+                        hintText: 'e.g. CarPro IronX + TarX, or select below',
                         prefixIcon: const Icon(Icons.science_rounded, size: 18, color: Colors.tealAccent),
                         suffixIcon: widget.chemicalOptions.isNotEmpty
-                            ? PopupMenuButton<String>(
-                                icon: const Icon(Icons.arrow_drop_down_circle_outlined, color: Colors.tealAccent, size: 20),
-                                tooltip: 'Select from saved Chemicals',
-                                onSelected: (val) {
-                                  chemCtrl.text = val;
-                                  setDialogState(() {});
-                                },
-                                itemBuilder: (ctx) => [
-                                  for (final c in widget.chemicalOptions)
-                                    PopupMenuItem(
-                                      value: c,
-                                      child: Row(
-                                        children: [
-                                          const Icon(Icons.science_rounded, size: 14, color: Colors.tealAccent),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(
-                                              c,
-                                              style: const TextStyle(fontSize: 12),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                ],
+                            ? IconButton(
+                                icon: const Icon(Icons.playlist_add_check_rounded, color: Colors.tealAccent),
+                                tooltip: 'Check multiple from saved Chemicals',
+                                onPressed: () => _openMultiSelectPicker(
+                                  context: ctx,
+                                  title: 'Select Chemicals / Products',
+                                  options: widget.chemicalOptions,
+                                  currentText: chemCtrl.text,
+                                  onSelected: (combined) {
+                                    chemCtrl.text = combined;
+                                    setDialogState(() {});
+                                  },
+                                ),
                               )
                             : null,
                       ),
+                      onChanged: (_) => setDialogState(() {}),
                     ),
+                    if (widget.chemicalOptions.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (final c in widget.chemicalOptions) ...[
+                              FilterChip(
+                                selected: _containsItem(chemCtrl.text, c),
+                                label: Text(
+                                  c,
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: _containsItem(chemCtrl.text, c) ? Colors.black : AppTheme.textSecondary,
+                                    fontWeight: _containsItem(chemCtrl.text, c) ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                ),
+                                selectedColor: Colors.tealAccent,
+                                checkmarkColor: Colors.black,
+                                backgroundColor: AppTheme.surfaceLight,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                visualDensity: VisualDensity.compact,
+                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                onSelected: (selected) {
+                                  setDialogState(() {
+                                    chemCtrl.text = _toggleItem(chemCtrl.text, c, selected);
+                                  });
+                                },
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
 
                     TextField(

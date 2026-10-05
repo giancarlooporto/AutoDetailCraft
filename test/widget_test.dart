@@ -2444,8 +2444,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Add Formula Step'), findsOneWidget);
-    expect(find.text('Machine / Tool (from Hardware)'), findsOneWidget);
-    expect(find.text('Chemical / Product (from Chemicals)'), findsOneWidget);
+    expect(find.text('Machine / Tool(s)'), findsOneWidget);
+    expect(find.text('Chemical / Product(s)'), findsOneWidget);
 
     // Close step editor & close recipe dialog
     await tester.tap(find.text('Cancel').last);

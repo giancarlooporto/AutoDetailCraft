@@ -797,8 +797,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             ),
           ],
 
-          // Bottom: [ + ADD ] button to add new equipment, chemical, formula, team, or service
-          if (_selectedHub != StudioHubSection.savedRecipes) ...[
+          // Bottom: [ + ADD ] button to add new team, portfolio, or service (Inventory add button transferred to Pane 3)
+          if (_selectedHub != StudioHubSection.savedRecipes && _selectedHub != StudioHubSection.inventory) ...[
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: const BoxDecoration(
@@ -1502,14 +1502,18 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
                 // Action controls for Inventory vs other hubs
                 if (_selectedHub == StudioHubSection.inventory) ...[
-                  if (_inventoryCategoryFilter == 'CHEMICALS') ...[
-                    IconButton(
-                      icon: const Icon(Icons.calculate_outlined, size: 18, color: AppTheme.primary),
-                      tooltip: 'Dilution Calculator',
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       visualDensity: VisualDensity.compact,
-                      onPressed: () => showDialog(context: context, builder: (_) => const DilutionDialog()),
                     ),
-                  ],
+                    icon: const Icon(Icons.add_rounded, size: 16),
+                    label: const Text('[ + ADD ]', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
+                    onPressed: () => _openAdd(isMobile: isMobile),
+                  ),
                 ] else if (_hasActiveItemToInspect() && _selectedHub != StudioHubSection.savedRecipes) ...[
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
