@@ -280,7 +280,7 @@ void main() {
     debugNetworkImageHttpClientProvider = null;
   });
 
-  testWidgets('Dilution Calculator dialog opens from AppBar calculator button on mobile', (WidgetTester tester) async {
+  testWidgets('Dilution Calculator dialog opens from Studio Workbench Quick Utilities', (WidgetTester tester) async {
     debugNetworkImageHttpClientProvider = () => _MockHttpClient();
     addTearDown(() {
       debugNetworkImageHttpClientProvider = null;
@@ -288,20 +288,21 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
-    tester.view.physicalSize = const Size(390, 844);
+    tester.view.physicalSize = const Size(1200, 900);
     tester.view.devicePixelRatio = 1.0;
 
     final repository = JobRepository();
     await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
       home: Scaffold(
-        body: FeedScreen(repository: repository),
+        body: DetailerWorkbenchView(repository: repository),
       ),
     ));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    // Tap the calculate icon button
-    final calcBtn = find.byIcon(Icons.calculate_outlined);
+    // Tap the calculate icon button / listtile in Pane 1 Quick Utilities
+    final calcBtn = find.text('Dilution Calculator');
     expect(calcBtn, findsOneWidget);
     await tester.tap(calcBtn);
     await tester.pump();
@@ -309,7 +310,7 @@ void main() {
 
     // Verify DilutionDialog is opened
     expect(find.byType(DilutionDialog), findsOneWidget);
-    expect(find.text('Dilution Calculator'), findsOneWidget);
+    expect(find.text('Precision chemical mixing cheat sheet'), findsOneWidget);
 
     debugNetworkImageHttpClientProvider = null;
   });
@@ -2135,12 +2136,11 @@ void main() {
     // Verify Pane 2 header for Inventory
     expect(find.text('INVENTORY'), findsWidgets);
     expect(find.text('[ + ADD ]'), findsOneWidget);
-    expect(find.text('ALL'), findsOneWidget);
     expect(find.text('HARDWARE'), findsWidgets);
-    expect(find.text('CHEMICALS'), findsOneWidget);
-    expect(find.text('RECIPE'), findsOneWidget);
+    expect(find.text('CHEMICALS'), findsWidgets);
+    expect(find.text('RECIPE'), findsWidgets);
 
-    // Initial items include Hardware
+    // Initial items include Hardware (default category is HARDWARE)
     expect(find.text('Rupes LHR15 Mark III (15mm)'), findsWidgets);
 
     // Filter by CHEMICALS
@@ -2157,9 +2157,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('German Ceramic Clear 2-Stage Formula'), findsWidgets);
 
-    // Return to ALL
-    await tester.ensureVisible(find.text('ALL'));
-    await tester.tap(find.text('ALL'));
+    // Return to HARDWARE
+    await tester.ensureVisible(find.text('HARDWARE'));
+    await tester.tap(find.text('HARDWARE'));
     await tester.pumpAndSettle();
     expect(find.text('Rupes LHR15 Mark III (15mm)'), findsWidgets);
 
@@ -2309,8 +2309,12 @@ void main() {
     repository.addInventoryItem(customItem);
     await tester.pumpAndSettle();
 
+    // Tap to select CHEMICALS category
+    await tester.tap(find.text('CHEMICALS'));
+    await tester.pumpAndSettle();
+
     // Tap to select Custom Coating X
-    await tester.tap(find.text('Custom Coating X'));
+    await tester.tap(find.text('Custom Coating X').first);
     await tester.pumpAndSettle();
     expect(find.text('SiO2 Concentration'), findsOneWidget);
 
@@ -2339,8 +2343,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Polishers, chemicals, formulas'), findsOneWidget);
 
+    // Tap CHEMICALS category on mobile
+    await tester.tap(find.text('CHEMICALS'));
+    await tester.pumpAndSettle();
+
     // Step 1: Tap item -> Step 2 (Inspector)
-    await tester.tap(find.text('Custom Coating X'));
+    await tester.tap(find.text('Custom Coating X').first);
     await tester.pumpAndSettle();
     expect(find.text('CHEMICAL CHARACTERISTICS'), findsOneWidget);
 

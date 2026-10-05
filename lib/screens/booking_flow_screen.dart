@@ -851,28 +851,10 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                children: [
-                  const Icon(Icons.shield_rounded, color: AppTheme.primary, size: 20),
-                  const SizedBox(width: 8),
-                  const Text('Direct Detailer Booking & Escrow Hold', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                  const Spacer(),
-                  if (widget.detailer.isInsuranceVerified)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.greenAccent.withAlpha(20),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: Colors.greenAccent.withAlpha(80)),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.security_rounded, size: 11, color: Colors.greenAccent),
-                          SizedBox(width: 3),
-                          Text('INSURED SHOP', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.greenAccent)),
-                        ],
-                      ),
-                    ),
+                children: const [
+                  Icon(Icons.shield_rounded, color: AppTheme.primary, size: 20),
+                  SizedBox(width: 8),
+                  Text('Direct Detailer Booking & Escrow Hold', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 ],
               ),
               const SizedBox(height: 8),

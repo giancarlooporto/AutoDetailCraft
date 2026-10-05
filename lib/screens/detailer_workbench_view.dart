@@ -12,14 +12,13 @@ import 'add_team_member_dialog.dart';
 import 'create_job_screen.dart';
 import 'edit_profile_dialog.dart';
 import 'public_studio_screen.dart';
-import 'verification_submission_dialog.dart';
 
 enum StudioHubSection {
   portfolio('Portfolio', 'PORTFOLIO', 'Showcase builds & media', Icons.photo_library_rounded),
-  savedRecipes('Saved Recipes', 'SAVED RECIPES', 'Technical playbook', Icons.bookmark_rounded),
   services('Services', 'SERVICES', 'Packages & pricing menus', Icons.design_services_rounded),
+  inventory('Inventory', 'INVENTORY', 'Hardware, chemicals, recipe', Icons.inventory_2_rounded),
   teams('My Teams', 'MY TEAMS', 'Staff roles & technicians', Icons.groups_rounded),
-  inventory('Inventory', 'INVENTORY', 'Hardware, chemicals, recipe', Icons.inventory_2_rounded);
+  savedRecipes('Saved Recipes', 'SAVED RECIPES', 'Technical playbook', Icons.bookmark_rounded);
 
   final String title;
   final String tag;
@@ -42,7 +41,7 @@ class DetailerWorkbenchView extends StatefulWidget {
 
 class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   StudioHubSection _selectedHub = StudioHubSection.portfolio;
-  String _inventoryCategoryFilter = 'ALL'; // ALL, HARDWARE, CHEMICALS, RECIPE
+  String _inventoryCategoryFilter = 'HARDWARE'; // HARDWARE, CHEMICALS, RECIPE
 
   // Selected item IDs or indices
   String? _selectedInventoryId;
@@ -593,28 +592,6 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                           onTap: () => showDialog(context: context, builder: (_) => const DilutionDialog()),
                         ),
                       ),
-                      Material(
-                        color: Colors.transparent,
-                        child: ListTile(
-                          dense: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                          leading: Icon(
-                            user.isInsuranceVerified ? Icons.security_rounded : Icons.shield_outlined,
-                            size: 18,
-                            color: user.isInsuranceVerified ? Colors.greenAccent : Colors.orangeAccent,
-                          ),
-                          title: Text(
-                            user.isInsuranceVerified ? 'Insurance Verified' : 'Submit Insurance',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: user.isInsuranceVerified ? Colors.greenAccent : Colors.orangeAccent,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 10, color: AppTheme.textMuted),
-                          onTap: () => VerificationSubmissionDialog.show(context, repository: widget.repository),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -755,27 +732,44 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             ),
           ),
 
-          // Subcategory Filter (If INVENTORY selected)
+          // Category Selector (When INVENTORY selected: HARDWARE, CHEMICALS, RECIPE)
           if (_selectedHub == StudioHubSection.inventory) ...[
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
               decoration: const BoxDecoration(
                 color: AppTheme.surfaceLight,
                 border: Border(bottom: BorderSide(color: AppTheme.border)),
               ),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _buildSubcategoryChip('ALL'),
-                    const SizedBox(width: 6),
-                    _buildSubcategoryChip('HARDWARE'),
-                    const SizedBox(width: 6),
-                    _buildSubcategoryChip('CHEMICALS'),
-                    const SizedBox(width: 6),
-                    _buildSubcategoryChip('RECIPE'),
-                  ],
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildInventoryCategoryRow(
+                    category: 'HARDWARE',
+                    label: 'HARDWARE',
+                    subtitle: 'Polishers, pads, lights & meters',
+                    icon: Icons.handyman_rounded,
+                    count: widget.repository.hardwareItems.length,
+                    isSelected: _inventoryCategoryFilter == 'HARDWARE',
+                  ),
+                  const SizedBox(height: 6),
+                  _buildInventoryCategoryRow(
+                    category: 'CHEMICALS',
+                    label: 'CHEMICALS',
+                    subtitle: 'Compounds, coatings, prep sprays',
+                    icon: Icons.science_rounded,
+                    count: widget.repository.chemicalItems.length,
+                    isSelected: _inventoryCategoryFilter == 'CHEMICALS',
+                  ),
+                  const SizedBox(height: 6),
+                  _buildInventoryCategoryRow(
+                    category: 'RECIPE',
+                    label: 'RECIPE',
+                    subtitle: 'Correction formulas & build steps',
+                    icon: Icons.auto_stories_rounded,
+                    count: widget.repository.recipeItems.length,
+                    isSelected: _inventoryCategoryFilter == 'RECIPE',
+                  ),
+                ],
               ),
             ),
           ],
@@ -830,43 +824,103 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     }
   }
 
-  Widget _buildSubcategoryChip(String label) {
-    final isSelected = _inventoryCategoryFilter == label;
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _inventoryCategoryFilter = label;
-          final inventory = widget.repository.inventoryItems;
-          List<InventoryItem> filtered = inventory;
-          if (label == 'HARDWARE') {
-            filtered = inventory.where((i) => i.category == InventoryCategory.hardware).toList();
-          } else if (label == 'CHEMICALS') {
-            filtered = inventory.where((i) => i.category == InventoryCategory.chemicals).toList();
-          } else if (label == 'RECIPE') {
-            filtered = inventory.where((i) => i.category == InventoryCategory.recipe).toList();
-          }
-          if (filtered.isNotEmpty && !filtered.any((i) => i.id == _selectedInventoryId)) {
-            _selectedInventoryId = filtered.first.id;
-          }
-        });
-      },
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-        decoration: BoxDecoration(
-          color: isSelected ? AppTheme.primary : AppTheme.surface,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected ? AppTheme.primary : AppTheme.border,
-            width: 1,
-          ),
+  Widget _buildInventoryCategoryRow({
+    required String category,
+    required String label,
+    required String subtitle,
+    required IconData icon,
+    required int count,
+    required bool isSelected,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isSelected ? AppTheme.primary.withAlpha(25) : AppTheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isSelected ? AppTheme.primary : AppTheme.border,
+          width: isSelected ? 1.5 : 1,
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 10.0,
-            fontWeight: FontWeight.bold,
-            color: isSelected ? Colors.black : AppTheme.textSecondary,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () {
+            setState(() {
+              _inventoryCategoryFilter = category;
+              List<InventoryItem> filtered = [];
+              if (category == 'HARDWARE') {
+                filtered = widget.repository.hardwareItems;
+              } else if (category == 'CHEMICALS') {
+                filtered = widget.repository.chemicalItems;
+              } else if (category == 'RECIPE') {
+                filtered = widget.repository.recipeItems;
+              }
+              if (filtered.isNotEmpty) {
+                _selectedInventoryId = filtered.first.id;
+              }
+            });
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: isSelected ? AppTheme.primary : AppTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 15,
+                    color: isSelected ? Colors.black : AppTheme.textSecondary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.5,
+                          color: isSelected ? Colors.white : AppTheme.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          color: AppTheme.textMuted,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isSelected ? AppTheme.primary : AppTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? Colors.black : AppTheme.textMuted,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -10,7 +10,6 @@ import 'bookings_list_screen.dart';
 import 'messages_screen.dart';
 import 'profile_screen.dart';
 import 'update_password_dialog.dart';
-import '../widgets/dilution_dialog.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   final JobRepository repository;
@@ -164,15 +163,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                                     isSelected: currentIndex == 3,
                                     onTap: () => widget.repository.setActiveTab(3),
                                   ),
-                                  const SizedBox(width: 14),
-                                  IconButton(
-                                    icon: const Icon(Icons.calculate_outlined, color: AppTheme.primary, size: 21),
-                                    tooltip: 'Chemical Dilution Calculator',
-                                    onPressed: () => showDialog(
-                                      context: context,
-                                      builder: (_) => const DilutionDialog(),
-                                    ),
-                                  ),
+
                                 ],
                               ),
                             ),
