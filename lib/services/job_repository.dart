@@ -623,13 +623,6 @@ class JobRepository extends ChangeNotifier {
     }
   }
 
-  // Update subscription tier (Free Starter, Pro Studio, Enterprise Shop)
-  void updateSubscriptionTier(SubscriptionTier tier) {
-    _currentUser = _currentUser.copyWith(subscriptionTier: tier);
-    _persistUser();
-    notifyListeners();
-  }
-
   // Detailer / Host Promotion / Mode Toggle
   void toggleHostMode() {
     final isNowHost = _currentUser.role == UserRole.client;
@@ -638,114 +631,6 @@ class JobRepository extends ChangeNotifier {
       isVerifiedHost: isNowHost,
     );
     _persistUser();
-    notifyListeners();
-  }
-
-  // Toggle Super Admin Mode (For Back Office simulation and management)
-  void toggleSuperAdminMode() {
-    final isSuper = _currentUser.role == UserRole.superAdmin;
-    _currentUser = _currentUser.copyWith(
-      role: isSuper ? UserRole.detailer : UserRole.superAdmin,
-    );
-    _persistUser();
-    notifyListeners();
-  }
-
-  // Active Staff & Delegated Admins (RBAC)
-  final List<StaffMember> _staffMembers = [
-    StaffMember(
-      id: 'staff_founder',
-      username: 'platform_owner',
-      email: 'owner@autodetailcraft.com',
-      role: UserRole.superAdmin,
-      isActive: true,
-      createdAt: DateTime.now().subtract(const Duration(days: 30)),
-    ),
-    StaffMember(
-      id: 'staff_rep1',
-      username: 'sarah_support',
-      email: 'sarah.support@autodetailcraft.com',
-      role: UserRole.supportAgent,
-      isActive: true,
-      createdAt: DateTime.now().subtract(const Duration(days: 14)),
-    ),
-    StaffMember(
-      id: 'staff_temp',
-      username: 'alex_verifier',
-      email: 'alex.audit@verificationagency.com',
-      role: UserRole.supportAgent,
-      isActive: true,
-      createdAt: DateTime.now().subtract(const Duration(days: 5)),
-    ),
-  ];
-
-  List<StaffMember> get staffMembers => _staffMembers;
-
-  /// Delegate an existing user or add a new admin/agent with custom permissions
-  void delegateAdminRole({
-    required String username,
-    required String email,
-    required UserRole role,
-  }) {
-    final cleanEmail = email.trim();
-    final cleanUsername = username.trim().replaceAll('@', '');
-
-    // Check if user is already in staff list
-    final existingIdx = _staffMembers.indexWhere(
-      (m) => m.email.toLowerCase() == cleanEmail.toLowerCase() || m.username.toLowerCase() == cleanUsername.toLowerCase(),
-    );
-
-    if (existingIdx != -1) {
-      _staffMembers[existingIdx] = StaffMember(
-        id: _staffMembers[existingIdx].id,
-        username: cleanUsername,
-        email: cleanEmail,
-        role: role,
-        isActive: true,
-        createdAt: _staffMembers[existingIdx].createdAt,
-      );
-    } else {
-      _staffMembers.add(
-        StaffMember(
-          id: 'staff_${DateTime.now().millisecondsSinceEpoch}',
-          username: cleanUsername,
-          email: cleanEmail,
-          role: role,
-          isActive: true,
-          createdAt: DateTime.now(),
-        ),
-      );
-    }
-
-    // If detailer exists in public list with this username, promote their role badge
-    final dIdx = _publicDetailers.indexWhere((p) => p.username.toLowerCase() == cleanUsername.toLowerCase());
-    if (dIdx != -1) {
-      _publicDetailers[dIdx] = _publicDetailers[dIdx].copyWith(role: role);
-    }
-
-    notifyListeners();
-  }
-
-  /// One-click deactivation / access revocation of a delegated admin
-  void toggleStaffActiveStatus(String staffId) {
-    final idx = _staffMembers.indexWhere((m) => m.id == staffId);
-    if (idx != -1) {
-      final old = _staffMembers[idx];
-      _staffMembers[idx] = StaffMember(
-        id: old.id,
-        username: old.username,
-        email: old.email,
-        role: old.role,
-        isActive: !old.isActive,
-        createdAt: old.createdAt,
-      );
-      notifyListeners();
-    }
-  }
-
-  /// Delete a staff member entirely
-  void removeStaffMember(String staffId) {
-    _staffMembers.removeWhere((m) => m.id == staffId);
     notifyListeners();
   }
 

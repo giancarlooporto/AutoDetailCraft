@@ -11,7 +11,6 @@ import 'messages_screen.dart';
 import 'profile_screen.dart';
 import 'update_password_dialog.dart';
 import '../widgets/dilution_dialog.dart';
-import 'admin/backoffice_dashboard_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   final JobRepository repository;
@@ -165,42 +164,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                                     isSelected: currentIndex == 3,
                                     onTap: () => widget.repository.setActiveTab(3),
                                   ),
-                                  if (widget.repository.currentUser.role == UserRole.superAdmin) ...[
-                                    const SizedBox(width: 10),
-                                    InkWell(
-                                      onTap: () {
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (_) => BackofficeDashboardScreen(repository: widget.repository),
-                                          ),
-                                        );
-                                      },
-                                      borderRadius: BorderRadius.circular(20),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                        decoration: BoxDecoration(
-                                          color: Colors.redAccent.withAlpha(25),
-                                          borderRadius: BorderRadius.circular(20),
-                                          border: Border.all(color: Colors.redAccent.withAlpha(120)),
-                                        ),
-                                        child: const Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.admin_panel_settings_rounded, size: 16, color: Colors.redAccent),
-                                            SizedBox(width: 6),
-                                            Text(
-                                              'Back Office',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.redAccent,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
                                   const SizedBox(width: 14),
                                   IconButton(
                                     icon: const Icon(Icons.calculate_outlined, color: AppTheme.primary, size: 21),

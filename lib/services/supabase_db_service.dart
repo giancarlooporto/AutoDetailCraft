@@ -60,11 +60,6 @@ class SupabaseDbService {
         } catch (_) {}
       }
 
-      final subscriptionTierStr = res['subscription_tier'] as String?;
-      final subscriptionTier = SubscriptionTier.values.firstWhere(
-        (t) => t.name == subscriptionTierStr,
-        orElse: () => SubscriptionTier.free,
-      );
 
       final roleStr = res['role'] as String?;
       UserRole parsedRole = UserRole.client;
@@ -93,7 +88,6 @@ class SupabaseDbService {
         insurancePolicyNumber: res['insurance_policy_number'] as String? ?? '',
         servicePackages: packages,
         startingPrice: (res['starting_price'] as num?)?.toDouble() ?? 150.0,
-        subscriptionTier: subscriptionTier,
         myGarage: garage,
         teamMembers: team,
         totalJobsCount: res['total_jobs_count'] as int? ?? 0,
@@ -139,7 +133,6 @@ class SupabaseDbService {
         'review_count': user.reviewCount,
         'total_jobs_count': user.totalJobsCount,
         'starting_price': user.startingPrice,
-        'subscription_tier': user.subscriptionTier.name,
         'service_packages': user.servicePackages.map((p) => p.toJson()).toList(),
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       });

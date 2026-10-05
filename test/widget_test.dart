@@ -678,19 +678,16 @@ void main() {
       location: 'Dallas, Texas',
       bio: 'High-end paint correction and ceramic specialist.',
       startingPrice: 350.0,
-      subscriptionTier: SubscriptionTier.pro,
       servicePackages: [customPackage],
     );
 
     final json = profile.toJson();
     expect(json['startingPrice'], 350.0);
-    expect(json['subscriptionTier'], 'pro');
     expect(json['servicePackages'], isList);
     expect((json['servicePackages'] as List).length, 1);
 
     final deserialized = UserProfile.fromJson(json);
     expect(deserialized.startingPrice, 350.0);
-    expect(deserialized.subscriptionTier, SubscriptionTier.pro);
     expect(deserialized.servicePackages.length, 1);
     expect(deserialized.servicePackages.first.id, 'pkg_custom_99');
     expect(deserialized.servicePackages.first.basePrice, 1250);
