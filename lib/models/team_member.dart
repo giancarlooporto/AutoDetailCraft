@@ -51,4 +51,30 @@ class TeamMember {
       isFounder: json['isFounder'] as bool? ?? false,
     );
   }
+
+  String get statusLabel => isAvailable ? 'Available' : 'On Job';
+
+  TeamMember copyWith({
+    String? id,
+    String? name,
+    String? roleTitle,
+    String? avatarUrl,
+    Uint8List? localAvatarBytes,
+    double? rating,
+    int? completedJobsCount,
+    bool? isAvailable,
+    bool? isFounder,
+  }) {
+    return TeamMember(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      roleTitle: roleTitle ?? this.roleTitle,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      localAvatarBytes: localAvatarBytes ?? this.localAvatarBytes,
+      rating: rating ?? this.rating,
+      completedJobsCount: completedJobsCount ?? this.completedJobsCount,
+      isAvailable: isAvailable ?? this.isAvailable,
+      isFounder: isFounder ?? this.isFounder,
+    );
+  }
 }

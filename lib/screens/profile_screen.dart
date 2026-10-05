@@ -3,18 +3,12 @@ import 'dart:ui';
 import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
 import '../models/user_vehicle.dart';
-import '../models/booking_models.dart';
-import '../models/team_member.dart';
 import '../services/job_repository.dart';
 import 'vehicle_editor_dialog.dart';
 import 'auth_modal.dart';
 import 'edit_profile_dialog.dart';
-import 'add_team_member_dialog.dart';
-import 'public_studio_screen.dart';
-import 'create_job_screen.dart';
-import 'service_package_editor_dialog.dart';
 import '../widgets/job_recipe_card.dart';
-import 'verification_submission_dialog.dart';
+import 'detailer_workbench_view.dart';
 
 class ProfileScreen extends StatefulWidget {
   final JobRepository repository;
@@ -28,42 +22,19 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMixin {
-  late TabController _tabController;
+class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
   late TabController _clientTabController;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
     _clientTabController = TabController(length: 2, vsync: this);
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     _clientTabController.dispose();
     super.dispose();
-  }
-
-  void _openCreateTransformation(BuildContext context) {
-    if (!widget.repository.isLoggedIn) {
-      AuthModal.show(
-        context,
-        repository: widget.repository,
-        initialIsSignUp: false,
-        onSuccess: () => _openCreateTransformation(context),
-      );
-      return;
-    }
-
-    CreateJobScreen.show(
-      context,
-      repository: widget.repository,
-      onJobCreated: () {
-        setState(() {});
-      },
-    );
   }
 
   void _openVehicleEditor(BuildContext context, [UserVehicle? vehicle]) {
@@ -306,10 +277,12 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
 
         final user = widget.repository.currentUser;
         final isDetailer = user.role == UserRole.detailer;
-        final myJobs = widget.repository.getJobsByDetailer(user.id);
+
+        if (isDetailer) {
+          return DetailerWorkbenchView(repository: widget.repository);
+        }
+
         final savedJobs = widget.repository.savedJobs;
-        final packages = user.servicePackages;
-        final team = user.teamMembers;
         final garage = user.myGarage;
 
         return Scaffold(
@@ -432,7 +405,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                                       children: [
                                         Flexible(
                                           child: Text(
-                                            isDetailer ? user.businessName : user.displayName,
+                                            user.displayName,
                                             style: const TextStyle(
                                               fontSize: 18,
                                               fontWeight: FontWeight.bold,
@@ -441,9 +414,6 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
-                                        const SizedBox(width: 6),
-                                        if (user.isVerifiedHost)
-                                          const Icon(Icons.verified_rounded, size: 18, color: AppTheme.primary),
                                         const SizedBox(width: 4),
                                         InkWell(
                                           onTap: () => EditProfileDialog.show(context, repository: widget.repository),
@@ -465,29 +435,16 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                                       style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                                     ),
                                     const SizedBox(height: 4),
-                                    Row(
-                                      children: [
-                                        if (isDetailer) ...[
-                                          const Icon(Icons.star_rounded, size: 16, color: Colors.amber),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            '${user.averageRating} (${user.reviewCount} reviews)',
-                                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-                                          ),
-                                          const SizedBox(width: 8),
-                                        ],
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: AppTheme.primary.withAlpha(25),
-                                            borderRadius: BorderRadius.circular(4),
-                                          ),
-                                          child: Text(
-                                            isDetailer ? 'Detailer Host' : 'Vehicle Owner',
-                                            style: const TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
-                                      ],
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.primary.withAlpha(25),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Text(
+                                        'Vehicle Owner',
+                                        style: TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.bold),
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -511,152 +468,35 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                         child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Clean Mode Switch & Public Storefront Actions (No enclosing box)
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: isDetailer ? AppTheme.primary : Colors.black,
-                                backgroundColor: isDetailer ? AppTheme.surface.withAlpha(160) : AppTheme.primary,
-                                side: const BorderSide(color: AppTheme.primary),
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
-                              onPressed: () => widget.repository.toggleHostMode(),
-                              icon: Icon(
-                                isDetailer ? Icons.directions_car_rounded : Icons.storefront_rounded,
-                                size: 16,
-                                color: isDetailer ? AppTheme.primary : Colors.black,
-                              ),
-                              label: Text(
-                                isDetailer ? 'Switch to Client Mode' : 'Become a Detailer',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: isDetailer ? AppTheme.primary : Colors.black,
-                                ),
-                              ),
+                        // Mode Switch to Detailer Mode
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.black,
+                            backgroundColor: AppTheme.primary,
+                            side: const BorderSide(color: AppTheme.primary),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: () => widget.repository.toggleHostMode(),
+                          icon: const Icon(
+                            Icons.storefront_rounded,
+                            size: 16,
+                            color: Colors.black,
+                          ),
+                          label: const Text(
+                            'Become a Detailer',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black,
                             ),
-                            if (isDetailer) ...[
-                              OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: user.isInsuranceVerified ? Colors.greenAccent : Colors.orangeAccent,
-                                  side: BorderSide(
-                                    color: user.isInsuranceVerified ? Colors.greenAccent : Colors.orangeAccent,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  backgroundColor: (user.isInsuranceVerified ? Colors.greenAccent : Colors.orangeAccent).withAlpha(15),
-                                ),
-                                onPressed: () => VerificationSubmissionDialog.show(context, repository: widget.repository),
-                                icon: Icon(
-                                  user.isInsuranceVerified ? Icons.security_rounded : Icons.file_upload_outlined,
-                                  size: 15,
-                                  color: user.isInsuranceVerified ? Colors.greenAccent : Colors.orangeAccent,
-                                ),
-                                label: Text(
-                                  user.isInsuranceVerified ? 'Insured Verified' : 'Submit Insurance',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: user.isInsuranceVerified ? Colors.greenAccent : Colors.orangeAccent,
-                                  ),
-                                ),
-                              ),
-                              OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.white70,
-                                  side: const BorderSide(color: AppTheme.border),
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  backgroundColor: AppTheme.surface.withAlpha(160),
-                                ),
-                                onPressed: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => PublicStudioScreen(
-                                        detailer: user,
-                                        repository: widget.repository,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(Icons.visibility_outlined, size: 15),
-                                label: const Text(
-                                  'Public Storefront',
-                                  style: TextStyle(fontSize: 12),
-                                ),
-                              ),
-                            ],
-                          ],
+                          ),
                         ),
                         const SizedBox(height: 12),
 
                         // Bio
                         Text(user.bio, style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4)),
                         const SizedBox(height: 10),
-
-                        // Detailer Contact & Certifications Info
-                        if (isDetailer) ...[
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 6,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.surface,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: AppTheme.border),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.phone_outlined, size: 13, color: AppTheme.primary),
-                                    const SizedBox(width: 4),
-                                    Text(user.phone, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.surface,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: AppTheme.border),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.camera_alt_outlined, size: 13, color: AppTheme.primary),
-                                    const SizedBox(width: 4),
-                                    Text(user.instagramHandle, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.surface,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: AppTheme.border),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.location_on_outlined, size: 13, color: AppTheme.primary),
-                                    const SizedBox(width: 4),
-                                    Text(user.serviceRadius, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                        ],
                       ],
                     ),
                       ),
@@ -664,570 +504,25 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                   ),
                 ),
 
-                // Detailer Mode Tabs (Portfolio / Saved Recipes / Services / Team)
-                if (isDetailer)
-                  SliverPersistentHeader(
-                    pinned: true,
-                    delegate: _SliverTabBarDelegate(
-                      TabBar(
-                        controller: _tabController,
-                        labelColor: AppTheme.primary,
-                        unselectedLabelColor: AppTheme.textSecondary,
-                        indicatorColor: AppTheme.primary,
-                        tabs: const [
-                          Tab(text: 'Portfolio'),
-                          Tab(text: 'Saved Recipes'),
-                          Tab(text: 'Services & Pricing'),
-                          Tab(text: 'My Team (Hires)'),
-                        ],
-                      ),
-                    ),
-                  )
-                else
-                  // Client Mode Tabs (My Garage / Saved Recipes)
-                  SliverPersistentHeader(
-                    pinned: true,
-                    delegate: _SliverTabBarDelegate(
-                      TabBar(
-                        controller: _clientTabController,
-                        labelColor: AppTheme.primary,
-                        unselectedLabelColor: AppTheme.textSecondary,
-                        indicatorColor: AppTheme.primary,
-                        tabs: const [
-                          Tab(text: 'My Garage'),
-                          Tab(text: 'Saved Recipes'),
-                        ],
-                      ),
+                // Client Mode Tabs (My Garage / Saved Recipes)
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _SliverTabBarDelegate(
+                    TabBar(
+                      controller: _clientTabController,
+                      labelColor: AppTheme.primary,
+                      unselectedLabelColor: AppTheme.textSecondary,
+                      indicatorColor: AppTheme.primary,
+                      tabs: const [
+                        Tab(text: 'My Garage'),
+                        Tab(text: 'Saved Recipes'),
+                      ],
                     ),
                   ),
+                ),
               ];
             },
-            body: isDetailer
-                ? TabBarView(
-                    controller: _tabController,
-                    children: [
-                      // TAB 1: Detailer Portfolio
-                      Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1280),
-                          child: Column(
-                        children: [
-                          // Studio Portfolio Header Bar with Upload CTA
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        'Transformations',
-                                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        '${myJobs.length} published',
-                                        style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppTheme.primary,
-                                    foregroundColor: Colors.black,
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  ),
-                                  onPressed: () => _openCreateTransformation(context),
-                                  icon: const Icon(Icons.add_photo_alternate_rounded, size: 16),
-                                  label: const Text(
-                                    'Upload',
-                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Divider(height: 1, color: AppTheme.border),
-                          Expanded(
-                            child: myJobs.isEmpty
-                                ? Center(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(32),
-                                      child: Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.all(16),
-                                            decoration: BoxDecoration(
-                                              color: AppTheme.surface,
-                                              shape: BoxShape.circle,
-                                              border: Border.all(color: AppTheme.border),
-                                            ),
-                                            child: const Icon(Icons.compare_arrows_rounded, size: 36, color: AppTheme.primary),
-                                          ),
-                                          const SizedBox(height: 14),
-                                          const Text(
-                                            'No Portfolio Transformations Yet',
-                                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                          ),
-                                          const SizedBox(height: 6),
-                                          const Text(
-                                            'Showcase your 50/50 paint correction results with guided angle multi-zone photos.',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
-                                          ),
-                                          const SizedBox(height: 18),
-                                          ElevatedButton.icon(
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: AppTheme.primary,
-                                              foregroundColor: Colors.black,
-                                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                            ),
-                                            onPressed: () => _openCreateTransformation(context),
-                                            icon: const Icon(Icons.add_photo_alternate_rounded, size: 18),
-                                            label: const Text(
-                                              'Upload First Transformation',
-                                              style: TextStyle(fontWeight: FontWeight.bold),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  )
-                                : LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      final isDesktop = constraints.maxWidth >= 720;
-                                      final isWide = constraints.maxWidth >= 1024;
-                                      final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
-
-                                      return Center(
-                                        child: ConstrainedBox(
-                                          constraints: const BoxConstraints(maxWidth: 1200),
-                                          child: SizedBox(
-                                            width: double.infinity,
-                                            child: !isDesktop
-                                                ? ListView.builder(
-                                                    padding: const EdgeInsets.all(16),
-                                                    itemCount: myJobs.length,
-                                                    itemBuilder: (context, index) {
-                                                      final job = myJobs[index];
-                                                      return JobRecipeCard(
-                                                        job: job,
-                                                        repository: widget.repository,
-                                                        showDetailerManagement: true,
-                                                        onJobChanged: () => setState(() {}),
-                                                        onLike: () => widget.repository.toggleLike(job.id),
-                                                        onSave: () => widget.repository.toggleSave(job.id),
-                                                      );
-                                                    },
-                                                  )
-                                                : SingleChildScrollView(
-                                                     padding: const EdgeInsets.all(16),
-                                                     child: Row(
-                                                       crossAxisAlignment: CrossAxisAlignment.start,
-                                                       children: [
-                                                         for (int col = 0; col < crossAxisCount; col++) ...[
-                                                           if (col > 0) const SizedBox(width: 16),
-                                                           Expanded(
-                                                             child: Column(
-                                                               children: [
-                                                                 for (int i = col; i < myJobs.length; i += crossAxisCount)
-                                                                   JobRecipeCard(
-                                                                     job: myJobs[i],
-                                                                     repository: widget.repository,
-                                                                     showDetailerManagement: true,
-                                                                     onJobChanged: () => setState(() {}),
-                                                                     onLike: () => widget.repository.toggleLike(myJobs[i].id),
-                                                                     onSave: () => widget.repository.toggleSave(myJobs[i].id),
-                                                                   ),
-                                                               ],
-                                                             ),
-                                                           ),
-                                                         ],
-                                                       ],
-                                                     ),
-                                                   ),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                          ),
-                        ],
-                          ),
-                        ),
-                      ),
-
-                      // TAB 2: Saved Recipes (Playbook)
-                      Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1200),
-                          child: savedJobs.isEmpty
-                              ? Center(
-                                  child: SingleChildScrollView(
-                                    padding: const EdgeInsets.all(32),
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.all(16),
-                                          decoration: BoxDecoration(
-                                            color: AppTheme.primary.withAlpha(20),
-                                            shape: BoxShape.circle,
-                                            border: Border.all(color: AppTheme.primary.withAlpha(60)),
-                                          ),
-                                          child: const Icon(Icons.bookmark_border_rounded, size: 40, color: AppTheme.primary),
-                                        ),
-                                        const SizedBox(height: 14),
-                                        const Text(
-                                          'No Saved Recipes Yet',
-                                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        const Text(
-                                          'Bookmark recipes from the community feed to build your technical paint correction playbook.',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                )
-                              : LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    final isDesktop = constraints.maxWidth >= 720;
-                                    final isWide = constraints.maxWidth >= 1024;
-                                    final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
-
-                                    return Center(
-                                      child: ConstrainedBox(
-                                        constraints: const BoxConstraints(maxWidth: 1200),
-                                        child: SizedBox(
-                                          width: double.infinity,
-                                          child: !isDesktop
-                                              ? ListView.builder(
-                                                  padding: const EdgeInsets.all(16),
-                                                  itemCount: savedJobs.length,
-                                                  itemBuilder: (context, index) {
-                                                    final job = savedJobs[index];
-                                                    return JobRecipeCard(
-                                                      job: job,
-                                                      repository: widget.repository,
-                                                      onJobChanged: () => setState(() {}),
-                                                      onLike: () => widget.repository.toggleLike(job.id),
-                                                      onSave: () => widget.repository.toggleSave(job.id),
-                                                    );
-                                                  },
-                                                )
-                                              : SingleChildScrollView(
-                                                  padding: const EdgeInsets.all(16),
-                                                  child: Row(
-                                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                                    children: [
-                                                      for (int col = 0; col < crossAxisCount; col++) ...[
-                                                        if (col > 0) const SizedBox(width: 16),
-                                                        Expanded(
-                                                          child: Column(
-                                                            children: [
-                                                              for (int i = col; i < savedJobs.length; i += crossAxisCount)
-                                                                JobRecipeCard(
-                                                                  job: savedJobs[i],
-                                                                  repository: widget.repository,
-                                                                  onJobChanged: () => setState(() {}),
-                                                                  onLike: () => widget.repository.toggleLike(savedJobs[i].id),
-                                                                  onSave: () => widget.repository.toggleSave(savedJobs[i].id),
-                                                                ),
-                                                            ],
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ],
-                                                  ),
-                                                ),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                        ),
-                      ),
-
-                      // TAB 3: Services & Pricing
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final isDesktop = constraints.maxWidth >= 720;
-                          final isWide = constraints.maxWidth >= 1024;
-                          final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
-
-                          return Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 1280),
-                              child: ListView(
-                                padding: const EdgeInsets.all(16),
-                                children: [
-                                  // Header with "+ Add Service Package" CTA
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          const Text(
-                                            'Studio Services & Menus',
-                                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            '${packages.length} active service packages offered to clients',
-                                            style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
-                                          ),
-                                        ],
-                                      ),
-                                      ElevatedButton.icon(
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: AppTheme.primary,
-                                          foregroundColor: Colors.black,
-                                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                        ),
-                                        onPressed: () {
-                                          ServicePackageEditorDialog.show(
-                                            context,
-                                            onSave: (newPkg) => widget.repository.addServicePackage(newPkg),
-                                          );
-                                        },
-                                        icon: const Icon(Icons.add_rounded, size: 18),
-                                        label: const Text(
-                                          'Add Package',
-                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 14),
-
-                                  if (packages.isEmpty)
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
-                                      decoration: BoxDecoration(
-                                        color: AppTheme.surface,
-                                        borderRadius: BorderRadius.circular(16),
-                                        border: Border.all(color: AppTheme.border),
-                                      ),
-                                      child: Column(
-                                        children: [
-                                          const Icon(Icons.miscellaneous_services_outlined, size: 48, color: AppTheme.textMuted),
-                                          const SizedBox(height: 12),
-                                          const Text('No Services Defined Yet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                          const SizedBox(height: 6),
-                                          const Text('Add your interior, exterior, ceramic coating, or PPF packages for clients to book.', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
-                                          const SizedBox(height: 16),
-                                          ElevatedButton.icon(
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: AppTheme.primary,
-                                              foregroundColor: Colors.black,
-                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                            ),
-                                            onPressed: () {
-                                              ServicePackageEditorDialog.show(
-                                                context,
-                                                onSave: (newPkg) => widget.repository.addServicePackage(newPkg),
-                                              );
-                                            },
-                                            icon: const Icon(Icons.add_rounded, size: 18),
-                                            label: const Text('Create First Package', style: TextStyle(fontWeight: FontWeight.bold)),
-                                          ),
-                                        ],
-                                      ),
-                                    )
-                                  else if (!isDesktop)
-                                    ...packages.map((pkg) => _buildServicePackageCard(pkg, isGrid: false))
-                                  else
-                                    GridView.builder(
-                                      shrinkWrap: true,
-                                      physics: const NeverScrollableScrollPhysics(),
-                                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount: crossAxisCount,
-                                        crossAxisSpacing: 16,
-                                        mainAxisSpacing: 16,
-                                        childAspectRatio: 1.15,
-                                      ),
-                                      itemCount: packages.length,
-                                      itemBuilder: (context, index) {
-                                        return _buildServicePackageCard(packages[index], isGrid: true);
-                                      },
-                                    ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-
-                      // TAB 3: My Team (Hired Staff)
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final isDesktop = constraints.maxWidth >= 720;
-                          final isWide = constraints.maxWidth >= 1024;
-                          final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
-
-                          return Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 1280),
-                              child: ListView(
-                                padding: const EdgeInsets.all(16),
-                                children: [
-                                  // 1. OWNER / FOUNDER CARD AT THE TOP
-                                  Container(
-                                    margin: const EdgeInsets.only(bottom: 14),
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.surface,
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(color: AppTheme.primary, width: 1.5),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: AppTheme.primary.withAlpha(25),
-                                          blurRadius: 10,
-                                          offset: const Offset(0, 4),
-                                        ),
-                                      ],
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Stack(
-                                          alignment: Alignment.bottomRight,
-                                          children: [
-                                            CircleAvatar(
-                                              radius: 26,
-                                              backgroundImage: user.localAvatarBytes != null
-                                                  ? MemoryImage(user.localAvatarBytes!) as ImageProvider
-                                                  : NetworkImage(user.avatarUrl),
-                                            ),
-                                            Container(
-                                              padding: const EdgeInsets.all(3),
-                                              decoration: const BoxDecoration(
-                                                color: AppTheme.primary,
-                                                shape: BoxShape.circle,
-                                              ),
-                                              child: const Icon(Icons.workspace_premium_rounded, size: 12, color: Colors.black),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(width: 14),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Flexible(
-                                                    child: Text(
-                                                      user.displayName,
-                                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white),
-                                                      overflow: TextOverflow.ellipsis,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                    decoration: BoxDecoration(
-                                                      color: AppTheme.primary.withAlpha(30),
-                                                      borderRadius: BorderRadius.circular(6),
-                                                      border: Border.all(color: AppTheme.primary.withAlpha(120)),
-                                                    ),
-                                                    child: const Text(
-                                                      'Founder & Lead Master',
-                                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 3),
-                                              Text(
-                                                user.businessName,
-                                                style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Row(
-                                                children: [
-                                                  const Icon(Icons.star_rounded, size: 14, color: Colors.amber),
-                                                  const SizedBox(width: 4),
-                                                  Text('${user.averageRating} Rating', style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold)),
-                                                  const SizedBox(width: 8),
-                                                  Text('• ${user.totalJobsCount} jobs completed', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        IconButton(
-                                          icon: const Icon(Icons.edit_outlined, color: AppTheme.primary, size: 20),
-                                          tooltip: 'Edit Profile',
-                                          onPressed: () => EditProfileDialog.show(context, repository: widget.repository),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  // 2. ADD STAFF BUTTON
-                                  OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      side: const BorderSide(color: AppTheme.primary),
-                                      foregroundColor: AppTheme.primary,
-                                      minimumSize: const Size(double.infinity, 44),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                    ),
-                                    icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
-                                    label: const Text('Add Hired Staff Member', style: TextStyle(fontWeight: FontWeight.bold)),
-                                    onPressed: () => AddTeamMemberDialog.show(context, repository: widget.repository),
-                                  ),
-                                  const SizedBox(height: 14),
-
-                                  // 3. HIRED STAFF MEMBERS LIST
-                                  if (team.isEmpty)
-                                    const Center(
-                                      child: Padding(
-                                        padding: EdgeInsets.all(24),
-                                        child: Text(
-                                          'No additional staff hired yet.\nWhen you expand your business, add hired specialists here so clients can select them when booking!',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.4),
-                                        ),
-                                      ),
-                                    )
-                                  else if (!isDesktop)
-                                    ...team.map((member) => _buildTeamMemberCard(member, isGrid: false))
-                                  else
-                                    GridView.builder(
-                                      shrinkWrap: true,
-                                      physics: const NeverScrollableScrollPhysics(),
-                                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount: crossAxisCount,
-                                        crossAxisSpacing: 16,
-                                        mainAxisSpacing: 16,
-                                        childAspectRatio: 2.8,
-                                      ),
-                                      itemCount: team.length,
-                                      itemBuilder: (context, index) {
-                                        return _buildTeamMemberCard(team[index], isGrid: true);
-                                      },
-                                    ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  )
-                // REGULAR USER VIEW: My Garage & Saved Recipes TabBarView
-                : TabBarView(
+            body: TabBarView(
                     controller: _clientTabController,
                     children: [
                       // CLIENT TAB 1: My Garage
@@ -1512,175 +807,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
     );
   }
 
-  Widget _buildServicePackageCard(ServicePackage pkg, {bool isGrid = false}) {
-    return Container(
-      margin: EdgeInsets.only(bottom: isGrid ? 0 : 14),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: pkg.isPopular ? AppTheme.primary.withAlpha(150) : AppTheme.border,
-          width: pkg.isPopular ? 1.5 : 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            pkg.title,
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        if (pkg.isPopular) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.amber.withAlpha(30),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: Colors.amber, width: 0.8),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.star_rounded, size: 12, color: Colors.amber),
-                                SizedBox(width: 2),
-                                Text(
-                                  'POPULAR',
-                                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.amber),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        const Icon(Icons.timer_outlined, size: 14, color: AppTheme.textMuted),
-                        const SizedBox(width: 4),
-                        Text(pkg.estimatedDuration, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              Row(
-                children: [
-                  Text(
-                    '\$${pkg.basePrice.toStringAsFixed(0)}',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  InkWell(
-                    onTap: () {
-                      ServicePackageEditorDialog.show(
-                        context,
-                        package: pkg,
-                        onSave: (updated) => widget.repository.updateServicePackage(updated),
-                        onDelete: () => widget.repository.removeServicePackage(pkg.id),
-                      );
-                    },
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: AppTheme.surfaceLight,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppTheme.border),
-                      ),
-                      child: const Icon(Icons.edit_outlined, size: 15, color: AppTheme.primary),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          if (pkg.description.isNotEmpty) ...[
-            Text(pkg.description, style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
-            const SizedBox(height: 12),
-          ],
-          ...pkg.includes.map((inc) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.check_circle_rounded, size: 14, color: AppTheme.primary),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(inc, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary))),
-                  ],
-                ),
-              )),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildTeamMemberCard(TeamMember member, {bool isGrid = false}) {
-    return Container(
-      margin: EdgeInsets.only(bottom: isGrid ? 0 : 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundImage: member.localAvatarBytes != null
-                ? MemoryImage(member.localAvatarBytes!) as ImageProvider
-                : NetworkImage(member.avatarUrl),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(member.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                const SizedBox(height: 2),
-                Text(member.roleTitle, style: const TextStyle(fontSize: 12, color: AppTheme.primary)),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(Icons.star_rounded, size: 14, color: Colors.amber),
-                    const SizedBox(width: 4),
-                    Text('${member.rating} Rating', style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                    const SizedBox(width: 8),
-                    Text('• ${member.completedJobsCount} jobs done', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close_rounded, color: AppTheme.textMuted, size: 18),
-            tooltip: 'Remove from team',
-            onPressed: () => widget.repository.removeTeamMember(member.id),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {

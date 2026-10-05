@@ -6,6 +6,7 @@ import '../models/booking_models.dart';
 import '../models/team_member.dart';
 import '../models/user_vehicle.dart';
 import '../models/message_model.dart';
+import '../models/inventory_item.dart';
 import '../core/constants/detailing_presets.dart';
 import 'mock_data_service.dart';
 import 'local_storage_service.dart';
@@ -20,6 +21,7 @@ class JobRepository extends ChangeNotifier {
   List<UserProfile> _publicDetailers = List.from(MockDataService.publicDetailers);
   UserProfile _currentUser = MockDataService.youUser; // Default fallback
   List<StudioRecipePreset> _customPresets = [];
+  List<InventoryItem> _inventoryItems = MockDataService.getInitialInventory();
 
   String _selectedServiceType = 'All Services';
   String _selectedLocationCity = 'All Locations';
@@ -102,6 +104,14 @@ class JobRepository extends ChangeNotifier {
 
     // 4b. Load custom recipe presets from local cache
     _customPresets = await LocalStorageService.loadCustomPresets();
+
+    // 4c. Load inventory items from local cache
+    final savedInventory = await LocalStorageService.loadInventoryItems();
+    if (savedInventory != null) {
+      _inventoryItems = savedInventory;
+    } else {
+      _inventoryItems = MockDataService.getInitialInventory();
+    }
 
     // 5. Load persistent likes & bookmarks from local cache
     final interaction = await LocalStorageService.loadInteractionState();
@@ -333,6 +343,33 @@ class JobRepository extends ChangeNotifier {
   void deleteRecipePreset(String presetId) {
     _customPresets.removeWhere((p) => p.id == presetId);
     LocalStorageService.saveCustomPresets(_customPresets);
+    notifyListeners();
+  }
+
+  // Inventory Getters & Actions (Hardware, Chemicals, Recipes)
+  List<InventoryItem> get inventoryItems => List.unmodifiable(_inventoryItems);
+  List<InventoryItem> get hardwareItems => _inventoryItems.where((i) => i.category == InventoryCategory.hardware).toList();
+  List<InventoryItem> get chemicalItems => _inventoryItems.where((i) => i.category == InventoryCategory.chemicals).toList();
+  List<InventoryItem> get recipeItems => _inventoryItems.where((i) => i.category == InventoryCategory.recipe).toList();
+
+  void addInventoryItem(InventoryItem item) {
+    _inventoryItems.insert(0, item);
+    LocalStorageService.saveInventoryItems(_inventoryItems);
+    notifyListeners();
+  }
+
+  void updateInventoryItem(InventoryItem updated) {
+    final idx = _inventoryItems.indexWhere((i) => i.id == updated.id);
+    if (idx != -1) {
+      _inventoryItems[idx] = updated;
+      LocalStorageService.saveInventoryItems(_inventoryItems);
+      notifyListeners();
+    }
+  }
+
+  void removeInventoryItem(String itemId) {
+    _inventoryItems.removeWhere((i) => i.id == itemId);
+    LocalStorageService.saveInventoryItems(_inventoryItems);
     notifyListeners();
   }
 
@@ -699,6 +736,20 @@ class JobRepository extends ChangeNotifier {
       SupabaseDbService.deleteTeamMember(memberId);
     }
     notifyListeners();
+  }
+
+  void updateTeamMember(TeamMember updated) {
+    final idx = _currentUser.teamMembers.indexWhere((m) => m.id == updated.id);
+    if (idx != -1) {
+      final list = List<TeamMember>.from(_currentUser.teamMembers);
+      list[idx] = updated;
+      _currentUser = _currentUser.copyWith(teamMembers: list);
+      _persistUser();
+      if (_isLoggedIn) {
+        SupabaseDbService.saveTeamMember(_currentUser.id, updated);
+      }
+      notifyListeners();
+    }
   }
 
   // Add / Edit / Remove Service Package (Persisted)

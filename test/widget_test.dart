@@ -17,6 +17,8 @@ import 'package:detail_craft/models/paint_gauge_point.dart';
 import 'package:detail_craft/widgets/paint_gauge_walkaround_widget.dart';
 import 'package:detail_craft/widgets/job_recipe_card.dart';
 import 'package:detail_craft/screens/profile_screen.dart';
+import 'package:detail_craft/screens/detailer_workbench_view.dart';
+import 'package:detail_craft/models/inventory_item.dart';
 
 import 'dart:async';
 import 'dart:io';
@@ -2087,6 +2089,276 @@ void main() {
 
     expect(find.text('Renamed Heavy Cut Preset'), findsNothing);
     expect(repository.allRecipePresets.any((p) => p.name == 'Renamed Heavy Cut Preset'), isFalse);
+  });
+
+  testWidgets('Detailer Workbench View renders 3 panes on desktop, supports Focus Mode, subcategory filtering, and mobile drill-down', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final repository = JobRepository();
+    repository.isLoggedIn = true;
+    if (repository.currentUser.role != UserRole.detailer) {
+      repository.toggleHostMode();
+    }
+
+    // --- 1. DESKTOP VIEW (1200 x 800) ---
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1.0;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: DetailerWorkbenchView(repository: repository),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Verify Pane 1 (Studio Hub) sections exist
+    expect(find.text('STUDIO WORKBENCH HUB'), findsOneWidget);
+    expect(find.text('Portfolio'), findsOneWidget);
+    expect(find.text('Saved Recipes'), findsOneWidget);
+    expect(find.text('Services'), findsOneWidget);
+    expect(find.text('My Teams'), findsOneWidget);
+    expect(find.text('Inventory'), findsOneWidget);
+
+    // Verify Focus Mode toggle button in Pane 3
+    expect(find.text('Focus Mode'), findsOneWidget);
+
+    // 2. Test INVENTORY Pane 2 & Subcategory Filtering
+    await tester.tap(find.text('Inventory'));
+    await tester.pumpAndSettle();
+
+    // Verify Pane 2 header for Inventory
+    expect(find.text('INVENTORY'), findsWidgets);
+    expect(find.text('[ + ADD ]'), findsOneWidget);
+    expect(find.text('ALL'), findsOneWidget);
+    expect(find.text('HARDWARE'), findsWidgets);
+    expect(find.text('CHEMICALS'), findsOneWidget);
+    expect(find.text('RECIPE'), findsOneWidget);
+
+    // Initial items include Hardware
+    expect(find.text('Rupes LHR15 Mark III (15mm)'), findsWidgets);
+
+    // Filter by CHEMICALS
+    await tester.tap(find.text('CHEMICALS'));
+    await tester.pumpAndSettle();
+
+    // Hardware should be filtered out, Chemical present
+    expect(find.text('Rupes LHR15 Mark III (15mm)'), findsNothing);
+    expect(find.text('Koch Chemie H9.02 Heavy Cut'), findsWidgets);
+
+    // Filter by RECIPE
+    await tester.ensureVisible(find.text('RECIPE'));
+    await tester.tap(find.text('RECIPE'));
+    await tester.pumpAndSettle();
+    expect(find.text('German Ceramic Clear 2-Stage Formula'), findsWidgets);
+
+    // Return to ALL
+    await tester.ensureVisible(find.text('ALL'));
+    await tester.tap(find.text('ALL'));
+    await tester.pumpAndSettle();
+    expect(find.text('Rupes LHR15 Mark III (15mm)'), findsWidgets);
+
+    // 3. Test Focus Mode Toggle (Collapse Panes 1 & 2)
+    await tester.tap(find.text('Focus Mode'));
+    await tester.pumpAndSettle();
+
+    // Panes 1 and 2 collapsed: Studio Hub title no longer visible
+    expect(find.text('STUDIO WORKBENCH HUB'), findsNothing);
+    expect(find.text('Exit Focus'), findsOneWidget);
+
+    // Exit Focus Mode -> Panes restored
+    await tester.tap(find.text('Exit Focus'));
+    await tester.pumpAndSettle();
+    expect(find.text('STUDIO WORKBENCH HUB'), findsOneWidget);
+    expect(find.text('Focus Mode'), findsOneWidget);
+
+    // 4. Test MY TEAMS hub section
+    await tester.tap(find.text('My Teams'));
+    await tester.pumpAndSettle();
+    expect(find.text('MY TEAMS'), findsWidgets);
+    expect(find.text('FOUNDER'), findsOneWidget);
+
+    // 5. Test SERVICES hub section
+    await tester.tap(find.text('Services'));
+    await tester.pumpAndSettle();
+    expect(find.text('SERVICES'), findsWidgets);
+    expect(find.text('Stage 2 Paint Correction & Enhancement'), findsWidgets);
+
+    // 6. Test Inventory Repository Mutators (Add item)
+    final newItem = InventoryItem(
+      id: 'inv_test_001',
+      name: 'Flex XFE 7-15 150',
+      category: InventoryCategory.hardware,
+      subCategory: 'Dual Action Polisher',
+      brand: 'Flex Tools',
+      status: 'AVAILABLE',
+      specs: {'Throw': '15mm', 'OPM': '2900-8600'},
+      maintenance: 'Checked brushes and grease',
+    );
+    repository.addInventoryItem(newItem);
+    await tester.tap(find.text('Inventory'));
+    await tester.pumpAndSettle();
+    expect(find.text('Flex XFE 7-15 150'), findsOneWidget);
+
+    // --- 7. MOBILE DRILL-DOWN STACK (400 x 800) ---
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // In mobile step 0: Studio Hub is shown
+    expect(find.text('STUDIO WORKBENCH HUB'), findsOneWidget);
+
+    // Tap Inventory -> drill down to Step 1 (List)
+    await tester.tap(find.text('Inventory'));
+    await tester.pumpAndSettle();
+    expect(find.text('Polishers, chemicals, formulas'), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_back_rounded), findsOneWidget);
+
+    // Tap item -> drill down to Step 2 (Inspector)
+    await tester.tap(find.text('Flex XFE 7-15 150'));
+    await tester.pumpAndSettle();
+    expect(find.text('TECHNICAL HARDWARE SPECIFICATIONS'), findsOneWidget);
+
+    // Tap back button -> back to Step 1 (List)
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('Polishers, chemicals, formulas'), findsOneWidget);
+
+    // Tap back button again -> back to Step 0 (Hub)
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('STUDIO WORKBENCH HUB'), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('Detailer Workbench View handles item deletion, fallback selection, specs preservation, and mobile delete step-back safely', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final repository = JobRepository();
+    repository.isLoggedIn = true;
+    if (repository.currentUser.role != UserRole.detailer) {
+      repository.toggleHostMode();
+    }
+
+    // 1. DESKTOP VIEW
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1.0;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: DetailerWorkbenchView(repository: repository),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Select Inventory in Pane 1
+    await tester.tap(find.text('Inventory'));
+    await tester.pumpAndSettle();
+
+    // Active item is initial hardware polisher
+    expect(find.text('Rupes LHR15 Mark III (15mm)'), findsWidgets);
+    expect(find.text('TECHNICAL HARDWARE SPECIFICATIONS'), findsOneWidget);
+
+    // Verify Delete action exists in Pane 3 Top Right
+    final deleteFinder = find.byTooltip('Delete Item');
+    expect(deleteFinder, findsOneWidget);
+
+    // Tap Delete -> Confirmation Dialog
+    await tester.tap(deleteFinder);
+    await tester.pumpAndSettle();
+    expect(find.text('Confirm Deletion'), findsOneWidget);
+    expect(find.textContaining('Are you sure you want to remove "Rupes LHR15 Mark III (15mm)"?'), findsOneWidget);
+
+    // Confirm deletion
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Delete'));
+    await tester.pumpAndSettle();
+
+    // Verify Rupes is deleted from repository and Pane 2
+    expect(repository.inventoryItems.any((i) => i.name.contains('Rupes LHR15 Mark III')), isFalse);
+    expect(find.text('Rupes LHR15 Mark III (15mm)'), findsNothing);
+
+    // Verify fallback selection gracefully selected the next item without errors
+    expect(find.byType(DetailerWorkbenchView), findsOneWidget);
+    expect(find.text('Flex PXE 80 10.8-EC'), findsWidgets);
+
+    // 2. Test specs preservation in InventoryItemEditorDialog
+    final customItem = const InventoryItem(
+      id: 'inv_preserve_test',
+      name: 'Custom Coating X',
+      category: InventoryCategory.chemicals,
+      subCategory: 'Ceramic Coating',
+      specs: {
+        'SiO2 Concentration': '85%',
+        'Hardness': '9H Pencil',
+        'Stock Volume': '50 ml',
+      },
+    );
+    repository.addInventoryItem(customItem);
+    await tester.pumpAndSettle();
+
+    // Tap to select Custom Coating X
+    await tester.tap(find.text('Custom Coating X'));
+    await tester.pumpAndSettle();
+    expect(find.text('SiO2 Concentration'), findsOneWidget);
+
+    // Open [EDIT] in Pane 3
+    await tester.tap(find.text('[EDIT]'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit CHEMICALS'), findsOneWidget);
+
+    // Save changes without editing specs
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Save Changes'));
+    await tester.pumpAndSettle();
+
+    // Verify original specs map was preserved
+    final savedItem = repository.inventoryItems.firstWhere((i) => i.id == 'inv_preserve_test');
+    expect(savedItem.specs['SiO2 Concentration'], equals('85%'));
+    expect(savedItem.specs['Hardness'], equals('9H Pencil'));
+
+    // 3. Test Mobile Drill-Down Delete Step-Back
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Mobile Step 0: Tap Inventory -> Step 1 (List)
+    await tester.tap(find.text('Inventory'));
+    await tester.pumpAndSettle();
+    expect(find.text('Polishers, chemicals, formulas'), findsOneWidget);
+
+    // Step 1: Tap item -> Step 2 (Inspector)
+    await tester.tap(find.text('Custom Coating X'));
+    await tester.pumpAndSettle();
+    expect(find.text('CHEMICAL CHARACTERISTICS'), findsOneWidget);
+
+    // Step 2: Delete item from Pane 3
+    final mobileDeleteFinder = find.byTooltip('Delete Item');
+    await tester.tap(mobileDeleteFinder);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Delete'));
+    await tester.pumpAndSettle();
+
+    // Verify view automatically stepped back to Step 1 (List)
+    expect(find.text('Polishers, chemicals, formulas'), findsOneWidget);
+    expect(find.text('Custom Coating X'), findsNothing);
+
+    // Verify SafeArea exists in tree for mobile view
+    expect(find.byType(SafeArea), findsWidgets);
+
+    debugNetworkImageHttpClientProvider = null;
   });
 }
 

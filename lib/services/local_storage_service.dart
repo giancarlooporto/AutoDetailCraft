@@ -5,6 +5,7 @@ import '../models/user_profile.dart';
 import '../models/booking_models.dart';
 import '../models/detail_job.dart';
 import '../models/message_model.dart';
+import '../models/inventory_item.dart';
 import '../core/constants/detailing_presets.dart';
 
 class LocalStorageService {
@@ -13,6 +14,7 @@ class LocalStorageService {
   static const String _bookingsKey = 'adc_bookings_state_v3';
   static const String _customJobsKey = 'adc_custom_jobs_v1';
   static const String _customPresetsKey = 'adc_custom_presets_v1';
+  static const String _inventoryKey = 'adc_inventory_items_v1';
   static const String _savedJobsKey = 'adc_saved_jobs_v3';
   static const String _likedJobsKey = 'adc_liked_jobs_v3';
   static const String _activeTabKey = 'adc_active_tab_index_v1';
@@ -293,5 +295,27 @@ class LocalStorageService {
       }
     }
     return [];
+  }
+
+  // Save Inventory Items (Hardware, Chemicals, Recipes)
+  static Future<void> saveInventoryItems(List<InventoryItem> items) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = items.map((i) => i.toJson()).toList();
+      await prefs.setString(_inventoryKey, jsonEncode(list));
+    } catch (_) {}
+  }
+
+  // Load Inventory Items
+  static Future<List<InventoryItem>?> loadInventoryItems() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_inventoryKey);
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(jsonStr);
+        return list.map((item) => InventoryItem.fromJson(item as Map<String, dynamic>)).toList();
+      }
+    } catch (_) {}
+    return null;
   }
 }

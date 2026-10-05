@@ -272,20 +272,22 @@ class JobRecipeCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
                                 job.author.businessName,
                                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                overflow: TextOverflow.ellipsis,
                               ),
-                            ),
-                            if (job.author.isVerifiedHost) ...[
-                              const SizedBox(width: 4),
-                              const Icon(Icons.verified_rounded, size: 15, color: AppTheme.primary),
+                              if (job.author.isVerifiedHost) ...[
+                                const SizedBox(width: 4),
+                                const Icon(Icons.verified_rounded, size: 15, color: AppTheme.primary),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                         Text(
                           '${job.author.location} • ${_formatTimeAgo(job.createdAt)}',
@@ -561,11 +563,16 @@ class JobRecipeCard extends StatelessWidget {
                 const SizedBox(height: 8),
 
                 // Actions: Likes, Comments, View Details, Book
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  runSpacing: 4,
                   children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 3,
+                      runSpacing: 2,
                       children: [
                         IconButton(
                           visualDensity: VisualDensity.compact,
@@ -578,9 +585,8 @@ class JobRecipeCard extends StatelessWidget {
                           ),
                           onPressed: onLike,
                         ),
-                        const SizedBox(width: 3),
                         Text('${job.likesCount}', style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 3),
                         IconButton(
                           visualDensity: VisualDensity.compact,
                           padding: const EdgeInsets.all(2),
@@ -596,9 +602,8 @@ class JobRecipeCard extends StatelessWidget {
                             );
                           },
                         ),
-                        const SizedBox(width: 3),
                         Text('${job.comments.length}', style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 3),
                         IconButton(
                           visualDensity: VisualDensity.compact,
                           padding: const EdgeInsets.all(2),
@@ -610,7 +615,6 @@ class JobRecipeCard extends StatelessWidget {
                           ),
                           onPressed: onSave,
                         ),
-                        const SizedBox(width: 3),
                         Text('${job.savesCount}', style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
                       ],
                     ),
