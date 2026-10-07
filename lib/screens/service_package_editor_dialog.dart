@@ -3,6 +3,24 @@ import '../models/booking_models.dart';
 import '../models/inventory_item.dart';
 import '../core/theme/app_theme.dart';
 
+class ServicePackageTemplate {
+  final String title;
+  final double price;
+  final String durationValue;
+  final String durationUnit; // 'minutes', 'hours', 'days'
+  final String description;
+  final List<String> includes;
+
+  const ServicePackageTemplate({
+    required this.title,
+    required this.price,
+    required this.durationValue,
+    required this.durationUnit,
+    required this.description,
+    required this.includes,
+  });
+}
+
 class ServicePackageEditorDialog extends StatefulWidget {
   final ServicePackage? package;
   final List<InventoryItem> availableRecipes;
@@ -47,22 +65,174 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
   late TextEditingController _durationValueController;
   late TextEditingController _includesController;
 
-  String _durationUnit = 'hours'; // 'hours' or 'days'
+  String _durationUnit = 'hours'; // 'minutes', 'hours', or 'days'
   bool _isPopular = false;
   String? _linkedRecipeId;
   String? _linkedRecipeName;
+  String? _suggestedRecipeTitle;
 
-  final List<String> _suggestedCategories = [
-    'Interior Detail',
-    'Exterior Detail & Decon',
-    'Full Detail (In & Out)',
-    '1-Stage Paint Correction',
-    '2-Stage Multi-Cut Polish',
-    'Ceramic Coating (3-Year)',
-    'Ceramic Coating (5-Year)',
-    'Paint Protection Film (PPF)',
-    'Headlight Restoration',
-    'Engine Bay Detail',
+  static const List<ServicePackageTemplate> templates = [
+    ServicePackageTemplate(
+      title: 'Interior Detail',
+      price: 180,
+      durationValue: '3',
+      durationUnit: 'hours',
+      description: 'Complete interior rejuvenation and sanitization. Lifts deep dirt, body oils, and odors to restore an OEM matte factory finish on all cabin surfaces.',
+      includes: [
+        'High-power vacuum of carpets, trunk & crevices',
+        'Deep steam cleaning of dash, console & door panels',
+        'Shampoo extraction of cloth upholstery & floor mats',
+        'pH-neutral leather cleaning & conditioning balm',
+        'Streak-free interior glass & rear-view cleaning',
+        'UV matte protection shield on plastics & vinyl',
+        'Antimicrobial HVAC vent blowout & odor neutralizer',
+      ],
+    ),
+    ServicePackageTemplate(
+      title: 'Exterior Detail & Decon',
+      price: 160,
+      durationValue: '3',
+      durationUnit: 'hours',
+      description: 'Multi-stage exterior decontamination wash that dissolves road grime, embedded iron fallout, and mineral deposits, sealed with a 6-month ceramic spray shield.',
+      includes: [
+        'High-lubricity pH-neutral foam pre-wash & 2-bucket hand wash',
+        'Deep wheel face, inner barrel & brake caliper clean',
+        'Chemical iron & fallout decontamination spray',
+        'Fine synthetic clay bar mechanical decontamination',
+        'Touchless filtered warm-air blow dry & microfiber finish',
+        'Hydrophobic 6-month ceramic spray sealant applied',
+        'Satin tire dressing & exterior trim UV restoration',
+      ],
+    ),
+    ServicePackageTemplate(
+      title: 'Full Detail (In & Out)',
+      price: 280,
+      durationValue: '5',
+      durationUnit: 'hours',
+      description: 'Our complete vehicle transformation package combining an intensive interior sanitization with a full exterior decontamination wash and paint gloss sealant.',
+      includes: [
+        'Full exterior snow foam hand wash & wheel barrels',
+        'Iron fallout decontamination & clay bar smooth treatment',
+        'Deep carpet, floor mat & seat shampoo extraction',
+        'Steam sanitization of high-touch dash, consoles & cup holders',
+        'Leather cleanse, conditioning & UV satin dashboard dressing',
+        'High-gloss ceramic spray sealant (4–6 month protection)',
+        'Crystal-clear interior & exterior glass clarity polish',
+        'Tire shine & matte exterior plastics dressing',
+      ],
+    ),
+    ServicePackageTemplate(
+      title: '1-Stage Paint Correction',
+      price: 450,
+      durationValue: '6',
+      durationUnit: 'hours',
+      description: 'Precision single-step machine polish designed to eliminate 50–70% of light swirl marks, haze, and wash marring while significantly enhancing optical clarity and gloss.',
+      includes: [
+        'Multi-stage foam wash & iron/clay decontamination',
+        'Ultrasonic digital paint depth gauge inspection',
+        'Delicate trim, rubber & badge tape masking',
+        'Single-step dual-action machine polish & refinement pad',
+        'Elimination of 50–70% of light swirl marks and haze',
+        'Panel wipe alcohol (IPA) prep to verify true finish',
+        '12-month synthetic ceramic paint sealant applied',
+      ],
+    ),
+    ServicePackageTemplate(
+      title: '2-Stage Multi-Cut Polish',
+      price: 750,
+      durationValue: '1',
+      durationUnit: 'days',
+      description: 'Intensive compound and jeweling polish process eliminating 85–95% of moderate-to-deep scratches, etching, and swirl marks for a mirror-like show-car reflection.',
+      includes: [
+        'Full decontamination wash (iron spray, tar remover, clay mitt)',
+        'Digital paint gauge mapping across all metal and composite panels',
+        'Full trim, badge, and edge masking protection',
+        'Stage 1: Heavy cutting microfiber compound to level defects',
+        'Stage 2: Micro-finishing foam jeweling polish for high clarity',
+        'Elimination of 85–95% of swirl marks, scratches & wash marring',
+        'Full IPA solvent panel wipe inspection under multi-spectrum LED',
+        '12-month ceramic gloss seal protective layer',
+      ],
+    ),
+    ServicePackageTemplate(
+      title: 'Ceramic Coating (3-Year)',
+      price: 950,
+      durationValue: '1',
+      durationUnit: 'days',
+      description: 'Professional 9H nano-ceramic coating creating a permanent hard glass bond over your paint. Drastically repels water, road salt, bird drops, and UV degradation for 3 years.',
+      includes: [
+        'Comprehensive decon wash, iron melt & synthetic clay treatment',
+        'Single-stage machine polish enhancement for maximum bonding',
+        'Dual alcohol surface prep wipe down',
+        'Professional 9H ceramic coating applied to all painted surfaces',
+        'Hydrophobic glass rain repellent on windshield & front windows',
+        'Wheel face ceramic barrier coating',
+        'IR heat lamp curing session & CARFAX warranty registration',
+      ],
+    ),
+    ServicePackageTemplate(
+      title: 'Ceramic Coating (5-Year)',
+      price: 1600,
+      durationValue: '2',
+      durationUnit: 'days',
+      description: 'Our flagship multi-layer ceramic defense package featuring an ultra-dense 9H+ base layer paired with a slick sacrificial topcoat for maximum chemical resistance, self-cleaning, and candy gloss.',
+      includes: [
+        'Full decontamination wash & chemical iron bath',
+        'Multi-stage paint correction to remove 90%+ swirls & defects',
+        'Base Layer: Ultra-dense 9H+ hardness ceramic nano-composite',
+        'Top Layer: Ultra-hydrophobic slick gloss sacrificial topper',
+        'Ceramic coating applied to all painted surfaces & door jambs',
+        'High-temp wheel faces & exhaust tips ceramic coating',
+        'Full glass hydrophobic ceramic coating treatment',
+        '24-hour climate-controlled IR curing & annual inspection warranty',
+      ],
+    ),
+    ServicePackageTemplate(
+      title: 'Paint Protection Film (PPF)',
+      price: 2200,
+      durationValue: '2',
+      durationUnit: 'days',
+      description: 'High-impact 8-mil self-healing polyurethane film installed on vulnerable strike zones. Completely stops rock chips, road sand, bug acid, and scratches before they touch your paint.',
+      includes: [
+        'Multi-stage decontamination wash & clay bar surface prep',
+        'Light paint correction polish to eliminate sub-film defects',
+        'Full computer-cut template plot & edge wrapping where possible',
+        'Full front clip coverage: Bumper, full hood, fenders, mirrors & headlights',
+        'Optical clarity 8-mil self-healing TPU polyurethane film',
+        'Hydrophobic top-coat infused for easy maintenance washes',
+        'Heat-gun edge inspection & post-installation cure check',
+        '10-year manufacturer warranty against yellowing or peeling',
+      ],
+    ),
+    ServicePackageTemplate(
+      title: 'Headlight Restoration',
+      price: 110,
+      durationValue: '1',
+      durationUnit: 'hours',
+      description: 'Multi-stage wet-sanding and compound refinement removing yellowing and cloudy oxidation from polycarbonate lenses, sealed with an OEM UV clear coat.',
+      includes: [
+        'Fender and bumper surrounding paint protective masking',
+        'Progressive wet sanding (1000, 2000, 3000 grit) to remove oxidation',
+        'Rotary compounding & jeweling polish to restore crystal clarity',
+        'Solvent wipe to remove residue',
+        'OEM-grade high-gloss UV blocking sealant applied',
+      ],
+    ),
+    ServicePackageTemplate(
+      title: 'Engine Bay Detail',
+      price: 90,
+      durationValue: '1',
+      durationUnit: 'hours',
+      description: 'Safe, low-moisture degreasing and detailed brush work across the engine bay, finished with a heat-resistant OEM non-silicone satin dress.',
+      includes: [
+        'Electrical alternator, battery & intake sensitive component masking',
+        'Foaming citrus engine degreaser soak & agitation with soft brushes',
+        'Low-moisture, regulated pressure rinse',
+        'Filtered warm-air dry of all electrical connectors and valleys',
+        'Heat-resistant OEM non-silicone satin matte plastic and hose dressing',
+        'Underside hood liner wipe-down and latch grease touch-up',
+      ],
+    ),
   ];
 
   @override
@@ -75,13 +245,17 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
     _linkedRecipeId = p?.recipeId;
     _linkedRecipeName = p?.recipeName;
     
-    // Parse duration string e.g. "3-4 hrs" or "2 days"
+    // Parse duration string e.g. "3-4 hrs", "45 mins", or "2 days"
     String initialVal = '3';
     String initialUnit = 'hours';
     if (p != null) {
       final dur = p.estimatedDuration.toLowerCase();
       if (dur.contains('day')) {
         initialUnit = 'days';
+        final match = RegExp(r'\d+').firstMatch(dur);
+        if (match != null) initialVal = match.group(0)!;
+      } else if (dur.contains('min')) {
+        initialUnit = 'minutes';
         final match = RegExp(r'\d+').firstMatch(dur);
         if (match != null) initialVal = match.group(0)!;
       } else {
@@ -99,10 +273,28 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
     _isPopular = p?.isPopular ?? false;
   }
 
+  void _applyTemplate(ServicePackageTemplate t) {
+    setState(() {
+      _titleController.text = t.title;
+      _priceController.text = t.price.toStringAsFixed(0);
+      _durationValueController.text = t.durationValue;
+      _durationUnit = t.durationUnit;
+      _descController.text = t.description;
+      _includesController.text = t.includes.join('\n');
+      _suggestedRecipeTitle = null;
+    });
+  }
+
   void _importRecipe(InventoryItem recipe) {
     setState(() {
       _linkedRecipeId = recipe.id;
       _linkedRecipeName = recipe.name;
+      if (_titleController.text.trim().isEmpty) {
+        _titleController.text = recipe.name;
+        _suggestedRecipeTitle = null;
+      } else if (_titleController.text.trim() != recipe.name) {
+        _suggestedRecipeTitle = recipe.name;
+      }
       if (recipe.recipeStages.isNotEmpty) {
         final steps = recipe.recipeStages.map((s) {
           final title = s.stageName.trim();
@@ -146,7 +338,9 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
     final durNum = int.tryParse(_durationValueController.text.trim()) ?? 3;
     final durString = _durationUnit == 'days'
         ? (durNum == 1 ? '1 full day' : '$durNum days')
-        : (durNum == 1 ? '1 hour' : '$durNum hours');
+        : _durationUnit == 'minutes'
+            ? '$durNum mins'
+            : (durNum == 1 ? '1 hour' : '$durNum hours');
 
     final updatedPackage = ServicePackage(
       id: widget.package?.id ?? 'pkg_${DateTime.now().millisecondsSinceEpoch}',
@@ -220,42 +414,46 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
                   children: [
                     // Quick category suggestions chips
                     const Text(
-                      'QUICK TEMPLATES',
+                      'QUICK TEMPLATES (PRE-FILLS ALL DETAILS & STEPS)',
                       style: TextStyle(fontSize: 10, letterSpacing: 1.2, fontWeight: FontWeight.bold, color: AppTheme.textMuted),
                     ),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 6,
                       runSpacing: 6,
-                      children: _suggestedCategories.map((cat) {
+                      children: templates.map((tmpl) {
+                        final isSelected = _titleController.text.trim() == tmpl.title;
                         return InkWell(
-                          onTap: () {
-                            setState(() {
-                              _titleController.text = cat;
-                              if (cat.contains('Ceramic') || cat.contains('PPF')) {
-                                _durationUnit = 'days';
-                                _durationValueController.text = '2';
-                                _priceController.text = '899';
-                              } else if (cat.contains('Correction')) {
-                                _durationUnit = 'hours';
-                                _durationValueController.text = '8';
-                                _priceController.text = '450';
-                              } else {
-                                _durationUnit = 'hours';
-                                _durationValueController.text = '3';
-                                _priceController.text = '180';
-                              }
-                            });
-                          },
+                          onTap: () => _applyTemplate(tmpl),
                           borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                             decoration: BoxDecoration(
-                              color: AppTheme.surfaceLight.withAlpha(80),
+                              color: isSelected ? AppTheme.primary.withAlpha(40) : AppTheme.surfaceLight.withAlpha(80),
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: AppTheme.border),
+                              border: Border.all(
+                                color: isSelected ? AppTheme.primary : AppTheme.border,
+                                width: isSelected ? 1.2 : 1,
+                              ),
                             ),
-                            child: Text(cat, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (isSelected) ...[
+                                  const Icon(Icons.check_rounded, size: 12, color: AppTheme.primary),
+                                  const SizedBox(width: 4),
+                                ],
+                                Text(
+                                  tmpl.title,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                    color: isSelected ? AppTheme.primary : AppTheme.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         );
                       }).toList(),
@@ -271,6 +469,45 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
                       decoration: _inputDecoration('e.g. 2-Stage Paint Correction & Ceramic Seal'),
                       validator: (val) => val == null || val.trim().isEmpty ? 'Please enter a title' : null,
                     ),
+                    if (_suggestedRecipeTitle != null && _titleController.text.trim() != _suggestedRecipeTitle) ...[
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              _titleController.text = _suggestedRecipeTitle!;
+                              _suggestedRecipeTitle = null;
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            constraints: const BoxConstraints(maxWidth: 500),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary.withAlpha(25),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: AppTheme.primary.withAlpha(80)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.auto_fix_high_rounded, size: 14, color: AppTheme.primary),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    'Use Recipe Title: "${_suggestedRecipeTitle!}"',
+                                    style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.bold),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 14),
 
                     // Price & Duration Row
@@ -322,7 +559,7 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
                           ),
                         ),
                         const SizedBox(width: 8),
-                        // Unit Selector (Hours vs Days)
+                        // Unit Selector (Hours vs Days vs Minutes)
                         Expanded(
                           flex: 4,
                           child: Column(
@@ -344,6 +581,7 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
                                     dropdownColor: AppTheme.surface,
                                     style: const TextStyle(color: Colors.white, fontSize: 13),
                                     items: const [
+                                      DropdownMenuItem(value: 'minutes', child: Text('Minutes')),
                                       DropdownMenuItem(value: 'hours', child: Text('Hours')),
                                       DropdownMenuItem(value: 'days', child: Text('Days')),
                                     ],

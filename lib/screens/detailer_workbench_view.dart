@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
+import '../models/booking_models.dart';
 import '../models/team_member.dart';
 import '../models/inventory_item.dart';
 import '../services/job_repository.dart';
@@ -49,6 +50,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   String? _selectedServicePackageId;
   String? _selectedPortfolioJobId;
   String? _selectedSavedJobId;
+  String? _returnToServicePackageId;
+  String? _returnToServicePackageTitle;
 
   // Responsive state
   bool _isFocusMode = false;
@@ -113,6 +116,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   void _selectHub(StudioHubSection section, {bool isMobile = false}) {
     setState(() {
       _selectedHub = section;
+      if (section != StudioHubSection.inventory) {
+        _returnToServicePackageId = null;
+        _returnToServicePackageTitle = null;
+      }
       _ensureSelection();
       if (isMobile) {
         _mobileStep = 1;
@@ -1550,7 +1557,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 ? _buildInventoryItemsPane3(isMobile: isMobile)
                 : SingleChildScrollView(
                     padding: const EdgeInsets.all(20),
-                    child: _buildInspectorBody(context),
+                    child: _buildInspectorBody(context, isMobile: isMobile),
                   ),
           ),
         ],
@@ -1558,7 +1565,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     );
   }
 
-  Widget _buildInspectorBody(BuildContext context) {
+  Widget _buildInspectorBody(BuildContext context, {bool isMobile = false}) {
     switch (_selectedHub) {
       case StudioHubSection.inventory:
         return const SizedBox.shrink();
@@ -1567,7 +1574,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       case StudioHubSection.portfolio:
         return _buildPortfolioInspector(context);
       case StudioHubSection.services:
-        return _buildServiceInspector(context);
+        return _buildServiceInspector(context, isMobile: isMobile);
       case StudioHubSection.savedRecipes:
         return _buildSavedRecipesInspector(context);
     }
@@ -1584,8 +1591,9 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       items = items.where((i) => i.category == InventoryCategory.recipe).toList();
     }
 
+    Widget contentWidget;
     if (items.isEmpty) {
-      return Center(
+      contentWidget = Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -1625,16 +1633,90 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           ),
         ),
       );
+    } else {
+      contentWidget = ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: items.length,
+        itemBuilder: (context, index) {
+          final item = items[index];
+          return _buildInventoryItemRow(item, isMobile: isMobile);
+        },
+      );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
-        return _buildInventoryItemRow(item, isMobile: isMobile);
-      },
-    );
+    if (_returnToServicePackageId != null) {
+      return Column(
+        children: [
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withAlpha(20),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppTheme.primary.withAlpha(80)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.arrow_back_rounded, size: 16, color: AppTheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      text: 'Viewing recipe linked to ',
+                      style: const TextStyle(fontSize: 12, color: Colors.white70),
+                      children: [
+                        TextSpan(
+                          text: _returnToServicePackageTitle ?? 'Service Package',
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _selectedHub = StudioHubSection.services;
+                      _selectedServicePackageId = _returnToServicePackageId;
+                      _returnToServicePackageId = null;
+                      _returnToServicePackageTitle = null;
+                      if (isMobile) _mobileStep = 2;
+                    });
+                  },
+                  child: const Text('Back to Package', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: const Icon(Icons.close_rounded, size: 16, color: AppTheme.textMuted),
+                  tooltip: 'Dismiss',
+                  onPressed: () {
+                    setState(() {
+                      _returnToServicePackageId = null;
+                      _returnToServicePackageTitle = null;
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: contentWidget),
+        ],
+      );
+    }
+
+    return contentWidget;
   }
 
   Widget _buildInventoryItemRow(InventoryItem item, {bool isMobile = false}) {
@@ -2220,7 +2302,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   }
 
   // --- SERVICE INSPECTOR ---
-  Widget _buildServiceInspector(BuildContext context) {
+  Widget _buildServiceInspector(BuildContext context, {bool isMobile = false}) {
     final user = widget.repository.currentUser;
     final pkgs = user.servicePackages;
     if (pkgs.isEmpty) {
@@ -2284,21 +2366,23 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     foregroundColor: AppTheme.primary,
                   ),
                   onPressed: () {
-                    setState(() {
-                      _selectedHub = StudioHubSection.inventory;
-                      _inventoryCategoryFilter = 'RECIPE';
-                      if (pkg.recipeId != null) {
-                        _selectedInventoryId = pkg.recipeId;
-                      }
-                      if (_mobileStep == 2) _mobileStep = 2;
-                    });
+                    final recipe = widget.repository.inventoryItems.firstWhere(
+                      (i) => (pkg.recipeId != null && i.id == pkg.recipeId) ||
+                             (i.category == InventoryCategory.recipe && i.name == pkg.recipeName),
+                      orElse: () => InventoryItem(
+                        id: pkg.recipeId ?? 'recipe_${DateTime.now().millisecondsSinceEpoch}',
+                        name: pkg.recipeName ?? 'Studio Recipe',
+                        category: InventoryCategory.recipe,
+                      ),
+                    );
+                    _showRecipePreviewModal(context, recipe, pkg, isMobile: isMobile);
                   },
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text('View Recipe', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                       SizedBox(width: 2),
-                      Icon(Icons.chevron_right_rounded, size: 16),
+                      Icon(Icons.visibility_outlined, size: 16),
                     ],
                   ),
                 ),
@@ -2343,6 +2427,290 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       onJobChanged: () => setState(() {}),
       onLike: () => widget.repository.toggleLike(job.id),
       onSave: () => widget.repository.toggleSave(job.id),
+    );
+  }
+
+  void _showRecipePreviewModal(
+    BuildContext context,
+    InventoryItem recipe,
+    ServicePackage pkg, {
+    bool isMobile = false,
+  }) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: AppTheme.border),
+          ),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 560, maxHeight: 680),
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withAlpha(30),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.science_rounded, color: AppTheme.primary, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            recipe.name,
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Linked to "${pkg.title}" Package',
+                            style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, color: AppTheme.textMuted),
+                      onPressed: () => Navigator.of(ctx).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Divider(color: AppTheme.border, height: 1),
+                const SizedBox(height: 12),
+
+                // Stages count badge & Recipe subcategory (if any)
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withAlpha(25),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: AppTheme.primary.withAlpha(60)),
+                      ),
+                      child: Text(
+                        '${recipe.recipeStages.length} Formula Stages',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                      ),
+                    ),
+                    if (recipe.subCategory.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        recipe.subCategory,
+                        style: const TextStyle(fontSize: 11.5, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Stages List
+                Expanded(
+                  child: recipe.recipeStages.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.info_outline_rounded, size: 36, color: AppTheme.textMuted),
+                                const SizedBox(height: 10),
+                                Text(
+                                  'No detailed stages recorded yet for "${recipe.name}".',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          itemCount: recipe.recipeStages.length,
+                          itemBuilder: (context, i) {
+                            final stage = recipe.recipeStages[i];
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: AppTheme.surfaceLight,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: AppTheme.border),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 10,
+                                        backgroundColor: AppTheme.primary.withAlpha(40),
+                                        child: Text(
+                                          '${i + 1}',
+                                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          stage.stageName.isNotEmpty ? stage.stageName : 'Step ${i + 1}',
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (stage.machine.isNotEmpty ||
+                                      stage.chemical.isNotEmpty ||
+                                      stage.pad.isNotEmpty ||
+                                      stage.technique.isNotEmpty ||
+                                      (stage.dilution != null && stage.dilution!.isNotEmpty)) ...[
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      children: [
+                                        if (stage.machine.isNotEmpty)
+                                          _modalStageChip(Icons.handyman_outlined, stage.machine, Colors.blueAccent),
+                                        if (stage.chemical.isNotEmpty)
+                                          _modalStageChip(Icons.science_outlined, stage.chemical, Colors.tealAccent),
+                                        if (stage.pad.isNotEmpty)
+                                          _modalStageChip(Icons.radio_button_checked_rounded, stage.pad, Colors.amberAccent),
+                                        if (stage.technique.isNotEmpty)
+                                          _modalStageChip(Icons.speed_rounded, stage.technique, Colors.purpleAccent),
+                                        if (stage.dilution != null && stage.dilution!.isNotEmpty)
+                                          _modalStageChip(Icons.water_drop_outlined, stage.dilution!, Colors.cyanAccent),
+                                      ],
+                                    ),
+                                  ],
+                                  if (stage.notes != null && stage.notes!.isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      stage.notes!,
+                                      style: const TextStyle(fontSize: 11, color: AppTheme.textMuted, fontStyle: FontStyle.italic),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+
+                if (recipe.notes != null && recipe.notes!.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceLight.withAlpha(60),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.info_outline_rounded, size: 14, color: AppTheme.textMuted),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            recipe.notes!,
+                            style: const TextStyle(fontSize: 11.5, color: AppTheme.textSecondary),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 14),
+                const Divider(color: AppTheme.border, height: 1),
+                const SizedBox(height: 14),
+
+                // Modal Footer Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.surfaceLight,
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: AppTheme.border),
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        icon: const Icon(Icons.arrow_back_rounded, size: 15),
+                        label: const Text('Back to Services', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        onPressed: () => Navigator.of(ctx).pop(),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        icon: const Icon(Icons.open_in_new_rounded, size: 15),
+                        label: const Text('Open in Workbench', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          setState(() {
+                            _selectedHub = StudioHubSection.inventory;
+                            _inventoryCategoryFilter = 'RECIPE';
+                            _selectedInventoryId = recipe.id;
+                            _returnToServicePackageId = pkg.id;
+                            _returnToServicePackageTitle = pkg.title;
+                            if (isMobile) _mobileStep = 2;
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _modalStageChip(IconData icon, String label, Color color) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 440),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withAlpha(20),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withAlpha(70)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: color),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 10.5, color: color, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

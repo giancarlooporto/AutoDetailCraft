@@ -2557,11 +2557,26 @@ void main() {
     expect(find.text(testRecipe.name), findsWidgets);
     expect(find.text('View Recipe'), findsOneWidget);
 
-    // Tapping 'View Recipe' takes detailer directly to Inventory Recipes
+    // Tapping 'View Recipe' opens the Recipe Preview Modal
     await tester.tap(find.text('View Recipe'));
     await tester.pumpAndSettle();
 
+    // Verify modal preview is shown with recipe details and action buttons
+    expect(find.text('Back to Services'), findsOneWidget);
+    expect(find.text('Open in Workbench'), findsOneWidget);
+
+    // Tapping 'Open in Workbench' takes detailer directly to Inventory Recipes with return banner
+    await tester.tap(find.text('Open in Workbench'));
+    await tester.pumpAndSettle();
+
     expect(find.text('RECIPE INVENTORY'), findsOneWidget);
+    expect(find.text('Back to Package'), findsOneWidget);
+
+    // Tapping 'Back to Package' returns smoothly to Services
+    await tester.tap(find.text('Back to Package'));
+    await tester.pumpAndSettle();
+    expect(find.text('LINKED STUDIO RECIPE'), findsOneWidget);
+
     debugNetworkImageHttpClientProvider = null;
   });
 
@@ -2610,6 +2625,80 @@ void main() {
     if (testRecipe.recipeStages.isNotEmpty) {
       expect(find.textContaining(testRecipe.recipeStages.first.stageName), findsWidgets);
     }
+  });
+
+  testWidgets('ServicePackageEditorDialog pre-fills complete template info and handles recipe title chip', (WidgetTester tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(1200, 1200);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    final testRecipe = repository.recipeItems.first;
+    ServicePackage? savedPackage;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => ElevatedButton(
+            onPressed: () => ServicePackageEditorDialog.show(
+              context,
+              availableRecipes: [testRecipe],
+              onSave: (pkg) => savedPackage = pkg,
+            ),
+            child: const Text('Open Dialog'),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Open Dialog'));
+    await tester.pumpAndSettle();
+
+    // 1. Tap '1-Stage Paint Correction' quick template
+    await tester.tap(find.text('1-Stage Paint Correction').first);
+    await tester.pumpAndSettle();
+
+    // Verify Title and Price are populated
+    expect(find.text('1-Stage Paint Correction'), findsWidgets);
+    expect(find.text('450'), findsOneWidget);
+
+    // Scroll down to verify Description and Includes are populated
+    await tester.drag(find.byType(ListView), const Offset(0, -250));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Precision single-step machine polish'), findsOneWidget);
+    expect(find.textContaining('Ultrasonic digital paint depth gauge inspection'), findsOneWidget);
+
+    // 2. Test recipe import title suggestion chip when title already exists
+    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Import Recipe'), findsOneWidget);
+    await tester.tap(find.text('Import Recipe'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(testRecipe.name));
+    await tester.pumpAndSettle();
+
+    // Scroll back up to Title
+    await tester.drag(find.byType(ListView), const Offset(0, 300));
+    await tester.pumpAndSettle();
+
+    // Verify title suggestion chip appears
+    expect(find.text('Use Recipe Title: "${testRecipe.name}"'), findsOneWidget);
+
+    // Tap suggestion chip to apply title
+    await tester.tap(find.text('Use Recipe Title: "${testRecipe.name}"'));
+    await tester.pumpAndSettle();
+
+    // Verify title is now updated to the recipe name
+    expect(find.text(testRecipe.name), findsWidgets);
   });
 }
 
