@@ -18,6 +18,7 @@ import 'package:detail_craft/widgets/paint_gauge_walkaround_widget.dart';
 import 'package:detail_craft/widgets/job_recipe_card.dart';
 import 'package:detail_craft/screens/profile_screen.dart';
 import 'package:detail_craft/screens/detailer_workbench_view.dart';
+import 'package:detail_craft/screens/service_package_editor_dialog.dart';
 import 'package:detail_craft/models/inventory_item.dart';
 
 import 'dart:async';
@@ -2455,6 +2456,160 @@ void main() {
     await tester.pumpAndSettle();
 
     debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('Recipes link to Service Packages, import stages into treatments, and load in CreateJobScreen', (WidgetTester tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final repository = JobRepository();
+    repository.isLoggedIn = true;
+    if (repository.currentUser.role != UserRole.detailer) {
+      repository.toggleHostMode();
+    }
+
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+
+    // 1. Test ServicePackageEditorDialog importing from Studio Recipe
+    ServicePackage? savedPackage;
+    final testRecipe = repository.recipeItems.first;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => ElevatedButton(
+            onPressed: () {
+              ServicePackageEditorDialog.show(
+                context,
+                availableRecipes: repository.recipeItems,
+                onSave: (pkg) {
+                  savedPackage = pkg;
+                },
+              );
+            },
+            child: const Text('Open Dialog'),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Open Dialog'));
+    await tester.pumpAndSettle();
+
+    // Select template title while visible at top of dialog
+    await tester.tap(find.text('Full Detail (In & Out)').first);
+    await tester.pumpAndSettle();
+
+    // Drag down to reveal Import Recipe
+    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Import Recipe'), findsOneWidget);
+
+    // Tap Import Recipe popup menu button
+    await tester.tap(find.text('Import Recipe'));
+    await tester.pumpAndSettle();
+
+    // Select the first recipe from the popup menu
+    expect(find.text(testRecipe.name), findsOneWidget);
+    await tester.tap(find.text(testRecipe.name));
+    await tester.pumpAndSettle();
+
+    // Verify linked recipe banner is displayed
+    expect(find.textContaining('Linked Studio Recipe: ${testRecipe.name}'), findsOneWidget);
+
+    await tester.tap(find.text('Create Package'));
+    await tester.pumpAndSettle();
+
+    expect(savedPackage, isNotNull);
+    expect(savedPackage!.recipeId, equals(testRecipe.id));
+    expect(savedPackage!.recipeName, equals(testRecipe.name));
+    expect(savedPackage!.includes.isNotEmpty, isTrue);
+
+    // Add this saved package to repository to test workbench inspection
+    repository.addServicePackage(savedPackage!);
+
+    // 2. Test DetailerWorkbenchView Service Package inspector shows linked recipe banner and view recipe button
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: DetailerWorkbenchView(repository: repository),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Tap Services tab in Studio Hub
+    await tester.tap(find.text('Services'));
+    await tester.pumpAndSettle();
+
+    // Select our new package
+    await tester.tap(find.text('Full Detail (In & Out)').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('LINKED STUDIO RECIPE'), findsOneWidget);
+    expect(find.text(testRecipe.name), findsWidgets);
+    expect(find.text('View Recipe'), findsOneWidget);
+
+    // Tapping 'View Recipe' takes detailer directly to Inventory Recipes
+    await tester.tap(find.text('View Recipe'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('RECIPE INVENTORY'), findsOneWidget);
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('CreateJobScreen loads stages directly from Studio Recipes', (WidgetTester tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    final testRecipe = repository.recipeItems.first;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: CreateJobScreen(
+          repository: repository,
+          onJobCreated: () {},
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Scroll to Studio Detailing Recipe
+    await tester.scrollUntilVisible(
+      find.text('Studio Detailing Recipe'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Studio Recipe'), findsOneWidget);
+
+    // Tap Studio Recipe button
+    await tester.tap(find.text('Studio Recipe'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(testRecipe.name), findsOneWidget);
+    await tester.tap(find.text(testRecipe.name));
+    await tester.pumpAndSettle();
+
+    // Verify first stage from testRecipe is loaded into CreateJobScreen
+    if (testRecipe.recipeStages.isNotEmpty) {
+      expect(find.textContaining(testRecipe.recipeStages.first.stageName), findsWidgets);
+    }
   });
 }
 

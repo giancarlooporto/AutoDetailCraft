@@ -187,6 +187,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       case StudioHubSection.services:
         ServicePackageEditorDialog.show(
           context,
+          availableRecipes: widget.repository.recipeItems,
           onSave: (pkg) {
             widget.repository.addServicePackage(pkg);
             setState(() {
@@ -242,6 +243,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         ServicePackageEditorDialog.show(
           context,
           package: pkg,
+          availableRecipes: widget.repository.recipeItems,
           onSave: (up) => widget.repository.updateServicePackage(up),
           onDelete: () {
             widget.repository.removeServicePackage(pkg.id);
@@ -2248,6 +2250,62 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         const Divider(color: AppTheme.border),
         const SizedBox(height: 12),
         _buildInfoSection(title: 'SERVICE DESCRIPTION', content: pkg.description, icon: Icons.description_outlined),
+        if (pkg.recipeName != null && pkg.recipeName!.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withAlpha(20),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppTheme.primary.withAlpha(70)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.science_rounded, size: 18, color: AppTheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'LINKED STUDIO RECIPE',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
+                      ),
+                      Text(
+                        pkg.recipeName!,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: AppTheme.primary,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _selectedHub = StudioHubSection.inventory;
+                      _inventoryCategoryFilter = 'RECIPE';
+                      if (pkg.recipeId != null) {
+                        _selectedInventoryId = pkg.recipeId;
+                      }
+                      if (_mobileStep == 2) _mobileStep = 2;
+                    });
+                  },
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('View Recipe', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      SizedBox(width: 2),
+                      Icon(Icons.chevron_right_rounded, size: 16),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
         const Text('TREATMENTS & STEPS INCLUDED', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary)),
         const SizedBox(height: 8),

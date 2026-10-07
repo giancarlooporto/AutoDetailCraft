@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import '../models/booking_models.dart';
+import '../models/inventory_item.dart';
 import '../core/theme/app_theme.dart';
 
 class ServicePackageEditorDialog extends StatefulWidget {
   final ServicePackage? package;
+  final List<InventoryItem> availableRecipes;
   final Function(ServicePackage) onSave;
   final VoidCallback? onDelete;
 
   const ServicePackageEditorDialog({
     super.key,
     this.package,
+    this.availableRecipes = const [],
     required this.onSave,
     this.onDelete,
   });
@@ -17,6 +20,7 @@ class ServicePackageEditorDialog extends StatefulWidget {
   static Future<void> show(
     BuildContext context, {
     ServicePackage? package,
+    List<InventoryItem> availableRecipes = const [],
     required Function(ServicePackage) onSave,
     VoidCallback? onDelete,
   }) {
@@ -24,6 +28,7 @@ class ServicePackageEditorDialog extends StatefulWidget {
       context: context,
       builder: (context) => ServicePackageEditorDialog(
         package: package,
+        availableRecipes: availableRecipes,
         onSave: onSave,
         onDelete: onDelete,
       ),
@@ -44,6 +49,8 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
 
   String _durationUnit = 'hours'; // 'hours' or 'days'
   bool _isPopular = false;
+  String? _linkedRecipeId;
+  String? _linkedRecipeName;
 
   final List<String> _suggestedCategories = [
     'Interior Detail',
@@ -65,6 +72,8 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
     _titleController = TextEditingController(text: p?.title ?? '');
     _descController = TextEditingController(text: p?.description ?? '');
     _priceController = TextEditingController(text: p != null ? p.basePrice.toStringAsFixed(0) : '150');
+    _linkedRecipeId = p?.recipeId;
+    _linkedRecipeName = p?.recipeName;
     
     // Parse duration string e.g. "3-4 hrs" or "2 days"
     String initialVal = '3';
@@ -88,6 +97,31 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
       text: p?.includes.join('\n') ?? 'Hand wash & wheel deep clean\nIron decon & clay bar\nInterior vacuum & steam wipe',
     );
     _isPopular = p?.isPopular ?? false;
+  }
+
+  void _importRecipe(InventoryItem recipe) {
+    setState(() {
+      _linkedRecipeId = recipe.id;
+      _linkedRecipeName = recipe.name;
+      if (recipe.recipeStages.isNotEmpty) {
+        final steps = recipe.recipeStages.map((s) {
+          final title = s.stageName.trim();
+          if (title.isNotEmpty) return title;
+          final parts = <String>[];
+          if (s.machine.trim().isNotEmpty) parts.add(s.machine.trim());
+          if (s.chemical.trim().isNotEmpty) parts.add(s.chemical.trim());
+          return parts.isNotEmpty ? parts.join(' + ') : 'Standard Treatment Stage';
+        }).toList();
+        _includesController.text = steps.join('\n');
+      }
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Imported "${recipe.name}" steps (${recipe.recipeStages.length} stages)'),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
@@ -122,6 +156,8 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
       estimatedDuration: durString,
       includes: includesList.isNotEmpty ? includesList : ['Professional application & guarantee'],
       isPopular: _isPopular,
+      recipeId: _linkedRecipeId,
+      recipeName: _linkedRecipeName,
     );
 
     widget.onSave(updatedPackage);
@@ -336,7 +372,69 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
                     const SizedBox(height: 14),
 
                     // Included Features
-                    const Text('What’s Included (One line per feature)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'What’s Included (Treatments & Steps)',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (widget.availableRecipes.isNotEmpty)
+                          PopupMenuButton<InventoryItem>(
+                            tooltip: 'Import from Studio Recipe',
+                            color: AppTheme.surfaceLight,
+                            elevation: 8,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              side: const BorderSide(color: AppTheme.border),
+                            ),
+                            onSelected: _importRecipe,
+                            itemBuilder: (context) => widget.availableRecipes.map((r) => PopupMenuItem<InventoryItem>(
+                              value: r,
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.science_outlined, size: 16, color: AppTheme.primary),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      r.name,
+                                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '${r.recipeStages.length} steps',
+                                    style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            )).toList(),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primary.withAlpha(25),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppTheme.primary.withAlpha(80)),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.bolt_rounded, size: 14, color: AppTheme.primary),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'Import Recipe',
+                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                     const SizedBox(height: 6),
                     TextFormField(
                       controller: _includesController,
@@ -344,6 +442,42 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
                       style: const TextStyle(color: Colors.white, fontSize: 13),
                       decoration: _inputDecoration('e.g. Foam pre-wash\nIron decontamination & Clay bar\n1-stage machine finish polish'),
                     ),
+                    if (_linkedRecipeName != null && _linkedRecipeName!.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withAlpha(20),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppTheme.primary.withAlpha(60)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.science_rounded, size: 14, color: AppTheme.primary),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Linked Studio Recipe: $_linkedRecipeName',
+                                style: const TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.w600),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _linkedRecipeId = null;
+                                  _linkedRecipeName = null;
+                                });
+                              },
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 4),
+                                child: Icon(Icons.close_rounded, size: 15, color: AppTheme.textMuted),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 14),
 
                     // Popular Toggle
@@ -357,23 +491,28 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.star_rounded,
-                                color: _isPopular ? Colors.amber : AppTheme.textMuted,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 10),
-                              const Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Mark as Popular / Most Booked', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
-                                  Text('Highlights this card with a glowing accent in your studio', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-                                ],
-                              ),
-                            ],
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.star_rounded,
+                                  color: _isPopular ? Colors.amber : AppTheme.textMuted,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Mark as Popular / Most Booked', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
+                                      Text('Highlights this card with a glowing accent in your studio', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
+                          const SizedBox(width: 8),
                           Switch(
                             value: _isPopular,
                             activeThumbColor: AppTheme.primary,

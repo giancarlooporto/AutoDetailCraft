@@ -43,6 +43,8 @@ class ServicePackage {
   final String estimatedDuration;
   final List<String> includes;
   final bool isPopular;
+  final String? recipeId;
+  final String? recipeName;
 
   const ServicePackage({
     required this.id,
@@ -52,7 +54,31 @@ class ServicePackage {
     required this.estimatedDuration,
     required this.includes,
     this.isPopular = false,
+    this.recipeId,
+    this.recipeName,
   });
+
+  ServicePackage copyWith({
+    String? id,
+    String? title,
+    String? description,
+    double? basePrice,
+    String? estimatedDuration,
+    List<String>? includes,
+    bool? isPopular,
+    String? recipeId,
+    String? recipeName,
+  }) => ServicePackage(
+    id: id ?? this.id,
+    title: title ?? this.title,
+    description: description ?? this.description,
+    basePrice: basePrice ?? this.basePrice,
+    estimatedDuration: estimatedDuration ?? this.estimatedDuration,
+    includes: includes ?? this.includes,
+    isPopular: isPopular ?? this.isPopular,
+    recipeId: recipeId ?? this.recipeId,
+    recipeName: recipeName ?? this.recipeName,
+  );
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -62,6 +88,8 @@ class ServicePackage {
     'estimatedDuration': estimatedDuration,
     'includes': includes,
     'isPopular': isPopular,
+    if (recipeId != null) 'recipeId': recipeId,
+    if (recipeName != null) 'recipeName': recipeName,
   };
 
   factory ServicePackage.fromJson(Map<String, dynamic> json) => ServicePackage(
@@ -72,6 +100,8 @@ class ServicePackage {
     estimatedDuration: json['estimatedDuration'] as String? ?? '2-3 hrs',
     includes: (json['includes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
     isPopular: json['isPopular'] as bool? ?? false,
+    recipeId: json['recipeId'] as String?,
+    recipeName: json['recipeName'] as String?,
   );
 }
 

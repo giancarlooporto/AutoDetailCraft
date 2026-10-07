@@ -6,6 +6,7 @@ import '../core/constants/app_constants.dart';
 import '../core/constants/detailing_presets.dart';
 import '../models/detail_job.dart';
 import '../models/paint_gauge_point.dart';
+import '../models/inventory_item.dart';
 import '../services/job_repository.dart';
 import '../services/image_picker_service.dart';
 import '../services/r2_storage_service.dart';
@@ -1524,10 +1525,11 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 900;
+              final titleWidget = Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
                     padding: const EdgeInsets.all(6),
@@ -1543,56 +1545,152 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                 ],
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.primary,
-                      side: const BorderSide(color: AppTheme.primary),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    icon: const Icon(Icons.bookmark_add_rounded, size: 15),
-                    label: const Text('Save Preset', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                    onPressed: _showSavePresetDialog,
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.tonalIcon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppTheme.primary.withAlpha(40),
-                      foregroundColor: AppTheme.primary,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    icon: const Icon(Icons.add_rounded, size: 16),
-                    label: const Text('Add Step', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                    onPressed: () {
-                      setState(() {
-                        final newIdx = _recipeStages.length;
-                        _recipeStages.add(RecipeStage(
-                          stageName: 'Step ${newIdx + 1}: Polishing Stage',
-                          chemical: '',
-                          machine: '',
-                          pad: '',
-                          technique: '',
-                        ));
-                        _activeStageIndex = newIdx;
-                      });
-                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Added Step ${_recipeStages.length} - type or tap sample chips below to populate'),
-                          duration: const Duration(milliseconds: 1400),
-                          behavior: SnackBarBehavior.floating,
+              );
+
+              final actionsWidget = SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.repository.recipeItems.isNotEmpty) ...[
+                      PopupMenuButton<InventoryItem>(
+                        tooltip: 'Load from Studio Recipes',
+                        color: AppTheme.surfaceLight,
+                        elevation: 8,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: const BorderSide(color: AppTheme.border),
                         ),
-                      );
-                    },
-                  ),
+                        onSelected: (recipe) {
+                          if (recipe.recipeStages.isNotEmpty) {
+                            setState(() {
+                              _recipeStages = List.from(recipe.recipeStages);
+                              _activeStageIndex = 0;
+                              _selectedPresetId = '';
+                            });
+                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Loaded recipe "${recipe.name}" (${recipe.recipeStages.length} stages)'),
+                                duration: const Duration(seconds: 2),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          } else {
+                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('${recipe.name} has no formula stages saved.'),
+                                duration: const Duration(seconds: 2),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+                        },
+                        itemBuilder: (context) => widget.repository.recipeItems.map((r) => PopupMenuItem<InventoryItem>(
+                          value: r,
+                          child: Row(
+                            children: [
+                              const Icon(Icons.science_outlined, size: 16, color: AppTheme.primary),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  r.name,
+                                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text('${r.recipeStages.length} stages', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                            ],
+                          ),
+                        )).toList(),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary.withAlpha(25),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppTheme.primary.withAlpha(100)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.bolt_rounded, size: 14, color: AppTheme.primary),
+                              SizedBox(width: 4),
+                              Text('Studio Recipe', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.primary,
+                        side: const BorderSide(color: AppTheme.primary),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.bookmark_add_rounded, size: 15),
+                      label: const Text('Save Preset', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                      onPressed: _showSavePresetDialog,
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.tonalIcon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppTheme.primary.withAlpha(40),
+                        foregroundColor: AppTheme.primary,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.add_rounded, size: 16),
+                      label: const Text('Add Step', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      onPressed: () {
+                        setState(() {
+                          final newIdx = _recipeStages.length;
+                          _recipeStages.add(RecipeStage(
+                            stageName: 'Step ${newIdx + 1}: Polishing Stage',
+                            chemical: '',
+                            machine: '',
+                            pad: '',
+                            technique: '',
+                          ));
+                          _activeStageIndex = newIdx;
+                        });
+                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Added Step ${_recipeStages.length} - type or tap sample chips below to populate'),
+                            duration: const Duration(milliseconds: 1400),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              );
+
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    titleWidget,
+                    const SizedBox(height: 10),
+                    actionsWidget,
+                  ],
+                );
+              }
+
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  titleWidget,
+                  const SizedBox(width: 8),
+                  Flexible(child: actionsWidget),
                 ],
-              ),
-            ],
+              );
+            },
           ),
           const SizedBox(height: 6),
           const Text(
