@@ -1514,13 +1514,19 @@ class JobRepository extends ChangeNotifier {
     return getConflictingBookingForSlot(date, slot, detailerId: detailerId) != null;
   }
 
-  /// Checks if all slots on [date] are booked, blocked, or unavailable.
+  /// Checks if all slots on [date] are filled by bookings or conflicted.
   bool isDateFullyBooked(DateTime date, {String? detailerId}) {
     final targetDetailerId = detailerId ?? _currentUser.id;
+    if (isDateRecurringDayOff(date, detailerId: targetDetailerId)) return false;
+    final hours = getHoursForDate(date, detailerId: targetDetailerId);
+    if (!hours.isOpen) return false;
+    if (isDateExplicitlyBlocked(targetDetailerId, date)) return false;
     final slots = getTimeSlotsForDate(date, detailerId: targetDetailerId);
     if (slots.isEmpty) return false;
+    final bookings = getBookingsForDate(date, detailerId: targetDetailerId);
+    if (bookings.isEmpty) return false;
     return slots.every((s) =>
-      isSlotBlocked(targetDetailerId, date, s) ||
+      isSlotExplicitlyBlocked(targetDetailerId, date, s) ||
       isSlotConflictedByBooking(date, s, detailerId: targetDetailerId) ||
       !isSlotWithinOperatingHours(date, s, detailerId: targetDetailerId),
     );

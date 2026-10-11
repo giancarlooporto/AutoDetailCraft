@@ -3054,5 +3054,124 @@ void main() {
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
   });
+
+  testWidgets('Closed operating days and full day blocks immediately strike off availability and prevent booking', (tester) async {
+    tester.view.physicalSize = const Size(1200, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final repository = JobRepository();
+    if (repository.currentUser.role != UserRole.detailer) {
+      repository.toggleHostMode();
+    }
+
+    // Pick a test date 2 days ahead
+    DateTime testDate = DateTime.now().add(const Duration(days: 2));
+
+    // Initially configure this weekday as closed from operating hours
+    final scheduleWithClosedDay = repository.calendarPreferences.weeklySchedule.map((d) {
+      if (d.weekday == testDate.weekday) {
+        return d.copyWith(isOpen: false);
+      }
+      return d.copyWith(isOpen: true, openTime: '08:00 AM', closeTime: '08:00 PM');
+    }).toList();
+    repository.updateCalendarPreferences(
+      repository.calendarPreferences.copyWith(weeklySchedule: scheduleWithClosedDay),
+    );
+
+    // 1. Detailer workbench view on a closed day:
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: DetailerWorkbenchView(
+          repository: repository,
+          initialCalendarDate: testDate,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Select Calendar
+    await tester.tap(find.text('Calendar'));
+    await tester.pumpAndSettle();
+
+    // Slots should show Studio Closed (Day Off), and NOT Available for Booking
+    expect(find.text('Studio Closed (Day Off)'), findsWidgets);
+    expect(find.text('Available for Booking'), findsNothing);
+
+    // 2. Open this weekday for booking
+    final openSchedule = repository.calendarPreferences.weeklySchedule.map((d) {
+      return d.copyWith(isOpen: true, openTime: '08:00 AM', closeTime: '08:00 PM');
+    }).toList();
+    repository.updateCalendarPreferences(
+      repository.calendarPreferences.copyWith(weeklySchedule: openSchedule),
+    );
+    await tester.pumpAndSettle();
+
+    // Slots are now open and Available for Booking
+    expect(find.text('Available for Booking'), findsWidgets);
+    expect(find.text('Studio Closed (Day Off)'), findsNothing);
+
+    // 3. Block full day
+    await tester.tap(find.text('Block Full Day'));
+    await tester.pumpAndSettle();
+
+    // Immediately strikes off Available for Booking and shows Day Blocked by Detailer
+    expect(find.text('Day Blocked by Detailer'), findsWidgets);
+    expect(find.text('Available for Booking'), findsNothing);
+    expect(find.text('Unblock Full Day'), findsOneWidget);
+
+    // 4. Unblock full day
+    await tester.tap(find.text('Unblock Full Day'));
+    await tester.pumpAndSettle();
+
+    // Re-enables Available for Booking
+    expect(find.text('Available for Booking'), findsWidgets);
+    expect(find.text('Day Blocked by Detailer'), findsNothing);
+
+    // 5. Turn off this day in schedule again
+    repository.updateCalendarPreferences(
+      repository.calendarPreferences.copyWith(weeklySchedule: scheduleWithClosedDay),
+    );
+    await tester.pumpAndSettle();
+
+    // Striking off Available for Booking right away
+    expect(find.text('Studio Closed (Day Off)'), findsWidgets);
+    expect(find.text('Available for Booking'), findsNothing);
+
+    // 6. Customer Perspective: verify slots are struck off and cannot be booked
+    final detailer = repository.currentUser;
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: BookingFlowScreen(
+        detailer: detailer,
+        repository: repository,
+        initialDate: testDate,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Advance to Step 1 (Schedule)
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    // Closed day banner and strikes
+    expect(find.text('CLOSED'), findsWidgets);
+
+    // Attempting to advance while closed slot is selected triggers warning snackbar
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Closed'), findsWidgets);
+
+    debugNetworkImageHttpClientProvider = null;
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
 }
 

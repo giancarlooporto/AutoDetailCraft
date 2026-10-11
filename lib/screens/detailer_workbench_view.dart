@@ -3344,7 +3344,9 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             final conflictingAppt = widget.repository.getConflictingBookingForSlot(date, slot, detailerId: user.id);
             final isBooked = conflictingAppt != null;
             final isExactMatch = isBooked && conflictingAppt.scheduledTimeSlot.trim().toLowerCase() == slot.trim().toLowerCase();
-            final isBlocked = widget.repository.isSlotExplicitlyBlocked(user.id, date, slot);
+            final isDayOff = !hours.isOpen || isRecurringOff;
+            final isDayExplicitlyBlocked = widget.repository.isDateExplicitlyBlocked(user.id, date);
+            final isSlotExplicitlyBlocked = widget.repository.isSlotExplicitlyBlocked(user.id, date, slot);
             final inOperatingHours = widget.repository.isSlotWithinOperatingHours(date, slot, detailerId: user.id);
 
             Color borderColor = AppTheme.border;
@@ -3352,27 +3354,50 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             String statusTitle = 'Available for Booking';
             Color statusColor = Colors.greenAccent;
             IconData iconData = Icons.check_circle_outline_rounded;
+            bool isStruck = false;
 
             if (isBooked) {
-              borderColor = Colors.green.withAlpha(120);
-              bgColor = Colors.green.withAlpha(20);
+              final hasDayConflict = isDayOff || isDayExplicitlyBlocked;
+              borderColor = hasDayConflict ? Colors.amber.withAlpha(140) : Colors.green.withAlpha(120);
+              bgColor = hasDayConflict ? Colors.amber.withAlpha(20) : Colors.green.withAlpha(20);
               statusTitle = isExactMatch
-                  ? 'Booked by ${conflictingAppt.clientName}'
-                  : 'Reserved • Overlaps with ${conflictingAppt.clientName} (${conflictingAppt.scheduledTimeSlot})';
-              statusColor = Colors.greenAccent;
-              iconData = Icons.directions_car_rounded;
-            } else if (isBlocked) {
+                  ? (hasDayConflict
+                      ? 'Booked by ${conflictingAppt.clientName} (Conflict: Day Closed/Blocked)'
+                      : 'Booked by ${conflictingAppt.clientName}')
+                  : (hasDayConflict
+                      ? 'Reserved • Overlaps with ${conflictingAppt.clientName} (Day Closed/Blocked)'
+                      : 'Reserved • Overlaps with ${conflictingAppt.clientName} (${conflictingAppt.scheduledTimeSlot})');
+              statusColor = hasDayConflict ? Colors.amber : Colors.greenAccent;
+              iconData = hasDayConflict ? Icons.warning_amber_rounded : Icons.directions_car_rounded;
+              isStruck = false;
+            } else if (isDayExplicitlyBlocked) {
+              borderColor = Colors.redAccent.withAlpha(100);
+              bgColor = Colors.redAccent.withAlpha(15);
+              statusTitle = 'Day Blocked by Detailer';
+              statusColor = Colors.redAccent;
+              iconData = Icons.block_rounded;
+              isStruck = true;
+            } else if (isDayOff) {
+              borderColor = AppTheme.border;
+              bgColor = AppTheme.surfaceLight.withAlpha(45);
+              statusTitle = 'Studio Closed (Day Off)';
+              statusColor = AppTheme.textMuted;
+              iconData = Icons.nightlife_rounded;
+              isStruck = true;
+            } else if (isSlotExplicitlyBlocked) {
               borderColor = Colors.redAccent.withAlpha(100);
               bgColor = Colors.redAccent.withAlpha(15);
               statusTitle = 'Blocked by Detailer';
               statusColor = Colors.redAccent;
               iconData = Icons.block_rounded;
+              isStruck = true;
             } else if (!inOperatingHours && hours.isOpen) {
               borderColor = AppTheme.border;
               bgColor = AppTheme.surfaceLight.withAlpha(60);
               statusTitle = 'Outside Operating Hours';
               statusColor = AppTheme.textMuted;
               iconData = Icons.access_time_rounded;
+              isStruck = true;
             }
 
             return Container(
@@ -3396,8 +3421,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
-                            color: isBlocked ? Colors.grey.shade400 : Colors.white,
-                            decoration: isBlocked ? TextDecoration.lineThrough : null,
+                            color: isStruck ? Colors.grey.shade400 : Colors.white,
+                            decoration: isStruck ? TextDecoration.lineThrough : null,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -3409,31 +3434,54 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                           const SizedBox(height: 2),
                           Text(
                             isExactMatch
-                                ? '${conflictingAppt.vehicleYearMakeModel} • ${conflictingAppt.package.title}'
+                                ? ((isDayOff || isDayExplicitlyBlocked)
+                                    ? '⚠️ Day is closed/blocked • ${conflictingAppt.vehicleYearMakeModel}'
+                                    : '${conflictingAppt.vehicleYearMakeModel} • ${conflictingAppt.package.title}')
                                 : 'Conflict shield: ${conflictingAppt.package.title} (${conflictingAppt.package.estimatedDuration})',
-                            style: const TextStyle(fontSize: 10.5, color: AppTheme.textSecondary),
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              color: (isDayOff || isDayExplicitlyBlocked) ? Colors.amber : AppTheme.textSecondary,
+                            ),
                           ),
                         ],
                       ],
                     ),
                   ),
                   if (!isBooked) ...[
-                    OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: isBlocked ? Colors.greenAccent : Colors.redAccent,
-                        side: BorderSide(color: isBlocked ? Colors.greenAccent.withAlpha(120) : Colors.redAccent.withAlpha(100)),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        visualDensity: VisualDensity.compact,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    if (isDayOff && !isDayExplicitlyBlocked && !isSlotExplicitlyBlocked) ...[
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.textMuted,
+                          side: const BorderSide(color: AppTheme.border),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          visualDensity: VisualDensity.compact,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                        ),
+                        onPressed: () => CalendarPreferencesDialog.show(context, repository: widget.repository),
+                        child: const Text('Day Off', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                       ),
-                      onPressed: () {
-                        widget.repository.toggleBlockSlot(date, slot);
-                      },
-                      child: Text(
-                        isBlocked ? 'Reopen' : 'Block Slot',
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                    ] else ...[
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: (isDayExplicitlyBlocked || isSlotExplicitlyBlocked) ? Colors.greenAccent : Colors.redAccent,
+                          side: BorderSide(
+                            color: (isDayExplicitlyBlocked || isSlotExplicitlyBlocked)
+                                ? Colors.greenAccent.withAlpha(120)
+                                : Colors.redAccent.withAlpha(100),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          visualDensity: VisualDensity.compact,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                        ),
+                        onPressed: () {
+                          widget.repository.toggleBlockSlot(date, slot, detailerId: user.id);
+                        },
+                        child: Text(
+                          (isDayExplicitlyBlocked || isSlotExplicitlyBlocked) ? 'Reopen' : 'Block Slot',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
                       ),
-                    ),
+                    ],
                     IconButton(
                       icon: const Icon(Icons.edit_outlined, size: 16, color: AppTheme.textSecondary),
                       constraints: const BoxConstraints(minWidth: 28, minHeight: 28),

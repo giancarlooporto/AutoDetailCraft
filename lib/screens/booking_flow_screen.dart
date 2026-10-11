@@ -54,6 +54,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   @override
   void initState() {
     super.initState();
+    widget.repository.addListener(_onRepoChanged);
     if (widget.initialDate != null) {
       _selectedDate = widget.initialDate!;
     }
@@ -89,6 +90,14 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     _adjustSelectedSlotIfBlocked();
   }
 
+  void _onRepoChanged() {
+    if (mounted) {
+      setState(() {
+        _adjustSelectedSlotIfBlocked();
+      });
+    }
+  }
+
   /// Check if slot is already reserved by another confirmed client booking or conflicting
   bool _isSlotBookedByOtherAppointment(String slot) {
     return widget.repository.isSlotConflictedByBooking(
@@ -103,6 +112,10 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     if (widget.repository.isDateRecurringDayOff(_selectedDate, detailerId: widget.detailer.id)) {
       return 'Shop Closed (Recurring Weekly Day Off)';
     }
+    final hours = widget.repository.getHoursForDate(_selectedDate, detailerId: widget.detailer.id);
+    if (!hours.isOpen) {
+      return 'Studio Closed (Day Off in Operating Hours)';
+    }
     if (widget.repository.isDateFullyBlocked(widget.detailer.id, _selectedDate)) {
       return 'Day Blocked by Detailer';
     }
@@ -113,8 +126,8 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       return 'Outside Business Operating Hours';
     }
     if (!widget.repository.isSlotWithinLeadTime(_selectedDate, slot, detailerId: widget.detailer.id)) {
-      final hours = widget.repository.getCalendarPreferences(detailerId: widget.detailer.id).advanceNoticeHours;
-      return 'Requires ${hours}h Minimum Advance Notice';
+      final leadHours = widget.repository.getCalendarPreferences(detailerId: widget.detailer.id).advanceNoticeHours;
+      return 'Requires ${leadHours}h Minimum Advance Notice';
     }
     if (_isSlotBookedByOtherAppointment(slot)) {
       return 'Already Booked by Another Client';
@@ -141,6 +154,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
 
   @override
   void dispose() {
+    widget.repository.removeListener(_onRepoChanged);
     _vehicleModelCtrl.dispose();
     _addressCtrl.dispose();
     _nameCtrl.dispose();
@@ -159,6 +173,19 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   }
 
   void _confirmAndSubmitBooking() {
+    final conflictReason = _getSlotUnavailableReason(_selectedTimeSlot);
+    if (conflictReason != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Cannot complete reservation: $conflictReason. Please choose another date or time.'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      setState(() => _currentStep = 1);
+      return;
+    }
+
     final booking = BookingAppointment(
       id: 'book_${DateTime.now().millisecondsSinceEpoch}',
       clientId: widget.repository.isLoggedIn ? widget.repository.currentUser.id : null,
@@ -1167,8 +1194,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   Widget _buildSelectedDayBanner() {
     final dayHours = widget.repository.getHoursForDate(_selectedDate, detailerId: widget.detailer.id);
     final isRecurringOff = widget.repository.isDateRecurringDayOff(_selectedDate, detailerId: widget.detailer.id);
+    final isDayOff = isRecurringOff || !dayHours.isOpen;
     final isFullyBlocked = widget.repository.isDateFullyBlocked(widget.detailer.id, _selectedDate);
-    final isFullyBooked = !isFullyBlocked && !isRecurringOff && widget.repository.isDateFullyBooked(_selectedDate, detailerId: widget.detailer.id);
+    final isFullyBooked = !isFullyBlocked && !isDayOff && widget.repository.isDateFullyBooked(_selectedDate, detailerId: widget.detailer.id);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1204,7 +1232,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                       ? Colors.redAccent.withAlpha(30)
                       : (isFullyBooked
                           ? Colors.amber.withAlpha(30)
-                          : (isRecurringOff ? AppTheme.surfaceLight : Colors.greenAccent.withAlpha(30))),
+                          : (isDayOff ? AppTheme.surfaceLight : Colors.greenAccent.withAlpha(30))),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
@@ -1212,7 +1240,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                       ? 'DAY BLOCKED'
                       : (isFullyBooked
                           ? 'FULLY BOOKED'
-                          : (isRecurringOff ? 'CLOSED' : (dayHours.isOpen ? '${dayHours.openTime} - ${dayHours.closeTime}' : 'CLOSED'))),
+                          : (isDayOff ? 'CLOSED' : '${dayHours.openTime} - ${dayHours.closeTime}')),
                   style: TextStyle(
                     fontSize: 10.5,
                     fontWeight: FontWeight.bold,
@@ -1220,20 +1248,20 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                         ? Colors.redAccent
                         : (isFullyBooked
                             ? Colors.amber
-                            : (isRecurringOff ? AppTheme.textMuted : Colors.greenAccent)),
+                            : (isDayOff ? AppTheme.textMuted : Colors.greenAccent)),
                   ),
                 ),
               ),
             ],
           ),
-          if (isRecurringOff || isFullyBlocked || isFullyBooked) ...[
+          if (isDayOff || isFullyBlocked || isFullyBooked) ...[
             const SizedBox(height: 6),
             Text(
               isFullyBlocked
                   ? 'Detailer has marked this day unavailable on their calendar.'
                   : (isFullyBooked
                       ? 'All arrival windows for this date have been booked.'
-                      : 'Studio is closed on ${DateFormat('EEEE').format(_selectedDate)}s (recurring weekly day off).'),
+                      : 'Studio is closed on ${DateFormat('EEEE').format(_selectedDate)}s (day off in operating hours).'),
               style: TextStyle(
                 fontSize: 11,
                 color: isFullyBlocked ? Colors.redAccent : (isFullyBooked ? Colors.amber : AppTheme.textMuted),
