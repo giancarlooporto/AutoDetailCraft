@@ -2705,12 +2705,18 @@ void main() {
   testWidgets('Detailer Workbench Calendar section renders month grid, allows toggling day block and hourly slots', (tester) async {
     tester.view.physicalSize = const Size(1200, 1200);
     tester.view.devicePixelRatio = 1.0;
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+    });
 
     final repository = JobRepository();
-    // Ensure detailer mode
+    // Ensure detailer mode and open business schedule
     if (repository.currentUser.role != UserRole.detailer) {
       repository.toggleHostMode();
     }
+    final openSchedule = repository.calendarPreferences.weeklySchedule.map((d) => d.copyWith(isOpen: true)).toList();
+    repository.updateCalendarPreferences(repository.calendarPreferences.copyWith(weeklySchedule: openSchedule));
 
     await tester.pumpWidget(MaterialApp(
       theme: AppTheme.darkTheme,
@@ -2757,6 +2763,10 @@ void main() {
     await tester.tap(find.text('Reopen').first);
     await tester.pumpAndSettle();
     expect(find.text('Available for Booking'), findsWidgets);
+
+    debugNetworkImageHttpClientProvider = null;
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
   });
 
   testWidgets('CalendarPreferencesDialog allows configuring weekly schedule and booking preferences', (tester) async {
@@ -2918,6 +2928,131 @@ void main() {
     expect(genSlots.first, '6:00 AM - 9:00 AM');
     expect(genSlots.contains('9:00 AM - 12:00 PM'), isTrue);
     expect(genSlots.contains('3:00 PM - 6:00 PM'), isTrue);
+  });
+
+  testWidgets('Booked appointments prevent schedule conflicts on both customer and detailer calendars', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1200, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final repository = JobRepository();
+    if (repository.currentUser.role != UserRole.detailer) {
+      repository.toggleHostMode();
+    }
+
+    // Configure open business schedule with 30 min buffer
+    final openSchedule = repository.calendarPreferences.weeklySchedule.map((d) {
+      return d.copyWith(isOpen: true, openTime: '08:00 AM', closeTime: '08:00 PM');
+    }).toList();
+    repository.updateCalendarPreferences(
+      repository.calendarPreferences.copyWith(
+        weeklySchedule: openSchedule,
+        bufferMinutesBetweenJobs: 30,
+        customTimeSlots: [
+          '8:00 AM - 11:00 AM',
+          '9:00 AM - 12:00 PM',
+          '1:00 PM - 4:00 PM',
+          '4:00 PM - 7:00 PM',
+        ],
+      ),
+    );
+
+    // Pick an open weekday
+    DateTime testDate = DateTime.now().add(const Duration(days: 2));
+    while (testDate.weekday >= 7) {
+      testDate = testDate.add(const Duration(days: 1));
+    }
+
+    final detailer = repository.currentUser;
+
+    // 1. Add a confirmed booking from 8:00 AM - 11:00 AM
+    final booking = BookingAppointment(
+      id: 'book_test_conflict',
+      detailerId: detailer.id,
+      detailerName: detailer.displayName,
+      detailerBusinessName: detailer.businessName,
+      detailerAvatar: detailer.avatarUrl,
+      clientName: 'Alex Rivera',
+      clientPhone: '555-0199',
+      clientEmail: 'alex@example.com',
+      vehicleYearMakeModel: '2023 BMW M3 Competition',
+      vehicleSize: VehicleSize.coupeSedan,
+      package: const ServicePackage(
+        id: 'pkg_test_1',
+        title: 'Paint Correction & Ceramic',
+        description: 'Multi-stage swirl removal',
+        basePrice: 500.0,
+        estimatedDuration: '3 hours',
+        includes: ['Decon wash', 'Machine polish'],
+      ),
+      locationType: ServiceLocationType.shop,
+      clientAddress: 'Detail Studio',
+      scheduledDate: testDate,
+      scheduledTimeSlot: '8:00 AM - 11:00 AM',
+      totalPrice: 500.0,
+      depositAmount: 100.0,
+      status: BookingStatus.confirmed,
+    );
+    repository.addBooking(booking);
+
+    // 2. Unit check: interval math identifies direct and overlapping conflicts
+    expect(repository.isSlotConflictedByBooking(testDate, '8:00 AM - 11:00 AM', detailerId: detailer.id), isTrue);
+    expect(repository.isSlotConflictedByBooking(testDate, '9:00 AM - 12:00 PM', detailerId: detailer.id), isTrue);
+    expect(repository.isSlotConflictedByBooking(testDate, '1:00 PM - 4:00 PM', detailerId: detailer.id), isFalse);
+    expect(repository.isSlotConflictedByBooking(testDate, '4:00 PM - 7:00 PM', detailerId: detailer.id), isFalse);
+
+    // 3. Customer Perspective: Test BookingFlowScreen
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: BookingFlowScreen(
+        detailer: detailer,
+        repository: repository,
+        initialDate: testDate,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Proceed to Step 1 (Vehicle & Schedule)
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    // Verify Customer sees live interactive calendar month view
+    expect(find.text('Select Date & Time Window'), findsOneWidget);
+    expect(find.textContaining('Live availability direct from'), findsOneWidget);
+
+    // Verify booked and overlapping slots are marked BOOKED
+    final bookedBadges = find.text('BOOKED');
+    expect(bookedBadges, findsWidgets);
+
+    // 4. Detailer Perspective: Test DetailerWorkbenchView
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: DetailerWorkbenchView(
+          repository: repository,
+          initialCalendarDate: testDate,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Select Calendar
+    await tester.tap(find.text('Calendar'));
+    await tester.pumpAndSettle();
+
+    // Verify Day Inspector shows exact booking and overlap conflict shield
+    expect(find.textContaining('Booked by Alex Rivera'), findsOneWidget);
+    expect(find.textContaining('Reserved • Overlaps with Alex Rivera'), findsOneWidget);
+    expect(find.text('Available for Booking'), findsWidgets);
+
+    debugNetworkImageHttpClientProvider = null;
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
   });
 }
 

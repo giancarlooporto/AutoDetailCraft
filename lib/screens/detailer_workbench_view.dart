@@ -34,10 +34,12 @@ enum StudioHubSection {
 
 class DetailerWorkbenchView extends StatefulWidget {
   final JobRepository repository;
+  final DateTime? initialCalendarDate;
 
   const DetailerWorkbenchView({
     super.key,
     required this.repository,
+    this.initialCalendarDate,
   });
 
   @override
@@ -68,6 +70,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialCalendarDate != null) {
+      _selectedCalendarDate = widget.initialCalendarDate!;
+      _calendarDisplayMonth = DateTime(_selectedCalendarDate.year, _selectedCalendarDate.month, 1);
+    }
     widget.repository.addListener(_onRepoChanged);
     _ensureSelection();
   }
@@ -1586,11 +1592,13 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             final cellDate = DateTime(year, month, day);
             final isSelected = DateUtils.isSameDay(cellDate, _selectedCalendarDate);
             final isToday = DateUtils.isSameDay(cellDate, today);
-            final isRecurringOff = widget.repository.isDateRecurringDayOff(cellDate);
+            final isRecurringOff = widget.repository.isDateRecurringDayOff(cellDate, detailerId: user.id);
+            final isExplicitlyBlocked = widget.repository.isDateExplicitlyBlocked(user.id, cellDate);
             final isFullyBlocked = widget.repository.isDateFullyBlocked(user.id, cellDate);
-            final dayBlocks = widget.repository.getBlocksForDate(cellDate);
-            final isPartiallyBlocked = !isFullyBlocked && dayBlocks.any((b) => b.blockedSlots.isNotEmpty);
-            final dayBookings = widget.repository.getBookingsForDate(cellDate);
+            final dayBlocks = widget.repository.getBlocksForDate(cellDate, detailerId: user.id);
+            final isPartiallyBlocked = !isExplicitlyBlocked && dayBlocks.any((b) => b.blockedSlots.isNotEmpty);
+            final dayBookings = widget.repository.getBookingsForDate(cellDate, detailerId: user.id);
+            final isFullyBooked = !isFullyBlocked && !isRecurringOff && widget.repository.isDateFullyBooked(cellDate, detailerId: user.id);
 
             return InkWell(
               borderRadius: BorderRadius.circular(8),
@@ -1604,7 +1612,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 decoration: BoxDecoration(
                   color: isSelected
                       ? AppTheme.primary.withAlpha(35)
-                      : (isFullyBlocked
+                      : (isExplicitlyBlocked
                           ? Colors.redAccent.withAlpha(20)
                           : (isRecurringOff
                               ? AppTheme.surfaceLight.withAlpha(50)
@@ -1613,7 +1621,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   border: Border.all(
                     color: isSelected
                         ? AppTheme.primary
-                        : (isFullyBlocked
+                        : (isExplicitlyBlocked
                             ? Colors.redAccent.withAlpha(100)
                             : (isToday ? AppTheme.primary.withAlpha(80) : AppTheme.border)),
                     width: isSelected ? 1.8 : 1,
@@ -1661,15 +1669,19 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
                           decoration: BoxDecoration(
-                            color: Colors.greenAccent.withAlpha(40),
+                            color: isFullyBooked ? Colors.amber.withAlpha(40) : Colors.greenAccent.withAlpha(40),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            '${dayBookings.length}bk',
-                            style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.greenAccent),
+                            isFullyBooked ? 'FULL' : '${dayBookings.length}bk',
+                            style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.bold,
+                              color: isFullyBooked ? Colors.amber : Colors.greenAccent,
+                            ),
                           ),
                         ),
-                      ] else if (isFullyBlocked) ...[
+                      ] else if (isExplicitlyBlocked) ...[
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
                           decoration: BoxDecoration(
@@ -3102,14 +3114,14 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     final user = widget.repository.currentUser;
     final date = _selectedCalendarDate;
     final dateStr = DateFormat('EEEE, MMMM d, yyyy').format(date);
-    final isRecurringOff = widget.repository.isDateRecurringDayOff(date);
-    final isFullyBlocked = widget.repository.isDateFullyBlocked(user.id, date);
-    final hours = widget.repository.getHoursForDate(date);
-    final dayBookings = widget.repository.getBookingsForDate(date);
-    final dayBlocks = widget.repository.getBlocksForDate(date);
-    final prefs = widget.repository.calendarPreferences;
+    final isRecurringOff = widget.repository.isDateRecurringDayOff(date, detailerId: user.id);
+    final isExplicitlyBlocked = widget.repository.isDateExplicitlyBlocked(user.id, date);
+    final hours = widget.repository.getHoursForDate(date, detailerId: user.id);
+    final dayBookings = widget.repository.getBookingsForDate(date, detailerId: user.id);
+    final dayBlocks = widget.repository.getBlocksForDate(date, detailerId: user.id);
+    final prefs = widget.repository.getCalendarPreferences(detailerId: user.id);
 
-    final daySlots = widget.repository.getTimeSlotsForDate(date);
+    final daySlots = widget.repository.getTimeSlotsForDate(date, detailerId: user.id);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3121,7 +3133,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             color: AppTheme.surface,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: isFullyBlocked ? Colors.redAccent.withAlpha(100) : AppTheme.border,
+              color: isExplicitlyBlocked ? Colors.redAccent.withAlpha(100) : AppTheme.border,
             ),
           ),
           child: Column(
@@ -3133,16 +3145,16 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: isFullyBlocked
+                      color: isExplicitlyBlocked
                           ? Colors.redAccent.withAlpha(30)
                           : (isRecurringOff ? AppTheme.surfaceLight : AppTheme.primary.withAlpha(30)),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
-                      isFullyBlocked
+                      isExplicitlyBlocked
                           ? Icons.block_rounded
                           : (isRecurringOff ? Icons.nightlife_rounded : Icons.calendar_today_rounded),
-                      color: isFullyBlocked
+                      color: isExplicitlyBlocked
                           ? Colors.redAccent
                           : (isRecurringOff ? AppTheme.textMuted : AppTheme.primary),
                       size: 22,
@@ -3163,7 +3175,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: isFullyBlocked
+                                color: isExplicitlyBlocked
                                     ? Colors.redAccent.withAlpha(30)
                                     : (isRecurringOff
                                         ? Colors.amber.withAlpha(30)
@@ -3171,13 +3183,13 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
-                                isFullyBlocked
+                                isExplicitlyBlocked
                                     ? 'DAY BLOCKED'
                                     : (isRecurringOff ? 'RECURRING DAY OFF' : 'OPEN FOR BOOKINGS'),
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
-                                  color: isFullyBlocked
+                                  color: isExplicitlyBlocked
                                       ? Colors.redAccent
                                       : (isRecurringOff ? Colors.amber : Colors.greenAccent),
                                 ),
@@ -3203,18 +3215,18 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   Expanded(
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: isFullyBlocked ? Colors.green : Colors.redAccent,
+                        backgroundColor: isExplicitlyBlocked ? Colors.green : Colors.redAccent,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 10),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      icon: Icon(isFullyBlocked ? Icons.lock_open_rounded : Icons.lock_rounded, size: 16),
+                      icon: Icon(isExplicitlyBlocked ? Icons.lock_open_rounded : Icons.lock_rounded, size: 16),
                       label: Text(
-                        isFullyBlocked ? 'Unblock Full Day' : 'Block Full Day',
+                        isExplicitlyBlocked ? 'Unblock Full Day' : 'Block Full Day',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                       ),
                       onPressed: () {
-                        widget.repository.toggleBlockDay(date);
+                        widget.repository.toggleBlockDay(date, detailerId: user.id);
                       },
                     ),
                   ),
@@ -3329,10 +3341,11 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         else
           // Slot Matrix
           ...daySlots.map((slot) {
-            final isBooked = dayBookings.any((b) => b.scheduledTimeSlot == slot);
-            final bookedAppt = isBooked ? dayBookings.firstWhere((b) => b.scheduledTimeSlot == slot) : null;
-            final isBlocked = widget.repository.isSlotBlocked(user.id, date, slot);
-            final inOperatingHours = widget.repository.isSlotWithinOperatingHours(date, slot);
+            final conflictingAppt = widget.repository.getConflictingBookingForSlot(date, slot, detailerId: user.id);
+            final isBooked = conflictingAppt != null;
+            final isExactMatch = isBooked && conflictingAppt.scheduledTimeSlot.trim().toLowerCase() == slot.trim().toLowerCase();
+            final isBlocked = widget.repository.isSlotExplicitlyBlocked(user.id, date, slot);
+            final inOperatingHours = widget.repository.isSlotWithinOperatingHours(date, slot, detailerId: user.id);
 
             Color borderColor = AppTheme.border;
             Color bgColor = AppTheme.surface;
@@ -3343,7 +3356,9 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             if (isBooked) {
               borderColor = Colors.green.withAlpha(120);
               bgColor = Colors.green.withAlpha(20);
-              statusTitle = 'Booked by ${bookedAppt?.clientName ?? "Client"}';
+              statusTitle = isExactMatch
+                  ? 'Booked by ${conflictingAppt.clientName}'
+                  : 'Reserved • Overlaps with ${conflictingAppt.clientName} (${conflictingAppt.scheduledTimeSlot})';
               statusColor = Colors.greenAccent;
               iconData = Icons.directions_car_rounded;
             } else if (isBlocked) {
@@ -3352,7 +3367,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               statusTitle = 'Blocked by Detailer';
               statusColor = Colors.redAccent;
               iconData = Icons.block_rounded;
-            } else if (!inOperatingHours || isRecurringOff) {
+            } else if (!inOperatingHours && hours.isOpen) {
               borderColor = AppTheme.border;
               bgColor = AppTheme.surfaceLight.withAlpha(60);
               statusTitle = 'Outside Operating Hours';
@@ -3387,11 +3402,18 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          isBooked
-                              ? '${bookedAppt?.vehicleYearMakeModel ?? ""} • ${bookedAppt?.package.title ?? ""}'
-                              : statusTitle,
+                          statusTitle,
                           style: TextStyle(fontSize: 11, color: statusColor, fontWeight: FontWeight.w600),
                         ),
+                        if (isBooked) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            isExactMatch
+                                ? '${conflictingAppt.vehicleYearMakeModel} • ${conflictingAppt.package.title}'
+                                : 'Conflict shield: ${conflictingAppt.package.title} (${conflictingAppt.package.estimatedDuration})',
+                            style: const TextStyle(fontSize: 10.5, color: AppTheme.textSecondary),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -3437,7 +3459,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        '\$${bookedAppt?.totalPrice.toStringAsFixed(0) ?? "0"}',
+                        '\$${conflictingAppt.totalPrice.toStringAsFixed(0)}',
                         style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.greenAccent),
                       ),
                     ),

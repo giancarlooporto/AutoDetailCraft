@@ -25,6 +25,7 @@ class JobRepository extends ChangeNotifier {
   List<InventoryItem> _inventoryItems = MockDataService.getInitialInventory();
   List<CalendarAvailabilityBlock> _availabilityBlocks = [];
   DetailerCalendarPreferences _calendarPreferences = DetailerCalendarPreferences.defaults();
+  final Map<String, DetailerCalendarPreferences> _detailerPreferencesMap = {};
 
   String _selectedServiceType = 'All Services';
   String _selectedLocationCity = 'All Locations';
@@ -942,10 +943,21 @@ class JobRepository extends ChangeNotifier {
 
   // ─── CALENDAR & AVAILABILITY ────────────────────────────────────────────────
 
-  void updateCalendarPreferences(DetailerCalendarPreferences preferences) {
+  void updateCalendarPreferences(DetailerCalendarPreferences preferences, {String? detailerId}) {
     _calendarPreferences = preferences;
+    if (detailerId != null) {
+      _detailerPreferencesMap[detailerId] = preferences;
+    }
+    _detailerPreferencesMap[_currentUser.id] = preferences;
     LocalStorageService.saveCalendarPreferences(preferences);
     notifyListeners();
+  }
+
+  DetailerCalendarPreferences getCalendarPreferences({String? detailerId}) {
+    if (detailerId != null && _detailerPreferencesMap.containsKey(detailerId)) {
+      return _detailerPreferencesMap[detailerId]!;
+    }
+    return _calendarPreferences;
   }
 
   void addAvailabilityBlock(CalendarAvailabilityBlock block) {
@@ -967,10 +979,11 @@ class JobRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleBlockDay(DateTime date, {String? reason}) {
+  void toggleBlockDay(DateTime date, {String? reason, String? detailerId}) {
+    final targetDetailerId = detailerId ?? _currentUser.id;
     final normDate = DateTime(date.year, date.month, date.day);
     final idx = _availabilityBlocks.indexWhere(
-      (b) => b.detailerId == _currentUser.id &&
+      (b) => b.detailerId == targetDetailerId &&
              b.date.year == normDate.year &&
              b.date.month == normDate.month &&
              b.date.day == normDate.day &&
@@ -980,7 +993,7 @@ class JobRepository extends ChangeNotifier {
       _availabilityBlocks.removeAt(idx);
     } else {
       _availabilityBlocks.removeWhere(
-        (b) => b.detailerId == _currentUser.id &&
+        (b) => b.detailerId == targetDetailerId &&
                b.date.year == normDate.year &&
                b.date.month == normDate.month &&
                b.date.day == normDate.day,
@@ -988,7 +1001,7 @@ class JobRepository extends ChangeNotifier {
       _availabilityBlocks.add(
         CalendarAvailabilityBlock(
           id: 'block_${DateTime.now().millisecondsSinceEpoch}',
-          detailerId: _currentUser.id,
+          detailerId: targetDetailerId,
           date: normDate,
           isAllDay: true,
           reason: reason,
@@ -1000,10 +1013,11 @@ class JobRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleBlockSlot(DateTime date, String slot, {String? reason}) {
+  void toggleBlockSlot(DateTime date, String slot, {String? reason, String? detailerId}) {
+    final targetDetailerId = detailerId ?? _currentUser.id;
     final normDate = DateTime(date.year, date.month, date.day);
     final idx = _availabilityBlocks.indexWhere(
-      (b) => b.detailerId == _currentUser.id &&
+      (b) => b.detailerId == targetDetailerId &&
              b.date.year == normDate.year &&
              b.date.month == normDate.month &&
              b.date.day == normDate.day,
@@ -1011,7 +1025,7 @@ class JobRepository extends ChangeNotifier {
     if (idx != -1) {
       final existing = _availabilityBlocks[idx];
       if (existing.isAllDay) {
-        final currentSlots = getTimeSlotsForDate(date);
+        final currentSlots = getTimeSlotsForDate(date, detailerId: targetDetailerId);
         final remaining = currentSlots.where((s) => s != slot).toList();
         _availabilityBlocks[idx] = existing.copyWith(
           isAllDay: false,
@@ -1037,7 +1051,7 @@ class JobRepository extends ChangeNotifier {
       _availabilityBlocks.add(
         CalendarAvailabilityBlock(
           id: 'block_${DateTime.now().millisecondsSinceEpoch}',
-          detailerId: _currentUser.id,
+          detailerId: targetDetailerId,
           date: normDate,
           isAllDay: false,
           blockedSlots: [slot],
@@ -1082,12 +1096,14 @@ class JobRepository extends ChangeNotifier {
   }
 
   List<String> getTimeSlotsForDate(DateTime date, {String? detailerId}) {
-    final dayHours = getHoursForDate(date);
+    final targetDetailerId = detailerId ?? _currentUser.id;
+    final prefs = getCalendarPreferences(detailerId: targetDetailerId);
+    final dayHours = getHoursForDate(date, detailerId: targetDetailerId);
     final normDate = DateTime(date.year, date.month, date.day);
 
     // 1. Check if date-specific custom slots exist
     final specificBlock = _availabilityBlocks.firstWhere(
-      (b) => b.detailerId == (detailerId ?? _currentUser.id) &&
+      (b) => b.detailerId == targetDetailerId &&
              b.date.year == normDate.year &&
              b.date.month == normDate.month &&
              b.date.day == normDate.day &&
@@ -1104,7 +1120,7 @@ class JobRepository extends ChangeNotifier {
     }
 
     // 2. Base slots from preferences
-    List<String> slots = List<String>.from(_calendarPreferences.customTimeSlots);
+    List<String> slots = List<String>.from(prefs.customTimeSlots);
     if (slots.isEmpty) {
       slots = List<String>.from(DetailerCalendarPreferences.defaultTimeSlots);
     }
@@ -1120,7 +1136,7 @@ class JobRepository extends ChangeNotifier {
           : slots.map(timeStringToMinutes).reduce((a, b) => a < b ? a : b);
       if (openMin < earliestSlotMin) {
         int cur = openMin;
-        final step = (_calendarPreferences.slotDurationHours <= 0 ? 3 : _calendarPreferences.slotDurationHours) * 60;
+        final step = (prefs.slotDurationHours <= 0 ? 3 : prefs.slotDurationHours) * 60;
         final extra = <String>[];
         while (cur < earliestSlotMin) {
           final end = (cur + step <= closeMin) ? cur + step : closeMin;
@@ -1131,7 +1147,7 @@ class JobRepository extends ChangeNotifier {
       }
 
       // Filter slots that fall within operating hours
-      final inHours = slots.where((s) => isSlotWithinOperatingHours(date, s)).toList();
+      final inHours = slots.where((s) => isSlotWithinOperatingHours(date, s, detailerId: targetDetailerId)).toList();
       if (inHours.isNotEmpty) {
         slots = inHours;
       } else {
@@ -1139,7 +1155,7 @@ class JobRepository extends ChangeNotifier {
         slots = generateSlotsForHours(
           openTime: dayHours.openTime,
           closeTime: dayHours.closeTime,
-          slotDurationHours: _calendarPreferences.slotDurationHours,
+          slotDurationHours: prefs.slotDurationHours,
         );
       }
     }
@@ -1150,14 +1166,15 @@ class JobRepository extends ChangeNotifier {
     return unique;
   }
 
-  void addCustomTimeSlot(String slot, {DateTime? specificDate}) {
+  void addCustomTimeSlot(String slot, {DateTime? specificDate, String? detailerId}) {
     final cleanSlot = slot.trim();
     if (cleanSlot.isEmpty) return;
+    final targetDetailerId = detailerId ?? _currentUser.id;
 
     if (specificDate != null) {
       final normDate = DateTime(specificDate.year, specificDate.month, specificDate.day);
       final idx = _availabilityBlocks.indexWhere(
-        (b) => b.detailerId == _currentUser.id &&
+        (b) => b.detailerId == targetDetailerId &&
                b.date.year == normDate.year &&
                b.date.month == normDate.month &&
                b.date.day == normDate.day,
@@ -1174,7 +1191,7 @@ class JobRepository extends ChangeNotifier {
         _availabilityBlocks.add(
           CalendarAvailabilityBlock(
             id: 'block_${DateTime.now().millisecondsSinceEpoch}',
-            detailerId: _currentUser.id,
+            detailerId: targetDetailerId,
             date: normDate,
             isAllDay: false,
             customSlots: [cleanSlot],
@@ -1184,25 +1201,27 @@ class JobRepository extends ChangeNotifier {
       }
       LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
     } else {
-      final list = List<String>.from(_calendarPreferences.customTimeSlots);
+      final prefs = getCalendarPreferences(detailerId: targetDetailerId);
+      final list = List<String>.from(prefs.customTimeSlots);
       if (!list.contains(cleanSlot)) {
         list.add(cleanSlot);
         list.sort((a, b) => timeStringToMinutes(a).compareTo(timeStringToMinutes(b)));
-        _calendarPreferences = _calendarPreferences.copyWith(customTimeSlots: list);
-        LocalStorageService.saveCalendarPreferences(_calendarPreferences);
+        final updated = prefs.copyWith(customTimeSlots: list);
+        updateCalendarPreferences(updated, detailerId: targetDetailerId);
       }
     }
     notifyListeners();
   }
 
-  void updateCustomTimeSlot(String oldSlot, String newSlot, {DateTime? specificDate}) {
+  void updateCustomTimeSlot(String oldSlot, String newSlot, {DateTime? specificDate, String? detailerId}) {
     final cleanNew = newSlot.trim();
     if (cleanNew.isEmpty) return;
+    final targetDetailerId = detailerId ?? _currentUser.id;
 
     if (specificDate != null) {
       final normDate = DateTime(specificDate.year, specificDate.month, specificDate.day);
       final idx = _availabilityBlocks.indexWhere(
-        (b) => b.detailerId == _currentUser.id &&
+        (b) => b.detailerId == targetDetailerId &&
                b.date.year == normDate.year &&
                b.date.month == normDate.month &&
                b.date.day == normDate.day,
@@ -1219,7 +1238,8 @@ class JobRepository extends ChangeNotifier {
         }
       }
     } else {
-      final list = List<String>.from(_calendarPreferences.customTimeSlots);
+      final prefs = getCalendarPreferences(detailerId: targetDetailerId);
+      final list = List<String>.from(prefs.customTimeSlots);
       final pos = list.indexOf(oldSlot);
       if (pos != -1) {
         list[pos] = cleanNew;
@@ -1227,17 +1247,18 @@ class JobRepository extends ChangeNotifier {
         list.add(cleanNew);
       }
       list.sort((a, b) => timeStringToMinutes(a).compareTo(timeStringToMinutes(b)));
-      _calendarPreferences = _calendarPreferences.copyWith(customTimeSlots: list);
-      LocalStorageService.saveCalendarPreferences(_calendarPreferences);
+      final updated = prefs.copyWith(customTimeSlots: list);
+      updateCalendarPreferences(updated, detailerId: targetDetailerId);
     }
     notifyListeners();
   }
 
-  void removeCustomTimeSlot(String slot, {DateTime? specificDate}) {
+  void removeCustomTimeSlot(String slot, {DateTime? specificDate, String? detailerId}) {
+    final targetDetailerId = detailerId ?? _currentUser.id;
     if (specificDate != null) {
       final normDate = DateTime(specificDate.year, specificDate.month, specificDate.day);
       final idx = _availabilityBlocks.indexWhere(
-        (b) => b.detailerId == _currentUser.id &&
+        (b) => b.detailerId == targetDetailerId &&
                b.date.year == normDate.year &&
                b.date.month == normDate.month &&
                b.date.day == normDate.day,
@@ -1249,9 +1270,10 @@ class JobRepository extends ChangeNotifier {
         LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
       }
     } else {
-      final list = List<String>.from(_calendarPreferences.customTimeSlots)..remove(slot);
-      _calendarPreferences = _calendarPreferences.copyWith(customTimeSlots: list);
-      LocalStorageService.saveCalendarPreferences(_calendarPreferences);
+      final prefs = getCalendarPreferences(detailerId: targetDetailerId);
+      final list = List<String>.from(prefs.customTimeSlots)..remove(slot);
+      final updated = prefs.copyWith(customTimeSlots: list);
+      updateCalendarPreferences(updated, detailerId: targetDetailerId);
     }
     notifyListeners();
   }
@@ -1261,7 +1283,9 @@ class JobRepository extends ChangeNotifier {
     required String closeTime,
     int slotDurationHours = 3,
     DateTime? specificDate,
+    String? detailerId,
   }) {
+    final targetDetailerId = detailerId ?? _currentUser.id;
     final generated = generateSlotsForHours(
       openTime: openTime,
       closeTime: closeTime,
@@ -1272,7 +1296,7 @@ class JobRepository extends ChangeNotifier {
     if (specificDate != null) {
       final normDate = DateTime(specificDate.year, specificDate.month, specificDate.day);
       final idx = _availabilityBlocks.indexWhere(
-        (b) => b.detailerId == _currentUser.id &&
+        (b) => b.detailerId == targetDetailerId &&
                b.date.year == normDate.year &&
                b.date.month == normDate.month &&
                b.date.day == normDate.day,
@@ -1283,7 +1307,7 @@ class JobRepository extends ChangeNotifier {
         _availabilityBlocks.add(
           CalendarAvailabilityBlock(
             id: 'block_${DateTime.now().millisecondsSinceEpoch}',
-            detailerId: _currentUser.id,
+            detailerId: targetDetailerId,
             date: normDate,
             isAllDay: false,
             customSlots: generated,
@@ -1293,32 +1317,53 @@ class JobRepository extends ChangeNotifier {
       }
       LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
     } else {
-      _calendarPreferences = _calendarPreferences.copyWith(
+      final prefs = getCalendarPreferences(detailerId: targetDetailerId);
+      final updated = prefs.copyWith(
         customTimeSlots: generated,
         slotDurationHours: slotDurationHours,
       );
-      LocalStorageService.saveCalendarPreferences(_calendarPreferences);
+      updateCalendarPreferences(updated, detailerId: targetDetailerId);
     }
     notifyListeners();
   }
 
-  bool isDateRecurringDayOff(DateTime date) {
-    return !_calendarPreferences.getHoursForWeekday(date.weekday).isOpen;
+  bool isDateRecurringDayOff(DateTime date, {String? detailerId}) {
+    final prefs = getCalendarPreferences(detailerId: detailerId);
+    return !prefs.getHoursForWeekday(date.weekday).isOpen;
   }
 
-  bool isDateFullyBlocked(String detailerId, DateTime date) {
-    if (isDateRecurringDayOff(date)) return true;
+  bool isDateExplicitlyBlocked(String detailerId, DateTime date) {
+    final normDate = DateTime(date.year, date.month, date.day);
     return _availabilityBlocks.any(
       (b) => b.detailerId == detailerId &&
-             b.date.year == date.year &&
-             b.date.month == date.month &&
-             b.date.day == date.day &&
+             b.date.year == normDate.year &&
+             b.date.month == normDate.month &&
+             b.date.day == normDate.day &&
              b.isAllDay,
     );
   }
 
-  bool isSlotBlocked(String detailerId, DateTime date, String slot) {
-    if (isDateFullyBlocked(detailerId, date)) return true;
+  bool isDateFullyBlocked(String detailerId, DateTime date) {
+    if (isDateRecurringDayOff(date, detailerId: detailerId)) return true;
+    if (isDateExplicitlyBlocked(detailerId, date)) return true;
+    final normDate = DateTime(date.year, date.month, date.day);
+    // Check if covered by multi-day booking
+    final coveredByMultiDay = _bookings.any((b) {
+      if (b.status == BookingStatus.cancelled || b.detailerId != detailerId) return false;
+      final apptDate = DateTime(b.scheduledDate.year, b.scheduledDate.month, b.scheduledDate.day);
+      final dayDiff = normDate.difference(apptDate).inDays;
+      final durationStr = b.package.estimatedDuration.toLowerCase();
+      if (durationStr.contains('day')) {
+        final match = RegExp(r'\d+').firstMatch(durationStr);
+        final days = match != null ? int.parse(match.group(0)!) : 1;
+        return dayDiff > 0 && dayDiff < days;
+      }
+      return false;
+    });
+    return coveredByMultiDay;
+  }
+
+  bool isSlotExplicitlyBlocked(String detailerId, DateTime date, String slot) {
     return _availabilityBlocks.any(
       (b) => b.detailerId == detailerId &&
              b.date.year == date.year &&
@@ -1334,6 +1379,11 @@ class JobRepository extends ChangeNotifier {
                        cleanSlot.contains(cleanBs);
               })),
     );
+  }
+
+  bool isSlotBlocked(String detailerId, DateTime date, String slot) {
+    if (isDateFullyBlocked(detailerId, date)) return true;
+    return isSlotExplicitlyBlocked(detailerId, date, slot);
   }
 
   static int timeStringToMinutes(String timeStr) {
@@ -1352,8 +1402,133 @@ class JobRepository extends ChangeNotifier {
     return hour * 60 + min;
   }
 
-  bool isSlotWithinOperatingHours(DateTime date, String slot) {
-    final dayHours = _calendarPreferences.getHoursForWeekday(date.weekday);
+  /// Parses a time slot string into start and end minutes since midnight.
+  static (int startMin, int endMin) parseSlotRange(String slot, {int defaultDurationHours = 3}) {
+    final clean = slot.trim();
+    if (clean.contains('-')) {
+      final parts = clean.split('-');
+      final start = timeStringToMinutes(parts[0]);
+      final end = timeStringToMinutes(parts[1]);
+      return (start, end);
+    }
+    final start = timeStringToMinutes(clean);
+    final end = start + (defaultDurationHours * 60);
+    return (start, end);
+  }
+
+  /// Parses estimated duration string (e.g., "2-3 hrs", "4 hours", "90 mins", "1 day") to minutes.
+  static int parseDurationToMinutes(String durationStr, {int defaultMinutes = 180}) {
+    final clean = durationStr.toLowerCase().trim();
+    if (clean.contains('day')) {
+      final match = RegExp(r'\d+').firstMatch(clean);
+      final days = match != null ? int.parse(match.group(0)!) : 1;
+      return days * 24 * 60;
+    }
+    if (clean.contains('hour') || clean.contains('hr')) {
+      final matches = RegExp(r'\d+').allMatches(clean).map((m) => int.parse(m.group(0)!)).toList();
+      if (matches.isNotEmpty) {
+        final hours = matches.reduce((a, b) => a > b ? a : b);
+        return hours * 60;
+      }
+    }
+    if (clean.contains('min')) {
+      final match = RegExp(r'\d+').firstMatch(clean);
+      if (match != null) {
+        return int.parse(match.group(0)!);
+      }
+    }
+    return defaultMinutes;
+  }
+
+  /// Calculates appointment start and end minutes, including package duration and turnaround buffer.
+  static (int startMin, int endMin) getAppointmentTimeInterval(
+    BookingAppointment appointment, {
+    int bufferMinutes = 0,
+  }) {
+    final slotRange = parseSlotRange(appointment.scheduledTimeSlot);
+    final slotSpan = slotRange.$2 > slotRange.$1 ? slotRange.$2 - slotRange.$1 : 180;
+    final durationMin = parseDurationToMinutes(
+      appointment.package.estimatedDuration,
+      defaultMinutes: slotSpan,
+    );
+    final effectiveDuration = durationMin > slotSpan ? durationMin : slotSpan;
+    final startMin = slotRange.$1;
+    final endMin = startMin + effectiveDuration + bufferMinutes;
+    return (startMin, endMin);
+  }
+
+  /// Determines whether an appointment conflicts with a requested time slot on [date].
+  bool isBookingConflictingWithSlot(BookingAppointment b, DateTime date, String slot) {
+    if (b.status == BookingStatus.cancelled) return false;
+
+    final normDate = DateTime(date.year, date.month, date.day);
+    final apptDate = DateTime(b.scheduledDate.year, b.scheduledDate.month, b.scheduledDate.day);
+    final dayDiff = normDate.difference(apptDate).inDays;
+
+    // Multi-day booking handling
+    final durationStr = b.package.estimatedDuration.toLowerCase();
+    if (durationStr.contains('day')) {
+      final match = RegExp(r'\d+').firstMatch(durationStr);
+      final days = match != null ? int.parse(match.group(0)!) : 1;
+      if (dayDiff >= 0 && dayDiff < days) {
+        if (dayDiff > 0) return true; // Entire day blocked on subsequent days
+        final slotRange = parseSlotRange(slot);
+        final apptStart = parseSlotRange(b.scheduledTimeSlot).$1;
+        return slotRange.$2 > apptStart;
+      }
+      return false;
+    }
+
+    if (dayDiff != 0) return false;
+
+    // Direct slot string match
+    if (b.scheduledTimeSlot.trim().toLowerCase() == slot.trim().toLowerCase()) {
+      return true;
+    }
+
+    // Interval overlap calculation with turnaround buffer
+    final prefs = getCalendarPreferences(detailerId: b.detailerId);
+    final buffer = prefs.bufferMinutesBetweenJobs;
+    final apptInterval = getAppointmentTimeInterval(b, bufferMinutes: buffer);
+    final slotInterval = parseSlotRange(slot);
+
+    final overlapStart = slotInterval.$1 > apptInterval.$1 ? slotInterval.$1 : apptInterval.$1;
+    final overlapEnd = slotInterval.$2 < apptInterval.$2 ? slotInterval.$2 : apptInterval.$2;
+
+    return overlapStart < overlapEnd;
+  }
+
+  /// Returns the first non-cancelled booking conflicting with [slot] on [date] for [detailerId].
+  BookingAppointment? getConflictingBookingForSlot(DateTime date, String slot, {String? detailerId}) {
+    final targetDetailerId = detailerId ?? _currentUser.id;
+    for (final b in _bookings) {
+      if (b.detailerId == targetDetailerId && isBookingConflictingWithSlot(b, date, slot)) {
+        return b;
+      }
+    }
+    return null;
+  }
+
+  /// Checks if [slot] on [date] is booked or overlaps with any booked appointment.
+  bool isSlotConflictedByBooking(DateTime date, String slot, {String? detailerId}) {
+    return getConflictingBookingForSlot(date, slot, detailerId: detailerId) != null;
+  }
+
+  /// Checks if all slots on [date] are booked, blocked, or unavailable.
+  bool isDateFullyBooked(DateTime date, {String? detailerId}) {
+    final targetDetailerId = detailerId ?? _currentUser.id;
+    final slots = getTimeSlotsForDate(date, detailerId: targetDetailerId);
+    if (slots.isEmpty) return false;
+    return slots.every((s) =>
+      isSlotBlocked(targetDetailerId, date, s) ||
+      isSlotConflictedByBooking(date, s, detailerId: targetDetailerId) ||
+      !isSlotWithinOperatingHours(date, s, detailerId: targetDetailerId),
+    );
+  }
+
+  bool isSlotWithinOperatingHours(DateTime date, String slot, {String? detailerId}) {
+    final prefs = getCalendarPreferences(detailerId: detailerId);
+    final dayHours = prefs.getHoursForWeekday(date.weekday);
     if (!dayHours.isOpen) return false;
     final slotMin = timeStringToMinutes(slot);
     final openMin = timeStringToMinutes(dayHours.openTime);
@@ -1366,31 +1541,49 @@ class JobRepository extends ChangeNotifier {
     return true;
   }
 
-  bool isSlotWithinLeadTime(DateTime date, String slot) {
-    final leadHours = _calendarPreferences.advanceNoticeHours;
+  bool isSlotWithinLeadTime(DateTime date, String slot, {String? detailerId}) {
+    final prefs = getCalendarPreferences(detailerId: detailerId);
+    final leadHours = prefs.advanceNoticeHours;
     if (leadHours <= 0) return true;
     final slotMin = timeStringToMinutes(slot);
     final slotDate = DateTime(date.year, date.month, date.day, slotMin ~/ 60, slotMin % 60);
     return slotDate.difference(DateTime.now()).inMinutes >= leadHours * 60;
   }
 
-  DayBusinessHours getHoursForDate(DateTime date) {
-    return _calendarPreferences.getHoursForWeekday(date.weekday);
+  DayBusinessHours getHoursForDate(DateTime date, {String? detailerId}) {
+    final prefs = getCalendarPreferences(detailerId: detailerId);
+    return prefs.getHoursForWeekday(date.weekday);
   }
 
-  List<CalendarAvailabilityBlock> getBlocksForDate(DateTime date) {
+  List<CalendarAvailabilityBlock> getBlocksForDate(DateTime date, {String? detailerId}) {
+    final targetDetailerId = detailerId ?? _currentUser.id;
     return _availabilityBlocks.where(
-      (b) => b.date.year == date.year && b.date.month == date.month && b.date.day == date.day,
+      (b) => b.detailerId == targetDetailerId &&
+             b.date.year == date.year &&
+             b.date.month == date.month &&
+             b.date.day == date.day,
     ).toList();
   }
 
-  List<BookingAppointment> getBookingsForDate(DateTime date) {
-    return _bookings.where(
-      (b) => b.scheduledDate.year == date.year &&
-             b.scheduledDate.month == date.month &&
-             b.scheduledDate.day == date.day &&
-             b.status != BookingStatus.cancelled,
-    ).toList();
+  List<BookingAppointment> getBookingsForDate(DateTime date, {String? detailerId}) {
+    final targetDetailerId = detailerId ?? _currentUser.id;
+    final normDate = DateTime(date.year, date.month, date.day);
+    return _bookings.where((b) {
+      if (b.status == BookingStatus.cancelled) return false;
+      if (b.detailerId != targetDetailerId) return false;
+
+      final apptDate = DateTime(b.scheduledDate.year, b.scheduledDate.month, b.scheduledDate.day);
+      final dayDiff = normDate.difference(apptDate).inDays;
+
+      final durationStr = b.package.estimatedDuration.toLowerCase();
+      if (durationStr.contains('day')) {
+        final match = RegExp(r'\d+').firstMatch(durationStr);
+        final days = match != null ? int.parse(match.group(0)!) : 1;
+        return dayDiff >= 0 && dayDiff < days;
+      }
+
+      return dayDiff == 0;
+    }).toList();
   }
 
   // ─── MESSAGING ────────────────────────────────────────────────────────────

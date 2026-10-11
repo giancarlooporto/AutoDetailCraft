@@ -33,6 +33,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   VehicleSize _vehicleSize = VehicleSize.coupeSedan;
   ServiceLocationType _locationType = ServiceLocationType.mobile;
   DateTime _selectedDate = DateTime.now().add(const Duration(days: 1));
+  late DateTime _calendarDisplayMonth;
   String _selectedTimeSlot = '9:00 AM - 12:00 PM';
   TeamMember? _selectedTeamMember; // Delegated / preferred detailer
 
@@ -56,6 +57,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     if (widget.initialDate != null) {
       _selectedDate = widget.initialDate!;
     }
+    _calendarDisplayMonth = DateTime(_selectedDate.year, _selectedDate.month, 1);
     final user = widget.repository.currentUser;
     if (user.displayName.isNotEmpty) {
       _nameCtrl.text = user.displayName;
@@ -87,35 +89,18 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     _adjustSelectedSlotIfBlocked();
   }
 
-  /// Check if slot is already reserved by another confirmed client booking
+  /// Check if slot is already reserved by another confirmed client booking or conflicting
   bool _isSlotBookedByOtherAppointment(String slot) {
-    return widget.repository.bookings.any((b) {
-      if (b.detailerId != widget.detailer.id) return false;
-      if (b.status == BookingStatus.cancelled) return false;
-
-      // Check date match
-      final isSameDay = b.scheduledDate.year == _selectedDate.year &&
-          b.scheduledDate.month == _selectedDate.month &&
-          b.scheduledDate.day == _selectedDate.day;
-
-      // If the booked package was multi-day (e.g. 2 days), block subsequent days
-      final bookedDuration = b.package.estimatedDuration.toLowerCase();
-      if (bookedDuration.contains('day')) {
-        final match = RegExp(r'\d+').firstMatch(bookedDuration);
-        final days = match != null ? int.parse(match.group(0)!) : 1;
-        final diff = _selectedDate.difference(DateTime(b.scheduledDate.year, b.scheduledDate.month, b.scheduledDate.day)).inDays;
-        if (diff >= 0 && diff < days) {
-          return true; // Entire day is blocked by a multi-day job
-        }
-      }
-
-      return isSameDay && b.scheduledTimeSlot == slot;
-    });
+    return widget.repository.isSlotConflictedByBooking(
+      _selectedDate,
+      slot,
+      detailerId: widget.detailer.id,
+    );
   }
 
   /// Returns reason string if slot is unavailable, or null if open
   String? _getSlotUnavailableReason(String slot) {
-    if (widget.repository.isDateRecurringDayOff(_selectedDate)) {
+    if (widget.repository.isDateRecurringDayOff(_selectedDate, detailerId: widget.detailer.id)) {
       return 'Shop Closed (Recurring Weekly Day Off)';
     }
     if (widget.repository.isDateFullyBlocked(widget.detailer.id, _selectedDate)) {
@@ -124,11 +109,11 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     if (widget.repository.isSlotBlocked(widget.detailer.id, _selectedDate, slot)) {
       return 'Time Window Blocked by Detailer';
     }
-    if (!widget.repository.isSlotWithinOperatingHours(_selectedDate, slot)) {
+    if (!widget.repository.isSlotWithinOperatingHours(_selectedDate, slot, detailerId: widget.detailer.id)) {
       return 'Outside Business Operating Hours';
     }
-    if (!widget.repository.isSlotWithinLeadTime(_selectedDate, slot)) {
-      final hours = widget.repository.calendarPreferences.advanceNoticeHours;
+    if (!widget.repository.isSlotWithinLeadTime(_selectedDate, slot, detailerId: widget.detailer.id)) {
+      final hours = widget.repository.getCalendarPreferences(detailerId: widget.detailer.id).advanceNoticeHours;
       return 'Requires ${hours}h Minimum Advance Notice';
     }
     if (_isSlotBookedByOtherAppointment(slot)) {
@@ -750,78 +735,57 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           ),
         ],
         const SizedBox(height: 20),
-        const Text('Select Date & Time Window', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.border),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.calendar_month_rounded, color: AppTheme.primary),
-                  const SizedBox(width: 10),
-                  Text(
-                    DateFormat('EEEE, MMMM d, yyyy').format(_selectedDate),
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                ],
-              ),
-              TextButton(
-                onPressed: () async {
-                  final now = DateUtils.dateOnly(DateTime.now());
-                  final initial = _selectedDate.isBefore(now) ? now : DateUtils.dateOnly(_selectedDate);
-                  final horizonDays = widget.repository.calendarPreferences.maxAdvanceBookingDays;
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: initial,
-                    firstDate: now,
-                    lastDate: now.add(Duration(days: horizonDays > 0 ? horizonDays : 60)),
-                  );
-                  if (picked != null) {
-                    setState(() {
-                      _selectedDate = picked;
-                      _adjustSelectedSlotIfBlocked();
-                    });
-                  }
-                },
-                child: const Text('Change Date', style: TextStyle(color: AppTheme.primary)),
-              ),
-            ],
-          ),
-        ),
-        if (widget.repository.isDateRecurringDayOff(_selectedDate) ||
-            widget.repository.isDateFullyBlocked(widget.detailer.id, _selectedDate)) ...[
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.redAccent.withAlpha(20),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.redAccent.withAlpha(80)),
-            ),
-            child: Row(
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.info_outline_rounded, color: Colors.redAccent, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    widget.repository.isDateRecurringDayOff(_selectedDate)
-                        ? 'Studio is closed on ${DateFormat('EEEE').format(_selectedDate)}s (recurring weekly day off).'
-                        : 'Detailer has marked this entire day as unavailable.',
-                    style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.bold),
-                  ),
+                const Text('Select Date & Time Window', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 2),
+                Text(
+                  'Live availability direct from ${widget.detailer.businessName}',
+                  style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
                 ),
               ],
             ),
-          ),
-        ],
+            TextButton.icon(
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+              icon: const Icon(Icons.calendar_today_rounded, size: 14, color: AppTheme.primary),
+              label: const Text('Change Date', style: TextStyle(fontSize: 11, color: AppTheme.primary)),
+              onPressed: () async {
+                final now = DateUtils.dateOnly(DateTime.now());
+                final initial = _selectedDate.isBefore(now) ? now : DateUtils.dateOnly(_selectedDate);
+                final horizonDays = widget.repository.getCalendarPreferences(detailerId: widget.detailer.id).maxAdvanceBookingDays;
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: initial,
+                  firstDate: now,
+                  lastDate: now.add(Duration(days: horizonDays > 0 ? horizonDays : 60)),
+                );
+                if (picked != null) {
+                  setState(() {
+                    _selectedDate = picked;
+                    _calendarDisplayMonth = DateTime(picked.year, picked.month, 1);
+                    _adjustSelectedSlotIfBlocked();
+                  });
+                }
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        // Live Interactive Calendar Grid (mirrors Detailer Workbench calendar)
+        _buildCustomerCalendarMonthView(),
         const SizedBox(height: 12),
+
+        // Selected Day Details Banner
+        _buildSelectedDayBanner(),
+        const SizedBox(height: 14),
+
+        const Text('Select Arrival Window', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -901,6 +865,384 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           }).toList(),
         ),
       ],
+    );
+  }
+
+  Widget _buildCustomerCalendarMonthView() {
+    final year = _calendarDisplayMonth.year;
+    final month = _calendarDisplayMonth.month;
+    final daysInMonth = DateUtils.getDaysInMonth(year, month);
+    final firstDayOfMonth = DateTime(year, month, 1);
+    final leadingBlanks = (firstDayOfMonth.weekday - 1);
+    final monthName = DateFormat('MMMM yyyy').format(_calendarDisplayMonth);
+    final today = DateUtils.dateOnly(DateTime.now());
+    final prefs = widget.repository.getCalendarPreferences(detailerId: widget.detailer.id);
+    final horizonDays = prefs.maxAdvanceBookingDays > 0 ? prefs.maxAdvanceBookingDays : 60;
+    final maxDate = today.add(Duration(days: horizonDays));
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Month navigation header
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left_rounded, size: 22),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Previous Month',
+                onPressed: () {
+                  setState(() {
+                    _calendarDisplayMonth = DateTime(year, month - 1, 1);
+                  });
+                },
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    monthName,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: Colors.white),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.chevron_right_rounded, size: 22),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Next Month',
+                onPressed: () {
+                  setState(() {
+                    _calendarDisplayMonth = DateTime(year, month + 1, 1);
+                  });
+                },
+              ),
+              const SizedBox(width: 10),
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    final now = DateTime.now();
+                    _calendarDisplayMonth = DateTime(now.year, now.month, 1);
+                    _selectedDate = now;
+                    _adjustSelectedSlotIfBlocked();
+                  });
+                },
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withAlpha(25),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: AppTheme.primary.withAlpha(80)),
+                  ),
+                  child: const Text('Today', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Day of Week Header
+          Row(
+            children: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((d) {
+              return Expanded(
+                child: Center(
+                  child: Text(
+                    d,
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.textMuted),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 8),
+
+          // 7-Column Grid
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              mainAxisSpacing: 6,
+              crossAxisSpacing: 6,
+              childAspectRatio: 0.85,
+            ),
+            itemCount: leadingBlanks + daysInMonth,
+            itemBuilder: (context, index) {
+              if (index < leadingBlanks) {
+                return const SizedBox.shrink();
+              }
+              final day = index - leadingBlanks + 1;
+              final cellDate = DateTime(year, month, day);
+              final isSelected = DateUtils.isSameDay(cellDate, _selectedDate);
+              final isToday = DateUtils.isSameDay(cellDate, today);
+              final isPast = cellDate.isBefore(today);
+              final isBeyondHorizon = cellDate.isAfter(maxDate);
+              final isDisabled = isPast || isBeyondHorizon;
+
+              final isRecurringOff = widget.repository.isDateRecurringDayOff(cellDate, detailerId: widget.detailer.id);
+              final isFullyBlocked = widget.repository.isDateFullyBlocked(widget.detailer.id, cellDate);
+              final dayBookings = widget.repository.getBookingsForDate(cellDate, detailerId: widget.detailer.id);
+              final isFullyBooked = !isFullyBlocked && !isRecurringOff && widget.repository.isDateFullyBooked(cellDate, detailerId: widget.detailer.id);
+              final dayBlocks = widget.repository.getBlocksForDate(cellDate, detailerId: widget.detailer.id);
+              final isPartiallyBlocked = !isFullyBlocked && dayBlocks.any((b) => b.blockedSlots.isNotEmpty);
+
+              Color cellBg = AppTheme.surface;
+              Color cellBorder = AppTheme.border;
+              if (isSelected) {
+                cellBg = AppTheme.primary.withAlpha(40);
+                cellBorder = AppTheme.primary;
+              } else if (isFullyBlocked) {
+                cellBg = Colors.redAccent.withAlpha(20);
+                cellBorder = Colors.redAccent.withAlpha(80);
+              } else if (isFullyBooked) {
+                cellBg = Colors.amber.withAlpha(20);
+                cellBorder = Colors.amber.withAlpha(80);
+              } else if (isRecurringOff) {
+                cellBg = AppTheme.surfaceLight.withAlpha(40);
+                cellBorder = AppTheme.border.withAlpha(50);
+              } else if (isDisabled) {
+                cellBg = AppTheme.surface.withAlpha(30);
+                cellBorder = AppTheme.border.withAlpha(30);
+              } else if (isToday) {
+                cellBorder = AppTheme.primary.withAlpha(100);
+              }
+
+              return InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: isDisabled
+                    ? null
+                    : () {
+                        setState(() {
+                          _selectedDate = cellDate;
+                          _adjustSelectedSlotIfBlocked();
+                        });
+                      },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: cellBg,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: cellBorder,
+                      width: isSelected ? 2.0 : 1.0,
+                    ),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '$day',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: (isSelected || isToday) ? FontWeight.bold : FontWeight.normal,
+                                color: isDisabled
+                                    ? Colors.grey.shade700
+                                    : (isSelected
+                                        ? AppTheme.primary
+                                        : (isRecurringOff ? AppTheme.textMuted : Colors.white)),
+                              ),
+                            ),
+                            if (isToday) ...[
+                              const SizedBox(width: 2),
+                              Container(
+                                width: 4,
+                                height: 4,
+                                decoration: const BoxDecoration(
+                                  color: AppTheme.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        if (isFullyBlocked) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent.withAlpha(40),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                            child: const Text('BLK', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                          ),
+                        ] else if (isFullyBooked) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withAlpha(40),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                            child: const Text('FULL', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.bold, color: Colors.amber)),
+                          ),
+                        ] else if (dayBookings.isNotEmpty) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.greenAccent.withAlpha(40),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                            child: Text('${dayBookings.length}bk', style: const TextStyle(fontSize: 7.5, fontWeight: FontWeight.bold, color: Colors.greenAccent)),
+                          ),
+                        ] else if (isRecurringOff) ...[
+                          const Text('OFF', style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.bold, color: AppTheme.textMuted)),
+                        ] else if (isPartiallyBlocked) ...[
+                          Container(
+                            width: 4,
+                            height: 4,
+                            decoration: const BoxDecoration(
+                              color: Colors.amber,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ] else if (!isDisabled) ...[
+                          Container(
+                            width: 4,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.greenAccent.withAlpha(150),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          const Divider(color: AppTheme.border, height: 1),
+          const SizedBox(height: 8),
+
+          // Calendar Legend
+          Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            children: [
+              _legendPill(Colors.greenAccent, 'Available'),
+              _legendPill(Colors.amber, 'Booked / Full'),
+              _legendPill(Colors.redAccent, 'Blocked'),
+              _legendPill(AppTheme.textMuted, 'Shop Closed (Off)'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _legendPill(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary)),
+      ],
+    );
+  }
+
+  Widget _buildSelectedDayBanner() {
+    final dayHours = widget.repository.getHoursForDate(_selectedDate, detailerId: widget.detailer.id);
+    final isRecurringOff = widget.repository.isDateRecurringDayOff(_selectedDate, detailerId: widget.detailer.id);
+    final isFullyBlocked = widget.repository.isDateFullyBlocked(widget.detailer.id, _selectedDate);
+    final isFullyBooked = !isFullyBlocked && !isRecurringOff && widget.repository.isDateFullyBooked(_selectedDate, detailerId: widget.detailer.id);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: (isFullyBlocked || isFullyBooked)
+              ? (isFullyBlocked ? Colors.redAccent.withAlpha(100) : Colors.amber.withAlpha(100))
+              : AppTheme.border,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.event_available_rounded, color: AppTheme.primary, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    DateFormat('EEEE, MMMM d, yyyy').format(_selectedDate),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isFullyBlocked
+                      ? Colors.redAccent.withAlpha(30)
+                      : (isFullyBooked
+                          ? Colors.amber.withAlpha(30)
+                          : (isRecurringOff ? AppTheme.surfaceLight : Colors.greenAccent.withAlpha(30))),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  isFullyBlocked
+                      ? 'DAY BLOCKED'
+                      : (isFullyBooked
+                          ? 'FULLY BOOKED'
+                          : (isRecurringOff ? 'CLOSED' : (dayHours.isOpen ? '${dayHours.openTime} - ${dayHours.closeTime}' : 'CLOSED'))),
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.bold,
+                    color: isFullyBlocked
+                        ? Colors.redAccent
+                        : (isFullyBooked
+                            ? Colors.amber
+                            : (isRecurringOff ? AppTheme.textMuted : Colors.greenAccent)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (isRecurringOff || isFullyBlocked || isFullyBooked) ...[
+            const SizedBox(height: 6),
+            Text(
+              isFullyBlocked
+                  ? 'Detailer has marked this day unavailable on their calendar.'
+                  : (isFullyBooked
+                      ? 'All arrival windows for this date have been booked.'
+                      : 'Studio is closed on ${DateFormat('EEEE').format(_selectedDate)}s (recurring weekly day off).'),
+              style: TextStyle(
+                fontSize: 11,
+                color: isFullyBlocked ? Colors.redAccent : (isFullyBooked ? Colors.amber : AppTheme.textMuted),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
