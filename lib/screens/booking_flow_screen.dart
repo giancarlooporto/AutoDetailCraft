@@ -4,17 +4,20 @@ import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
 import '../models/booking_models.dart';
 import '../models/team_member.dart';
+import '../models/calendar_availability_block.dart';
 import '../services/job_repository.dart';
 
 class BookingFlowScreen extends StatefulWidget {
   final UserProfile detailer;
   final ServicePackage? initialPackage;
+  final DateTime? initialDate;
   final JobRepository repository;
 
   const BookingFlowScreen({
     super.key,
     required this.detailer,
     this.initialPackage,
+    this.initialDate,
     required this.repository,
   });
 
@@ -41,16 +44,18 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   final _emailCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
 
-  final List<String> _timeSlots = [
-    '8:00 AM - 11:00 AM',
-    '9:00 AM - 12:00 PM',
-    '1:00 PM - 4:00 PM',
-    '3:00 PM - 6:00 PM',
-  ];
+  List<String> get _timeSlots {
+    final slots = widget.repository.getTimeSlotsForDate(_selectedDate, detailerId: widget.detailer.id);
+    if (slots.isNotEmpty) return slots;
+    return DetailerCalendarPreferences.defaultTimeSlots;
+  }
 
   @override
   void initState() {
     super.initState();
+    if (widget.initialDate != null) {
+      _selectedDate = widget.initialDate!;
+    }
     final user = widget.repository.currentUser;
     if (user.displayName.isNotEmpty) {
       _nameCtrl.text = user.displayName;
@@ -75,6 +80,10 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         (widget.detailer.servicePackages.isNotEmpty
             ? widget.detailer.servicePackages.first
             : widget.repository.currentUser.servicePackages.first);
+
+    if (_timeSlots.isNotEmpty && !_timeSlots.contains(_selectedTimeSlot)) {
+      _selectedTimeSlot = _timeSlots.first;
+    }
     _adjustSelectedSlotIfBlocked();
   }
 

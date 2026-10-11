@@ -90,6 +90,8 @@ class DetailerCalendarPreferences {
   final int bufferMinutesBetweenJobs; // Turnaround buffer (e.g. 0, 30, 60 mins)
   final int maxAdvanceBookingDays; // Max days in advance clients can book (e.g. 30, 60, 90)
   final bool autoConfirmBookings;
+  final int slotDurationHours; // e.g. 1, 2, 3, 4 hours (default 3)
+  final List<String> customTimeSlots; // Configured slot windows (e.g. ['6:00 AM - 9:00 AM', ...])
 
   const DetailerCalendarPreferences({
     this.weeklySchedule = const [],
@@ -97,7 +99,21 @@ class DetailerCalendarPreferences {
     this.bufferMinutesBetweenJobs = 30,
     this.maxAdvanceBookingDays = 60,
     this.autoConfirmBookings = true,
+    this.slotDurationHours = 3,
+    this.customTimeSlots = const [
+      '8:00 AM - 11:00 AM',
+      '9:00 AM - 12:00 PM',
+      '1:00 PM - 4:00 PM',
+      '3:00 PM - 6:00 PM',
+    ],
   });
+
+  static List<String> get defaultTimeSlots => const [
+    '8:00 AM - 11:00 AM',
+    '9:00 AM - 12:00 PM',
+    '1:00 PM - 4:00 PM',
+    '3:00 PM - 6:00 PM',
+  ];
 
   static List<DayBusinessHours> get defaultWeeklySchedule => [
     const DayBusinessHours(weekday: 1, isOpen: true, openTime: '08:00 AM', closeTime: '06:00 PM'),
@@ -116,6 +132,13 @@ class DetailerCalendarPreferences {
       bufferMinutesBetweenJobs: 30,
       maxAdvanceBookingDays: 60,
       autoConfirmBookings: true,
+      slotDurationHours: 3,
+      customTimeSlots: [
+        '8:00 AM - 11:00 AM',
+        '9:00 AM - 12:00 PM',
+        '1:00 PM - 4:00 PM',
+        '3:00 PM - 6:00 PM',
+      ],
     );
   }
 
@@ -132,6 +155,8 @@ class DetailerCalendarPreferences {
     int? bufferMinutesBetweenJobs,
     int? maxAdvanceBookingDays,
     bool? autoConfirmBookings,
+    int? slotDurationHours,
+    List<String>? customTimeSlots,
   }) {
     return DetailerCalendarPreferences(
       weeklySchedule: weeklySchedule ?? this.weeklySchedule,
@@ -139,6 +164,8 @@ class DetailerCalendarPreferences {
       bufferMinutesBetweenJobs: bufferMinutesBetweenJobs ?? this.bufferMinutesBetweenJobs,
       maxAdvanceBookingDays: maxAdvanceBookingDays ?? this.maxAdvanceBookingDays,
       autoConfirmBookings: autoConfirmBookings ?? this.autoConfirmBookings,
+      slotDurationHours: slotDurationHours ?? this.slotDurationHours,
+      customTimeSlots: customTimeSlots ?? this.customTimeSlots,
     );
   }
 
@@ -148,6 +175,8 @@ class DetailerCalendarPreferences {
     'bufferMinutesBetweenJobs': bufferMinutesBetweenJobs,
     'maxAdvanceBookingDays': maxAdvanceBookingDays,
     'autoConfirmBookings': autoConfirmBookings,
+    'slotDurationHours': slotDurationHours,
+    'customTimeSlots': customTimeSlots,
   };
 
   factory DetailerCalendarPreferences.fromJson(Map<String, dynamic> json) {
@@ -155,6 +184,9 @@ class DetailerCalendarPreferences {
     final schedule = list != null
         ? list.map((item) => DayBusinessHours.fromJson(item as Map<String, dynamic>)).toList()
         : defaultWeeklySchedule;
+    final customSlots = (json['customTimeSlots'] as List<dynamic>?)
+        ?.map((s) => s.toString())
+        .toList();
 
     return DetailerCalendarPreferences(
       weeklySchedule: schedule.isNotEmpty ? schedule : defaultWeeklySchedule,
@@ -162,6 +194,10 @@ class DetailerCalendarPreferences {
       bufferMinutesBetweenJobs: json['bufferMinutesBetweenJobs'] as int? ?? 30,
       maxAdvanceBookingDays: json['maxAdvanceBookingDays'] as int? ?? 60,
       autoConfirmBookings: json['autoConfirmBookings'] as bool? ?? true,
+      slotDurationHours: json['slotDurationHours'] as int? ?? 3,
+      customTimeSlots: customSlots != null && customSlots.isNotEmpty
+          ? customSlots
+          : defaultTimeSlots,
     );
   }
 }
@@ -172,6 +208,7 @@ class CalendarAvailabilityBlock {
   final DateTime date; // Year, Month, Day normalized
   final bool isAllDay;
   final List<String> blockedSlots; // e.g. ['09:00 AM', '10:00 AM'] when isAllDay == false
+  final List<String> customSlots; // Date-specific extra slots added for this date
   final String? reason;
   final DateTime createdAt;
 
@@ -181,6 +218,7 @@ class CalendarAvailabilityBlock {
     required this.date,
     this.isAllDay = true,
     this.blockedSlots = const [],
+    this.customSlots = const [],
     this.reason,
     required this.createdAt,
   });
@@ -191,6 +229,7 @@ class CalendarAvailabilityBlock {
     DateTime? date,
     bool? isAllDay,
     List<String>? blockedSlots,
+    List<String>? customSlots,
     String? reason,
     DateTime? createdAt,
   }) {
@@ -200,6 +239,7 @@ class CalendarAvailabilityBlock {
       date: date ?? this.date,
       isAllDay: isAllDay ?? this.isAllDay,
       blockedSlots: blockedSlots ?? this.blockedSlots,
+      customSlots: customSlots ?? this.customSlots,
       reason: reason ?? this.reason,
       createdAt: createdAt ?? this.createdAt,
     );
@@ -211,6 +251,7 @@ class CalendarAvailabilityBlock {
     'date': date.toIso8601String(),
     'isAllDay': isAllDay,
     'blockedSlots': blockedSlots,
+    'customSlots': customSlots,
     'reason': reason,
     'createdAt': createdAt.toIso8601String(),
   };
@@ -222,6 +263,7 @@ class CalendarAvailabilityBlock {
       date: DateTime.tryParse(json['date'] as String? ?? '') ?? DateTime.now(),
       isAllDay: json['isAllDay'] as bool? ?? true,
       blockedSlots: (json['blockedSlots'] as List<dynamic>?)?.map((s) => s.toString()).toList() ?? [],
+      customSlots: (json['customSlots'] as List<dynamic>?)?.map((s) => s.toString()).toList() ?? [],
       reason: json['reason'] as String?,
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
     );

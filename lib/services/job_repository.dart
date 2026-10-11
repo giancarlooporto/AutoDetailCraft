@@ -1011,11 +1011,8 @@ class JobRepository extends ChangeNotifier {
     if (idx != -1) {
       final existing = _availabilityBlocks[idx];
       if (existing.isAllDay) {
-        const standardSlots = [
-          '8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
-          '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM',
-        ];
-        final remaining = standardSlots.where((s) => s != slot).toList();
+        final currentSlots = getTimeSlotsForDate(date);
+        final remaining = currentSlots.where((s) => s != slot).toList();
         _availabilityBlocks[idx] = existing.copyWith(
           isAllDay: false,
           blockedSlots: remaining,
@@ -1050,6 +1047,258 @@ class JobRepository extends ChangeNotifier {
       );
     }
     LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+    notifyListeners();
+  }
+
+  static String formatMinutesToTime(int totalMinutes) {
+    int hour = (totalMinutes ~/ 60) % 24;
+    int min = totalMinutes % 60;
+    final period = hour >= 12 ? 'PM' : 'AM';
+    int displayHour = hour % 12;
+    if (displayHour == 0) displayHour = 12;
+    final minStr = min == 0 ? '00' : (min < 10 ? '0$min' : '$min');
+    return '$displayHour:$minStr $period';
+  }
+
+  static List<String> generateSlotsForHours({
+    required String openTime,
+    required String closeTime,
+    int slotDurationHours = 3,
+  }) {
+    final openMin = timeStringToMinutes(openTime);
+    final closeMin = timeStringToMinutes(closeTime);
+    if (closeMin <= openMin) return [];
+
+    final stepMin = (slotDurationHours <= 0 ? 3 : slotDurationHours) * 60;
+    final List<String> result = [];
+    int cur = openMin;
+
+    while (cur < closeMin) {
+      final end = (cur + stepMin <= closeMin) ? cur + stepMin : closeMin;
+      result.add('${formatMinutesToTime(cur)} - ${formatMinutesToTime(end)}');
+      cur += stepMin;
+    }
+    return result;
+  }
+
+  List<String> getTimeSlotsForDate(DateTime date, {String? detailerId}) {
+    final dayHours = getHoursForDate(date);
+    final normDate = DateTime(date.year, date.month, date.day);
+
+    // 1. Check if date-specific custom slots exist
+    final specificBlock = _availabilityBlocks.firstWhere(
+      (b) => b.detailerId == (detailerId ?? _currentUser.id) &&
+             b.date.year == normDate.year &&
+             b.date.month == normDate.month &&
+             b.date.day == normDate.day &&
+             b.customSlots.isNotEmpty,
+      orElse: () => CalendarAvailabilityBlock(
+        id: '',
+        detailerId: '',
+        date: normDate,
+        createdAt: normDate,
+      ),
+    );
+    if (specificBlock.customSlots.isNotEmpty) {
+      return List<String>.from(specificBlock.customSlots);
+    }
+
+    // 2. Base slots from preferences
+    List<String> slots = List<String>.from(_calendarPreferences.customTimeSlots);
+    if (slots.isEmpty) {
+      slots = List<String>.from(DetailerCalendarPreferences.defaultTimeSlots);
+    }
+
+    // 3. If open, ensure operating hours match
+    if (dayHours.isOpen) {
+      final openMin = timeStringToMinutes(dayHours.openTime);
+      final closeMin = timeStringToMinutes(dayHours.closeTime);
+
+      // If open time is earlier than the earliest slot, prepend morning slot(s)
+      final earliestSlotMin = slots.isEmpty
+          ? 1440
+          : slots.map(timeStringToMinutes).reduce((a, b) => a < b ? a : b);
+      if (openMin < earliestSlotMin) {
+        int cur = openMin;
+        final step = (_calendarPreferences.slotDurationHours <= 0 ? 3 : _calendarPreferences.slotDurationHours) * 60;
+        final extra = <String>[];
+        while (cur < earliestSlotMin) {
+          final end = (cur + step <= closeMin) ? cur + step : closeMin;
+          extra.add('${formatMinutesToTime(cur)} - ${formatMinutesToTime(end)}');
+          cur += step;
+        }
+        slots = [...extra, ...slots];
+      }
+
+      // Filter slots that fall within operating hours
+      final inHours = slots.where((s) => isSlotWithinOperatingHours(date, s)).toList();
+      if (inHours.isNotEmpty) {
+        slots = inHours;
+      } else {
+        // If none of the configured slots fit, auto-generate for the hours
+        slots = generateSlotsForHours(
+          openTime: dayHours.openTime,
+          closeTime: dayHours.closeTime,
+          slotDurationHours: _calendarPreferences.slotDurationHours,
+        );
+      }
+    }
+
+    // Deduplicate and sort chronologically
+    final unique = slots.toSet().toList();
+    unique.sort((a, b) => timeStringToMinutes(a).compareTo(timeStringToMinutes(b)));
+    return unique;
+  }
+
+  void addCustomTimeSlot(String slot, {DateTime? specificDate}) {
+    final cleanSlot = slot.trim();
+    if (cleanSlot.isEmpty) return;
+
+    if (specificDate != null) {
+      final normDate = DateTime(specificDate.year, specificDate.month, specificDate.day);
+      final idx = _availabilityBlocks.indexWhere(
+        (b) => b.detailerId == _currentUser.id &&
+               b.date.year == normDate.year &&
+               b.date.month == normDate.month &&
+               b.date.day == normDate.day,
+      );
+      if (idx != -1) {
+        final existing = _availabilityBlocks[idx];
+        final list = List<String>.from(existing.customSlots);
+        if (!list.contains(cleanSlot)) {
+          list.add(cleanSlot);
+          list.sort((a, b) => timeStringToMinutes(a).compareTo(timeStringToMinutes(b)));
+          _availabilityBlocks[idx] = existing.copyWith(customSlots: list);
+        }
+      } else {
+        _availabilityBlocks.add(
+          CalendarAvailabilityBlock(
+            id: 'block_${DateTime.now().millisecondsSinceEpoch}',
+            detailerId: _currentUser.id,
+            date: normDate,
+            isAllDay: false,
+            customSlots: [cleanSlot],
+            createdAt: DateTime.now(),
+          ),
+        );
+      }
+      LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+    } else {
+      final list = List<String>.from(_calendarPreferences.customTimeSlots);
+      if (!list.contains(cleanSlot)) {
+        list.add(cleanSlot);
+        list.sort((a, b) => timeStringToMinutes(a).compareTo(timeStringToMinutes(b)));
+        _calendarPreferences = _calendarPreferences.copyWith(customTimeSlots: list);
+        LocalStorageService.saveCalendarPreferences(_calendarPreferences);
+      }
+    }
+    notifyListeners();
+  }
+
+  void updateCustomTimeSlot(String oldSlot, String newSlot, {DateTime? specificDate}) {
+    final cleanNew = newSlot.trim();
+    if (cleanNew.isEmpty) return;
+
+    if (specificDate != null) {
+      final normDate = DateTime(specificDate.year, specificDate.month, specificDate.day);
+      final idx = _availabilityBlocks.indexWhere(
+        (b) => b.detailerId == _currentUser.id &&
+               b.date.year == normDate.year &&
+               b.date.month == normDate.month &&
+               b.date.day == normDate.day,
+      );
+      if (idx != -1) {
+        final existing = _availabilityBlocks[idx];
+        final list = List<String>.from(existing.customSlots);
+        final pos = list.indexOf(oldSlot);
+        if (pos != -1) {
+          list[pos] = cleanNew;
+          list.sort((a, b) => timeStringToMinutes(a).compareTo(timeStringToMinutes(b)));
+          _availabilityBlocks[idx] = existing.copyWith(customSlots: list);
+          LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+        }
+      }
+    } else {
+      final list = List<String>.from(_calendarPreferences.customTimeSlots);
+      final pos = list.indexOf(oldSlot);
+      if (pos != -1) {
+        list[pos] = cleanNew;
+      } else {
+        list.add(cleanNew);
+      }
+      list.sort((a, b) => timeStringToMinutes(a).compareTo(timeStringToMinutes(b)));
+      _calendarPreferences = _calendarPreferences.copyWith(customTimeSlots: list);
+      LocalStorageService.saveCalendarPreferences(_calendarPreferences);
+    }
+    notifyListeners();
+  }
+
+  void removeCustomTimeSlot(String slot, {DateTime? specificDate}) {
+    if (specificDate != null) {
+      final normDate = DateTime(specificDate.year, specificDate.month, specificDate.day);
+      final idx = _availabilityBlocks.indexWhere(
+        (b) => b.detailerId == _currentUser.id &&
+               b.date.year == normDate.year &&
+               b.date.month == normDate.month &&
+               b.date.day == normDate.day,
+      );
+      if (idx != -1) {
+        final existing = _availabilityBlocks[idx];
+        final list = List<String>.from(existing.customSlots)..remove(slot);
+        _availabilityBlocks[idx] = existing.copyWith(customSlots: list);
+        LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+      }
+    } else {
+      final list = List<String>.from(_calendarPreferences.customTimeSlots)..remove(slot);
+      _calendarPreferences = _calendarPreferences.copyWith(customTimeSlots: list);
+      LocalStorageService.saveCalendarPreferences(_calendarPreferences);
+    }
+    notifyListeners();
+  }
+
+  void autoGenerateTimeSlots({
+    required String openTime,
+    required String closeTime,
+    int slotDurationHours = 3,
+    DateTime? specificDate,
+  }) {
+    final generated = generateSlotsForHours(
+      openTime: openTime,
+      closeTime: closeTime,
+      slotDurationHours: slotDurationHours,
+    );
+    if (generated.isEmpty) return;
+
+    if (specificDate != null) {
+      final normDate = DateTime(specificDate.year, specificDate.month, specificDate.day);
+      final idx = _availabilityBlocks.indexWhere(
+        (b) => b.detailerId == _currentUser.id &&
+               b.date.year == normDate.year &&
+               b.date.month == normDate.month &&
+               b.date.day == normDate.day,
+      );
+      if (idx != -1) {
+        _availabilityBlocks[idx] = _availabilityBlocks[idx].copyWith(customSlots: generated);
+      } else {
+        _availabilityBlocks.add(
+          CalendarAvailabilityBlock(
+            id: 'block_${DateTime.now().millisecondsSinceEpoch}',
+            detailerId: _currentUser.id,
+            date: normDate,
+            isAllDay: false,
+            customSlots: generated,
+            createdAt: DateTime.now(),
+          ),
+        );
+      }
+      LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+    } else {
+      _calendarPreferences = _calendarPreferences.copyWith(
+        customTimeSlots: generated,
+        slotDurationHours: slotDurationHours,
+      );
+      LocalStorageService.saveCalendarPreferences(_calendarPreferences);
+    }
     notifyListeners();
   }
 

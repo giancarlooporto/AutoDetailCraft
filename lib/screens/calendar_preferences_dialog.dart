@@ -28,11 +28,13 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
   late int _bufferMinutes;
   late int _maxAdvanceDays;
   late bool _autoConfirm;
+  late List<String> _slots;
+  late int _slotDurationHours;
 
   final List<String> _timeOptions = [
-    '06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM',
+    '05:00 AM', '06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM',
     '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM',
-    '06:00 PM', '07:00 PM', '08:00 PM', '09:00 PM',
+    '06:00 PM', '07:00 PM', '08:00 PM', '09:00 PM', '10:00 PM',
   ];
 
   @override
@@ -47,6 +49,26 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
     _bufferMinutes = prefs.bufferMinutesBetweenJobs;
     _maxAdvanceDays = prefs.maxAdvanceBookingDays;
     _autoConfirm = prefs.autoConfirmBookings;
+    _slots = List.from(prefs.customTimeSlots);
+    if (_slots.isEmpty) {
+      _slots = List.from(DetailerCalendarPreferences.defaultTimeSlots);
+    }
+    _slotDurationHours = prefs.slotDurationHours;
+  }
+
+  void _checkAndSyncSlotsForNewOpenTime(String newOpenTime) {
+    final newOpenMin = JobRepository.timeStringToMinutes(newOpenTime);
+    final earliestSlotMin = _slots.isEmpty
+        ? 1440
+        : _slots.map(JobRepository.timeStringToMinutes).reduce((a, b) => a < b ? a : b);
+    if (newOpenMin < earliestSlotMin) {
+      final endMin = newOpenMin + (_slotDurationHours * 60);
+      final newSlot = '${JobRepository.formatMinutesToTime(newOpenMin)} - ${JobRepository.formatMinutesToTime(endMin)}';
+      if (!_slots.contains(newSlot)) {
+        _slots.insert(0, newSlot);
+        _slots.sort((a, b) => JobRepository.timeStringToMinutes(a).compareTo(JobRepository.timeStringToMinutes(b)));
+      }
+    }
   }
 
   void _save() {
@@ -56,6 +78,8 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
       bufferMinutesBetweenJobs: _bufferMinutes,
       maxAdvanceBookingDays: _maxAdvanceDays,
       autoConfirmBookings: _autoConfirm,
+      slotDurationHours: _slotDurationHours,
+      customTimeSlots: _slots,
     );
     widget.repository.updateCalendarPreferences(updated);
     Navigator.of(context).pop();
@@ -248,6 +272,11 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
                       ],
                     ),
                   ),
+
+                  const SizedBox(height: 24),
+
+                  // Section 3: Time Slot Availability Windows
+                  _buildSlotsSection(),
                 ],
               ),
             ),
@@ -366,7 +395,10 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
                               items: _timeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
                               onChanged: (val) {
                                 if (val != null) {
-                                  setState(() => _schedule[index] = day.copyWith(openTime: val));
+                                  setState(() {
+                                    _schedule[index] = day.copyWith(openTime: val);
+                                    _checkAndSyncSlotsForNewOpenTime(val);
+                                  });
                                 }
                               },
                             ),
@@ -471,6 +503,436 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSlotsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'HOURLY BOOKING TIME SLOTS',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.8,
+                      color: AppTheme.primary,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Define appointment windows clients can book during open hours.',
+                    style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                  ),
+                ],
+              ),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                visualDensity: VisualDensity.compact,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              ),
+              icon: const Icon(Icons.add_rounded, size: 14),
+              label: const Text('Add Slot', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+              onPressed: _showAddSlotModal,
+            ),
+            const SizedBox(width: 6),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.textSecondary,
+                side: const BorderSide(color: AppTheme.border),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                visualDensity: VisualDensity.compact,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              ),
+              icon: const Icon(Icons.auto_awesome_rounded, size: 13),
+              label: const Text('Auto-Gen', style: TextStyle(fontSize: 11)),
+              onPressed: _autoGenerateSlotsFromSchedule,
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Duration selector
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppTheme.surfaceLight,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.timer_outlined, size: 16, color: AppTheme.primary),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text('Default Slot Window Duration', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
+              ),
+              Wrap(
+                spacing: 6,
+                children: [1, 2, 3, 4].map((d) {
+                  final isSel = _slotDurationHours == d;
+                  return ChoiceChip(
+                    label: Text('${d}h'),
+                    selected: isSel,
+                    selectedColor: AppTheme.primary,
+                    backgroundColor: AppTheme.surface,
+                    visualDensity: VisualDensity.compact,
+                    labelStyle: TextStyle(
+                      color: isSel ? Colors.black : Colors.white,
+                      fontSize: 11,
+                      fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
+                    ),
+                    onSelected: (val) {
+                      if (val) setState(() => _slotDurationHours = d);
+                    },
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // Slots List
+        if (_slots.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceLight,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: const Center(
+              child: Text(
+                'No custom slots defined. Tap "+ Add Slot" or "Auto-Gen" to create windows.',
+                style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+              ),
+            ),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _slots.map((slot) {
+              return Container(
+                padding: const EdgeInsets.only(left: 10, right: 4, top: 4, bottom: 4),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceLight,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.primary),
+                    const SizedBox(width: 6),
+                    Text(
+                      slot,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 14, color: AppTheme.textSecondary),
+                      constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                      padding: EdgeInsets.zero,
+                      tooltip: 'Edit Slot',
+                      onPressed: () => _showEditSlotModal(slot),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 14, color: Colors.redAccent),
+                      constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                      padding: EdgeInsets.zero,
+                      tooltip: 'Delete Slot',
+                      onPressed: () {
+                        setState(() {
+                          _slots.remove(slot);
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+      ],
+    );
+  }
+
+  void _autoGenerateSlotsFromSchedule() {
+    final openDays = _schedule.where((d) => d.isOpen).toList();
+    if (openDays.isEmpty) return;
+
+    String minOpen = openDays.first.openTime;
+    String maxClose = openDays.first.closeTime;
+    for (final d in openDays) {
+      if (JobRepository.timeStringToMinutes(d.openTime) < JobRepository.timeStringToMinutes(minOpen)) {
+        minOpen = d.openTime;
+      }
+      if (JobRepository.timeStringToMinutes(d.closeTime) > JobRepository.timeStringToMinutes(maxClose)) {
+        maxClose = d.closeTime;
+      }
+    }
+
+    final generated = JobRepository.generateSlotsForHours(
+      openTime: minOpen,
+      closeTime: maxClose,
+      slotDurationHours: _slotDurationHours,
+    );
+    if (generated.isNotEmpty) {
+      setState(() => _slots = generated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Auto-generated ${generated.length} slots from $minOpen to $maxClose (${_slotDurationHours}h windows)'),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  void _showAddSlotModal() {
+    String startTime = '08:00 AM';
+    final openDays = _schedule.where((d) => d.isOpen).toList();
+    if (openDays.isNotEmpty) {
+      startTime = openDays.first.openTime;
+    }
+    final sMin = JobRepository.timeStringToMinutes(startTime);
+    String endTime = JobRepository.formatMinutesToTime(sMin + (_slotDurationHours * 60));
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: AppTheme.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: AppTheme.border),
+              ),
+              title: const Row(
+                children: [
+                  Icon(Icons.add_circle_outline_rounded, color: AppTheme.primary, size: 20),
+                  SizedBox(width: 8),
+                  Text('Add Booking Slot', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Select time window:', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceLight,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppTheme.border),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: _timeOptions.contains(startTime) ? startTime : _timeOptions.first,
+                              isExpanded: true,
+                              dropdownColor: AppTheme.surface,
+                              style: const TextStyle(color: Colors.white, fontSize: 13),
+                              items: _timeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                              onChanged: (val) {
+                                if (val != null) {
+                                  setDialogState(() {
+                                    startTime = val;
+                                    final sm = JobRepository.timeStringToMinutes(val);
+                                    endTime = JobRepository.formatMinutesToTime(sm + (_slotDurationHours * 60));
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                        child: Text('to', style: TextStyle(color: AppTheme.textMuted)),
+                      ),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceLight,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppTheme.border),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: _timeOptions.contains(endTime) ? endTime : _timeOptions.last,
+                              isExpanded: true,
+                              dropdownColor: AppTheme.surface,
+                              style: const TextStyle(color: Colors.white, fontSize: 13),
+                              items: _timeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                              onChanged: (val) {
+                                if (val != null) setDialogState(() => endTime = val);
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary, foregroundColor: Colors.black),
+                  onPressed: () {
+                    final newSlot = '$startTime - $endTime';
+                    if (!_slots.contains(newSlot)) {
+                      setState(() {
+                        _slots.add(newSlot);
+                        _slots.sort((a, b) => JobRepository.timeStringToMinutes(a).compareTo(JobRepository.timeStringToMinutes(b)));
+                      });
+                    }
+                    Navigator.of(ctx).pop();
+                  },
+                  child: const Text('Add Slot', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showEditSlotModal(String currentSlot) {
+    String startTime = '08:00 AM';
+    String endTime = '11:00 AM';
+    if (currentSlot.contains('-')) {
+      final parts = currentSlot.split('-');
+      startTime = parts.first.trim();
+      endTime = parts.last.trim();
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: AppTheme.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: AppTheme.border),
+              ),
+              title: const Row(
+                children: [
+                  Icon(Icons.edit_calendar_rounded, color: AppTheme.primary, size: 20),
+                  SizedBox(width: 8),
+                  Text('Edit Slot Window', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Editing: $currentSlot', style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceLight,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppTheme.border),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: _timeOptions.contains(startTime) ? startTime : _timeOptions.first,
+                              isExpanded: true,
+                              dropdownColor: AppTheme.surface,
+                              style: const TextStyle(color: Colors.white, fontSize: 13),
+                              items: _timeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                              onChanged: (val) {
+                                if (val != null) setDialogState(() => startTime = val);
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                        child: Text('to', style: TextStyle(color: AppTheme.textMuted)),
+                      ),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceLight,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppTheme.border),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: _timeOptions.contains(endTime) ? endTime : _timeOptions.last,
+                              isExpanded: true,
+                              dropdownColor: AppTheme.surface,
+                              style: const TextStyle(color: Colors.white, fontSize: 13),
+                              items: _timeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                              onChanged: (val) {
+                                if (val != null) setDialogState(() => endTime = val);
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary, foregroundColor: Colors.black),
+                  onPressed: () {
+                    final newSlot = '$startTime - $endTime';
+                    final idx = _slots.indexOf(currentSlot);
+                    if (idx != -1) {
+                      setState(() {
+                        _slots[idx] = newSlot;
+                        _slots.sort((a, b) => JobRepository.timeStringToMinutes(a).compareTo(JobRepository.timeStringToMinutes(b)));
+                      });
+                    }
+                    Navigator.of(ctx).pop();
+                  },
+                  child: const Text('Save Slot', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

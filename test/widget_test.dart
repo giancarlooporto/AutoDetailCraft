@@ -2843,5 +2843,81 @@ void main() {
     final hasClosedOrBlocked = find.text('CLOSED').evaluate().isNotEmpty || find.text('BLOCKED').evaluate().isNotEmpty;
     expect(hasClosedOrBlocked, isTrue);
   });
+
+  testWidgets('Changing opening time to 6am allows clients to book 6am slot dynamically', (tester) async {
+    tester.view.physicalSize = const Size(1000, 1200);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+
+    // Configure Monday-Friday to open at 6:00 AM
+    final updatedSchedule = repository.calendarPreferences.weeklySchedule.map((day) {
+      if (day.weekday < 6) {
+        return day.copyWith(isOpen: true, openTime: '06:00 AM', closeTime: '06:00 PM');
+      }
+      return day;
+    }).toList();
+
+    repository.updateCalendarPreferences(
+      repository.calendarPreferences.copyWith(weeklySchedule: updatedSchedule),
+    );
+
+    // Pick an open weekday (Monday through Friday)
+    DateTime testDate = DateTime.now().add(const Duration(days: 1));
+    while (testDate.weekday >= 6) {
+      testDate = testDate.add(const Duration(days: 1));
+    }
+
+    // Verify getTimeSlotsForDate includes 6:00 AM slot
+    final slots = repository.getTimeSlotsForDate(testDate);
+    expect(slots.any((s) => s.startsWith('6:00 AM') || s.startsWith('06:00 AM')), isTrue);
+    expect(repository.isSlotWithinOperatingHours(testDate, '6:00 AM - 9:00 AM'), isTrue);
+
+    // Launch BookingFlowScreen and verify 6:00 AM is selectable and bookable
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: BookingFlowScreen(
+        detailer: repository.currentUser,
+        repository: repository,
+        initialDate: testDate,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Step 0: Continue to step 1
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    // Verify 6:00 AM slot chip is present in booking flow
+    expect(find.textContaining('6:00 AM'), findsWidgets);
+  });
+
+  testWidgets('Detailer can add, edit, and remove custom slots and auto-generate from hours', (tester) async {
+    final repository = JobRepository();
+
+    // 1. Add a custom early bird slot
+    repository.addCustomTimeSlot('6:00 AM - 8:00 AM');
+    expect(repository.calendarPreferences.customTimeSlots.contains('6:00 AM - 8:00 AM'), isTrue);
+
+    // 2. Edit the custom slot
+    repository.updateCustomTimeSlot('6:00 AM - 8:00 AM', '6:30 AM - 8:30 AM');
+    expect(repository.calendarPreferences.customTimeSlots.contains('6:30 AM - 8:30 AM'), isTrue);
+    expect(repository.calendarPreferences.customTimeSlots.contains('6:00 AM - 8:00 AM'), isFalse);
+
+    // 3. Remove the custom slot
+    repository.removeCustomTimeSlot('6:30 AM - 8:30 AM');
+    expect(repository.calendarPreferences.customTimeSlots.contains('6:30 AM - 8:30 AM'), isFalse);
+
+    // 4. Auto-generate slots for 6:00 AM to 6:00 PM
+    repository.autoGenerateTimeSlots(
+      openTime: '06:00 AM',
+      closeTime: '06:00 PM',
+      slotDurationHours: 3,
+    );
+    final genSlots = repository.calendarPreferences.customTimeSlots;
+    expect(genSlots.first, '6:00 AM - 9:00 AM');
+    expect(genSlots.contains('9:00 AM - 12:00 PM'), isTrue);
+    expect(genSlots.contains('3:00 PM - 6:00 PM'), isTrue);
+  });
 }
 

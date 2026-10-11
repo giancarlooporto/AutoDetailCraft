@@ -15,6 +15,7 @@ import 'create_job_screen.dart';
 import 'edit_profile_dialog.dart';
 import 'public_studio_screen.dart';
 import 'calendar_preferences_dialog.dart';
+import '../models/calendar_availability_block.dart';
 
 enum StudioHubSection {
   calendar('Calendar', 'CALENDAR', 'Bookings & host schedule', Icons.calendar_month_rounded),
@@ -3108,12 +3109,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     final dayBlocks = widget.repository.getBlocksForDate(date);
     final prefs = widget.repository.calendarPreferences;
 
-    final standardSlots = [
-      '8:00 AM - 11:00 AM',
-      '9:00 AM - 12:00 PM',
-      '1:00 PM - 4:00 PM',
-      '3:00 PM - 6:00 PM',
-    ];
+    final daySlots = widget.repository.getTimeSlotsForDate(date);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3255,126 +3251,201 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   ),
                   SizedBox(height: 2),
                   Text(
-                    'Tap any window to block or open it for client bookings.',
+                    'Tap any window to block/open, or edit and add custom slots.',
                     style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
                   ),
                 ],
               ),
             ),
-            if (dayBlocks.any((b) => b.blockedSlots.isNotEmpty))
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                visualDensity: VisualDensity.compact,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              ),
+              icon: const Icon(Icons.add_rounded, size: 14),
+              label: const Text('Add Slot', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+              onPressed: () => _showAddSlotDialog(context, date),
+            ),
+            const SizedBox(width: 6),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.textSecondary,
+                side: const BorderSide(color: AppTheme.border),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                visualDensity: VisualDensity.compact,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              ),
+              icon: const Icon(Icons.auto_awesome_rounded, size: 13),
+              label: const Text('Auto-Gen', style: TextStyle(fontSize: 11)),
+              onPressed: () => _showAutoGenerateSlotsDialog(context, date, hours),
+            ),
+            if (dayBlocks.any((b) => b.blockedSlots.isNotEmpty)) ...[
+              const SizedBox(width: 4),
               TextButton(
+                style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
                 onPressed: () {
                   final blk = dayBlocks.firstWhere((b) => b.blockedSlots.isNotEmpty);
                   widget.repository.removeAvailabilityBlock(blk.id);
                 },
-                child: const Text('Clear Blocked Slots', style: TextStyle(fontSize: 11, color: Colors.redAccent)),
+                child: const Text('Clear Blocks', style: TextStyle(fontSize: 11, color: Colors.redAccent)),
               ),
+            ],
           ],
         ),
         const SizedBox(height: 10),
 
-        // Slot Matrix
-        ...standardSlots.map((slot) {
-          final isBooked = dayBookings.any((b) => b.scheduledTimeSlot == slot);
-          final bookedAppt = isBooked ? dayBookings.firstWhere((b) => b.scheduledTimeSlot == slot) : null;
-          final isBlocked = widget.repository.isSlotBlocked(user.id, date, slot);
-          final inOperatingHours = widget.repository.isSlotWithinOperatingHours(date, slot);
-
-          Color borderColor = AppTheme.border;
-          Color bgColor = AppTheme.surface;
-          String statusTitle = 'Available for Booking';
-          Color statusColor = Colors.greenAccent;
-          IconData iconData = Icons.check_circle_outline_rounded;
-
-          if (isBooked) {
-            borderColor = Colors.green.withAlpha(120);
-            bgColor = Colors.green.withAlpha(20);
-            statusTitle = 'Booked by ${bookedAppt?.clientName ?? "Client"}';
-            statusColor = Colors.greenAccent;
-            iconData = Icons.directions_car_rounded;
-          } else if (isBlocked) {
-            borderColor = Colors.redAccent.withAlpha(100);
-            bgColor = Colors.redAccent.withAlpha(15);
-            statusTitle = 'Blocked by Detailer';
-            statusColor = Colors.redAccent;
-            iconData = Icons.block_rounded;
-          } else if (!inOperatingHours || isRecurringOff) {
-            borderColor = AppTheme.border;
-            bgColor = AppTheme.surfaceLight.withAlpha(60);
-            statusTitle = 'Outside Operating Hours';
-            statusColor = AppTheme.textMuted;
-            iconData = Icons.access_time_rounded;
-          }
-
-          return Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        if (daySlots.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: bgColor,
+              color: AppTheme.surface,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: borderColor),
+              border: Border.all(color: AppTheme.border),
             ),
-            child: Row(
-              children: [
-                Icon(iconData, size: 18, color: statusColor),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        slot,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: isBlocked ? Colors.grey.shade400 : Colors.white,
-                          decoration: isBlocked ? TextDecoration.lineThrough : null,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        isBooked
-                            ? '${bookedAppt?.vehicleYearMakeModel ?? ""} • ${bookedAppt?.package.title ?? ""}'
-                            : statusTitle,
-                        style: TextStyle(fontSize: 11, color: statusColor, fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                ),
-                if (!isBooked) ...[
-                  OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: isBlocked ? Colors.greenAccent : Colors.redAccent,
-                      side: BorderSide(color: isBlocked ? Colors.greenAccent.withAlpha(120) : Colors.redAccent.withAlpha(100)),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            child: Center(
+              child: Column(
+                children: [
+                  const Icon(Icons.calendar_today_rounded, size: 28, color: AppTheme.textMuted),
+                  const SizedBox(height: 8),
+                  const Text('No slots defined for this day.', style: TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+                  const SizedBox(height: 8),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.black,
                       visualDensity: VisualDensity.compact,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                     ),
-                    onPressed: () {
-                      widget.repository.toggleBlockSlot(date, slot);
-                    },
-                    child: Text(
-                      isBlocked ? 'Reopen' : 'Block Slot',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ] else ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.greenAccent.withAlpha(25),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      '\$${bookedAppt?.totalPrice.toStringAsFixed(0) ?? "0"}',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.greenAccent),
-                    ),
+                    icon: const Icon(Icons.add_rounded, size: 14),
+                    label: const Text('Add Time Slot'),
+                    onPressed: () => _showAddSlotDialog(context, date),
                   ),
                 ],
-              ],
+              ),
             ),
-          );
-        }),
+          )
+        else
+          // Slot Matrix
+          ...daySlots.map((slot) {
+            final isBooked = dayBookings.any((b) => b.scheduledTimeSlot == slot);
+            final bookedAppt = isBooked ? dayBookings.firstWhere((b) => b.scheduledTimeSlot == slot) : null;
+            final isBlocked = widget.repository.isSlotBlocked(user.id, date, slot);
+            final inOperatingHours = widget.repository.isSlotWithinOperatingHours(date, slot);
+
+            Color borderColor = AppTheme.border;
+            Color bgColor = AppTheme.surface;
+            String statusTitle = 'Available for Booking';
+            Color statusColor = Colors.greenAccent;
+            IconData iconData = Icons.check_circle_outline_rounded;
+
+            if (isBooked) {
+              borderColor = Colors.green.withAlpha(120);
+              bgColor = Colors.green.withAlpha(20);
+              statusTitle = 'Booked by ${bookedAppt?.clientName ?? "Client"}';
+              statusColor = Colors.greenAccent;
+              iconData = Icons.directions_car_rounded;
+            } else if (isBlocked) {
+              borderColor = Colors.redAccent.withAlpha(100);
+              bgColor = Colors.redAccent.withAlpha(15);
+              statusTitle = 'Blocked by Detailer';
+              statusColor = Colors.redAccent;
+              iconData = Icons.block_rounded;
+            } else if (!inOperatingHours || isRecurringOff) {
+              borderColor = AppTheme.border;
+              bgColor = AppTheme.surfaceLight.withAlpha(60);
+              statusTitle = 'Outside Operating Hours';
+              statusColor = AppTheme.textMuted;
+              iconData = Icons.access_time_rounded;
+            }
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: borderColor),
+              ),
+              child: Row(
+                children: [
+                  Icon(iconData, size: 18, color: statusColor),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          slot,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: isBlocked ? Colors.grey.shade400 : Colors.white,
+                            decoration: isBlocked ? TextDecoration.lineThrough : null,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isBooked
+                              ? '${bookedAppt?.vehicleYearMakeModel ?? ""} • ${bookedAppt?.package.title ?? ""}'
+                              : statusTitle,
+                          style: TextStyle(fontSize: 11, color: statusColor, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!isBooked) ...[
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: isBlocked ? Colors.greenAccent : Colors.redAccent,
+                        side: BorderSide(color: isBlocked ? Colors.greenAccent.withAlpha(120) : Colors.redAccent.withAlpha(100)),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        visualDensity: VisualDensity.compact,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      ),
+                      onPressed: () {
+                        widget.repository.toggleBlockSlot(date, slot);
+                      },
+                      child: Text(
+                        isBlocked ? 'Reopen' : 'Block Slot',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 16, color: AppTheme.textSecondary),
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      padding: const EdgeInsets.all(4),
+                      tooltip: 'Edit Slot',
+                      onPressed: () => _showEditSlotDialog(context, date, slot),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent),
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      padding: const EdgeInsets.all(4),
+                      tooltip: 'Delete Slot',
+                      onPressed: () {
+                        widget.repository.removeCustomTimeSlot(slot);
+                        setState(() {});
+                      },
+                    ),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.greenAccent.withAlpha(25),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '\$${bookedAppt?.totalPrice.toStringAsFixed(0) ?? "0"}',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.greenAccent),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }),
 
         const SizedBox(height: 20),
 
@@ -3527,6 +3598,449 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           ),
         ],
       ),
+    );
+  }
+
+  void _showAddSlotDialog(BuildContext context, DateTime date) {
+    final hours = widget.repository.getHoursForDate(date);
+    String startTime = hours.isOpen ? hours.openTime : '08:00 AM';
+    final startMin = JobRepository.timeStringToMinutes(startTime);
+    String endTime = JobRepository.formatMinutesToTime(startMin + 180);
+    bool applyAllDays = true;
+
+    final timeOptions = [
+      '05:00 AM', '06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM',
+      '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM',
+      '07:00 PM', '08:00 PM', '09:00 PM', '10:00 PM',
+    ];
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: AppTheme.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: AppTheme.border),
+              ),
+              title: const Row(
+                children: [
+                  Icon(Icons.add_circle_outline_rounded, color: AppTheme.primary, size: 20),
+                  SizedBox(width: 8),
+                  Text('Add Booking Slot', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Select appointment time window for clients:', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Start Time', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              decoration: BoxDecoration(
+                                color: AppTheme.surfaceLight,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppTheme.border),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: timeOptions.contains(startTime) ? startTime : timeOptions.first,
+                                  isExpanded: true,
+                                  dropdownColor: AppTheme.surface,
+                                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                                  items: timeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      setDialogState(() {
+                                        startTime = val;
+                                        final sMin = JobRepository.timeStringToMinutes(val);
+                                        endTime = JobRepository.formatMinutesToTime(sMin + 180);
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+                        child: Text('to', style: TextStyle(color: AppTheme.textMuted)),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('End Time', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              decoration: BoxDecoration(
+                                color: AppTheme.surfaceLight,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppTheme.border),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: timeOptions.contains(endTime) ? endTime : timeOptions.last,
+                                  isExpanded: true,
+                                  dropdownColor: AppTheme.surface,
+                                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                                  items: timeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      setDialogState(() => endTime = val);
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceLight.withAlpha(40),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Apply to all operating days', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                            Text('Available across regular schedule', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+                          ],
+                        ),
+                        Switch(
+                          value: applyAllDays,
+                          activeThumbColor: AppTheme.primary,
+                          onChanged: (val) => setDialogState(() => applyAllDays = val),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.black,
+                  ),
+                  onPressed: () {
+                    final slotStr = '$startTime - $endTime';
+                    widget.repository.addCustomTimeSlot(
+                      slotStr,
+                      specificDate: applyAllDays ? null : date,
+                    );
+                    Navigator.of(ctx).pop();
+                    setState(() {});
+                  },
+                  child: const Text('Add Slot', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showEditSlotDialog(BuildContext context, DateTime date, String currentSlot) {
+    String startTime = '08:00 AM';
+    String endTime = '11:00 AM';
+    if (currentSlot.contains('-')) {
+      final parts = currentSlot.split('-');
+      startTime = parts.first.trim();
+      endTime = parts.last.trim();
+    }
+    bool applyAllDays = true;
+
+    final timeOptions = [
+      '05:00 AM', '06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM',
+      '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM',
+      '07:00 PM', '08:00 PM', '09:00 PM', '10:00 PM',
+    ];
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: AppTheme.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: AppTheme.border),
+              ),
+              title: const Row(
+                children: [
+                  Icon(Icons.edit_calendar_rounded, color: AppTheme.primary, size: 20),
+                  SizedBox(width: 8),
+                  Text('Edit Booking Slot', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Editing slot: $currentSlot', style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Start Time', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              decoration: BoxDecoration(
+                                color: AppTheme.surfaceLight,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppTheme.border),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: timeOptions.contains(startTime) ? startTime : timeOptions.first,
+                                  isExpanded: true,
+                                  dropdownColor: AppTheme.surface,
+                                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                                  items: timeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                                  onChanged: (val) {
+                                    if (val != null) setDialogState(() => startTime = val);
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+                        child: Text('to', style: TextStyle(color: AppTheme.textMuted)),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('End Time', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              decoration: BoxDecoration(
+                                color: AppTheme.surfaceLight,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppTheme.border),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: timeOptions.contains(endTime) ? endTime : timeOptions.last,
+                                  isExpanded: true,
+                                  dropdownColor: AppTheme.surface,
+                                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                                  items: timeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                                  onChanged: (val) {
+                                    if (val != null) setDialogState(() => endTime = val);
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceLight.withAlpha(40),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Apply to all operating days', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                            Text('Update this slot across schedule', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+                          ],
+                        ),
+                        Switch(
+                          value: applyAllDays,
+                          activeThumbColor: AppTheme.primary,
+                          onChanged: (val) => setDialogState(() => applyAllDays = val),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.black,
+                  ),
+                  onPressed: () {
+                    final newSlotStr = '$startTime - $endTime';
+                    widget.repository.updateCustomTimeSlot(
+                      currentSlot,
+                      newSlotStr,
+                      specificDate: applyAllDays ? null : date,
+                    );
+                    Navigator.of(ctx).pop();
+                    setState(() {});
+                  },
+                  child: const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showAutoGenerateSlotsDialog(BuildContext context, DateTime date, DayBusinessHours hours) {
+    int duration = widget.repository.calendarPreferences.slotDurationHours;
+    bool applyAllDays = true;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: AppTheme.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: AppTheme.border),
+              ),
+              title: const Row(
+                children: [
+                  Icon(Icons.auto_awesome_rounded, color: AppTheme.primary, size: 20),
+                  SizedBox(width: 8),
+                  Text('Auto-Generate Slots', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Rebuild appointment windows from business hours (${hours.openTime} - ${hours.closeTime}):',
+                    style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text('Slot Duration / Interval', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    children: [1, 2, 3, 4].map((d) {
+                      final isSel = duration == d;
+                      return ChoiceChip(
+                        label: Text('$d Hour${d > 1 ? "s" : ""}'),
+                        selected: isSel,
+                        selectedColor: AppTheme.primary,
+                        backgroundColor: AppTheme.surfaceLight,
+                        labelStyle: TextStyle(
+                          color: isSel ? Colors.black : Colors.white,
+                          fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 11,
+                        ),
+                        onSelected: (val) {
+                          if (val) setDialogState(() => duration = d);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceLight.withAlpha(40),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Apply to all operating days', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                            Text('Replaces general slot template', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+                          ],
+                        ),
+                        Switch(
+                          value: applyAllDays,
+                          activeThumbColor: AppTheme.primary,
+                          onChanged: (val) => setDialogState(() => applyAllDays = val),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.black,
+                  ),
+                  onPressed: () {
+                    widget.repository.autoGenerateTimeSlots(
+                      openTime: hours.openTime,
+                      closeTime: hours.closeTime,
+                      slotDurationHours: duration,
+                      specificDate: applyAllDays ? null : date,
+                    );
+                    Navigator.of(ctx).pop();
+                    setState(() {});
+                  },
+                  child: const Text('Generate Slots', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
