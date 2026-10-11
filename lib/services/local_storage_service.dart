@@ -6,6 +6,7 @@ import '../models/booking_models.dart';
 import '../models/detail_job.dart';
 import '../models/message_model.dart';
 import '../models/inventory_item.dart';
+import '../models/calendar_availability_block.dart';
 import '../core/constants/detailing_presets.dart';
 
 class LocalStorageService {
@@ -15,6 +16,8 @@ class LocalStorageService {
   static const String _customJobsKey = 'adc_custom_jobs_v1';
   static const String _customPresetsKey = 'adc_custom_presets_v1';
   static const String _inventoryKey = 'adc_inventory_items_v1';
+  static const String _calendarBlocksKey = 'adc_calendar_blocks_v1';
+  static const String _calendarPrefsKey = 'adc_calendar_prefs_v1';
   static const String _savedJobsKey = 'adc_saved_jobs_v3';
   static const String _likedJobsKey = 'adc_liked_jobs_v3';
   static const String _activeTabKey = 'adc_active_tab_index_v1';
@@ -314,6 +317,49 @@ class LocalStorageService {
       if (jsonStr != null && jsonStr.isNotEmpty) {
         final List<dynamic> list = jsonDecode(jsonStr);
         return list.map((item) => InventoryItem.fromJson(item as Map<String, dynamic>)).toList();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  // Save Calendar Availability Blocks
+  static Future<void> saveAvailabilityBlocks(List<CalendarAvailabilityBlock> blocks) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = blocks.map((b) => b.toJson()).toList();
+      await prefs.setString(_calendarBlocksKey, jsonEncode(list));
+    } catch (_) {}
+  }
+
+  // Load Calendar Availability Blocks
+  static Future<List<CalendarAvailabilityBlock>?> loadAvailabilityBlocks() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_calendarBlocksKey);
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(jsonStr);
+        return list.map((item) => CalendarAvailabilityBlock.fromJson(item as Map<String, dynamic>)).toList();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  // Save Calendar Preferences
+  static Future<void> saveCalendarPreferences(DetailerCalendarPreferences preferences) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_calendarPrefsKey, jsonEncode(preferences.toJson()));
+    } catch (_) {}
+  }
+
+  // Load Calendar Preferences
+  static Future<DetailerCalendarPreferences?> loadCalendarPreferences() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_calendarPrefsKey);
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final Map<String, dynamic> data = jsonDecode(jsonStr);
+        return DetailerCalendarPreferences.fromJson(data);
       }
     } catch (_) {}
     return null;

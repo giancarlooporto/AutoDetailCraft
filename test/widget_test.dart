@@ -19,6 +19,8 @@ import 'package:detail_craft/widgets/job_recipe_card.dart';
 import 'package:detail_craft/screens/profile_screen.dart';
 import 'package:detail_craft/screens/detailer_workbench_view.dart';
 import 'package:detail_craft/screens/service_package_editor_dialog.dart';
+import 'package:detail_craft/screens/calendar_preferences_dialog.dart';
+import 'package:detail_craft/screens/booking_flow_screen.dart';
 import 'package:detail_craft/models/inventory_item.dart';
 
 import 'dart:async';
@@ -2638,7 +2640,6 @@ void main() {
 
     final repository = JobRepository();
     final testRecipe = repository.recipeItems.first;
-    ServicePackage? savedPackage;
 
     await tester.pumpWidget(MaterialApp(
       theme: AppTheme.darkTheme,
@@ -2648,7 +2649,7 @@ void main() {
             onPressed: () => ServicePackageEditorDialog.show(
               context,
               availableRecipes: [testRecipe],
-              onSave: (pkg) => savedPackage = pkg,
+              onSave: (_) {},
             ),
             child: const Text('Open Dialog'),
           ),
@@ -2699,6 +2700,148 @@ void main() {
 
     // Verify title is now updated to the recipe name
     expect(find.text(testRecipe.name), findsWidgets);
+  });
+
+  testWidgets('Detailer Workbench Calendar section renders month grid, allows toggling day block and hourly slots', (tester) async {
+    tester.view.physicalSize = const Size(1200, 1200);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    // Ensure detailer mode
+    if (repository.currentUser.role != UserRole.detailer) {
+      repository.toggleHostMode();
+    }
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: DetailerWorkbenchView(repository: repository),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // 1. Select Calendar from Studio Hub Pane 1
+    final calendarTile = find.text('Calendar');
+    expect(calendarTile, findsOneWidget);
+    await tester.tap(calendarTile);
+    await tester.pumpAndSettle();
+
+    // 2. Verify Pane 2 Month Grid & Pane 3 Day Inspector rendered
+    expect(find.text('CALENDAR INSPECTOR'), findsOneWidget);
+    expect(find.text('Operating Hours & Preferences'), findsWidgets);
+    expect(find.text('HOURLY SLOT AVAILABILITY'), findsOneWidget);
+    expect(find.text('Block Full Day'), findsOneWidget);
+
+    // 3. Toggle Full Day Block on currently selected date
+    await tester.tap(find.text('Block Full Day'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('DAY BLOCKED'), findsOneWidget);
+    expect(find.text('Unblock Full Day'), findsOneWidget);
+
+    // Unblock the full day
+    await tester.tap(find.text('Unblock Full Day'));
+    await tester.pumpAndSettle();
+    expect(find.text('Block Full Day'), findsOneWidget);
+
+    // 4. Toggle Hourly Slot Block on a specific window
+    final blockSlotButtons = find.text('Block Slot');
+    expect(blockSlotButtons, findsWidgets);
+    await tester.tap(blockSlotButtons.first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Blocked by Detailer'), findsWidgets);
+    expect(find.text('Reopen'), findsWidgets);
+
+    // Reopen the blocked slot
+    await tester.tap(find.text('Reopen').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Available for Booking'), findsWidgets);
+  });
+
+  testWidgets('CalendarPreferencesDialog allows configuring weekly schedule and booking preferences', (tester) async {
+    tester.view.physicalSize = const Size(1200, 1200);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => ElevatedButton(
+            onPressed: () => CalendarPreferencesDialog.show(context, repository: repository),
+            child: const Text('Open Calendar Preferences'),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Open Calendar Preferences'));
+    await tester.pumpAndSettle();
+
+    // Verify dialog opened with operating hours and settings
+    expect(find.text('Calendar & Operating Preferences'), findsOneWidget);
+    expect(find.text('RECURRING WEEKLY SCHEDULE & DAYS OFF'), findsOneWidget);
+    expect(find.text('Monday'), findsOneWidget);
+
+    // Scroll down to reveal Sunday and booking rules
+    await tester.drag(find.byType(ListView), const Offset(0, -150));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sunday'), findsOneWidget);
+    expect(find.text('BOOKING LEAD TIME & TURNAROUND RULES'), findsOneWidget);
+
+    await tester.scrollUntilVisible(find.text('Minimum Advance Notice'), 100.0);
+    await tester.pumpAndSettle();
+    expect(find.text('Minimum Advance Notice'), findsOneWidget);
+
+    await tester.scrollUntilVisible(find.text('Turnaround Buffer Between Jobs'), 100.0);
+    await tester.pumpAndSettle();
+    expect(find.text('Turnaround Buffer Between Jobs'), findsOneWidget);
+
+    // Tap Save Preferences
+    await tester.tap(find.text('Save Schedule Preferences'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Calendar & Operating Preferences'), findsNothing);
+  });
+
+  testWidgets('BookingFlowScreen shields detailer by respecting blocked slots', (tester) async {
+    tester.view.physicalSize = const Size(1000, 1200);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repository = JobRepository();
+    final detailer = repository.currentUser;
+
+    // Pick an open business day
+    DateTime openDate = DateTime.now().add(const Duration(days: 1));
+    while (!repository.calendarPreferences.getHoursForWeekday(openDate.weekday).isOpen) {
+      openDate = openDate.add(const Duration(days: 1));
+    }
+    // Block a specific slot on this open date
+    repository.toggleBlockSlot(openDate, '8:00 AM - 11:00 AM');
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: BookingFlowScreen(
+        detailer: detailer,
+        repository: repository,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Step 0: Package Selection -> Continue
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    // Step 1: Vehicle & Schedule
+    expect(find.text('Select Date & Time Window'), findsOneWidget);
+
+    // If initial date is tomorrow and it's Sunday (day off), CLOSED badge is visible
+    final hasClosedOrBlocked = find.text('CLOSED').evaluate().isNotEmpty || find.text('BLOCKED').evaluate().isNotEmpty;
+    expect(hasClosedOrBlocked, isTrue);
   });
 }
 

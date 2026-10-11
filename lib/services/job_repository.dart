@@ -14,6 +14,7 @@ import 'supabase_auth_service.dart';
 import 'supabase_db_service.dart';
 import 'supabase_service.dart';
 import 'r2_storage_service.dart';
+import '../models/calendar_availability_block.dart';
 
 class JobRepository extends ChangeNotifier {
   List<DetailJob> _jobs = MockDataService.getInitialJobs();
@@ -22,6 +23,8 @@ class JobRepository extends ChangeNotifier {
   UserProfile _currentUser = MockDataService.youUser; // Default fallback
   List<StudioRecipePreset> _customPresets = [];
   List<InventoryItem> _inventoryItems = MockDataService.getInitialInventory();
+  List<CalendarAvailabilityBlock> _availabilityBlocks = [];
+  DetailerCalendarPreferences _calendarPreferences = DetailerCalendarPreferences.defaults();
 
   String _selectedServiceType = 'All Services';
   String _selectedLocationCity = 'All Locations';
@@ -111,6 +114,16 @@ class JobRepository extends ChangeNotifier {
       _inventoryItems = savedInventory;
     } else {
       _inventoryItems = MockDataService.getInitialInventory();
+    }
+
+    // 4d. Load calendar availability blocks and preferences
+    final savedBlocks = await LocalStorageService.loadAvailabilityBlocks();
+    if (savedBlocks != null) {
+      _availabilityBlocks = savedBlocks;
+    }
+    final savedPrefs = await LocalStorageService.loadCalendarPreferences();
+    if (savedPrefs != null) {
+      _calendarPreferences = savedPrefs;
     }
 
     // 5. Load persistent likes & bookmarks from local cache
@@ -376,6 +389,8 @@ class JobRepository extends ChangeNotifier {
   // Getters
   List<DetailJob> get jobs => _jobs;
   List<BookingAppointment> get bookings => _bookings;
+  List<CalendarAvailabilityBlock> get availabilityBlocks => List.unmodifiable(_availabilityBlocks);
+  DetailerCalendarPreferences get calendarPreferences => _calendarPreferences;
   
   // All public detailers including the current user when registered/logged in!
   List<UserProfile> get publicDetailers {
@@ -923,6 +938,210 @@ class JobRepository extends ChangeNotifier {
       }
       notifyListeners();
     }
+  }
+
+  // ─── CALENDAR & AVAILABILITY ────────────────────────────────────────────────
+
+  void updateCalendarPreferences(DetailerCalendarPreferences preferences) {
+    _calendarPreferences = preferences;
+    LocalStorageService.saveCalendarPreferences(preferences);
+    notifyListeners();
+  }
+
+  void addAvailabilityBlock(CalendarAvailabilityBlock block) {
+    _availabilityBlocks.removeWhere(
+      (b) => b.id == block.id ||
+             (b.detailerId == block.detailerId &&
+              b.date.year == block.date.year &&
+              b.date.month == block.date.month &&
+              b.date.day == block.date.day),
+    );
+    _availabilityBlocks.add(block);
+    LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+    notifyListeners();
+  }
+
+  void removeAvailabilityBlock(String blockId) {
+    _availabilityBlocks.removeWhere((b) => b.id == blockId);
+    LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+    notifyListeners();
+  }
+
+  void toggleBlockDay(DateTime date, {String? reason}) {
+    final normDate = DateTime(date.year, date.month, date.day);
+    final idx = _availabilityBlocks.indexWhere(
+      (b) => b.detailerId == _currentUser.id &&
+             b.date.year == normDate.year &&
+             b.date.month == normDate.month &&
+             b.date.day == normDate.day &&
+             b.isAllDay,
+    );
+    if (idx != -1) {
+      _availabilityBlocks.removeAt(idx);
+    } else {
+      _availabilityBlocks.removeWhere(
+        (b) => b.detailerId == _currentUser.id &&
+               b.date.year == normDate.year &&
+               b.date.month == normDate.month &&
+               b.date.day == normDate.day,
+      );
+      _availabilityBlocks.add(
+        CalendarAvailabilityBlock(
+          id: 'block_${DateTime.now().millisecondsSinceEpoch}',
+          detailerId: _currentUser.id,
+          date: normDate,
+          isAllDay: true,
+          reason: reason,
+          createdAt: DateTime.now(),
+        ),
+      );
+    }
+    LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+    notifyListeners();
+  }
+
+  void toggleBlockSlot(DateTime date, String slot, {String? reason}) {
+    final normDate = DateTime(date.year, date.month, date.day);
+    final idx = _availabilityBlocks.indexWhere(
+      (b) => b.detailerId == _currentUser.id &&
+             b.date.year == normDate.year &&
+             b.date.month == normDate.month &&
+             b.date.day == normDate.day,
+    );
+    if (idx != -1) {
+      final existing = _availabilityBlocks[idx];
+      if (existing.isAllDay) {
+        const standardSlots = [
+          '8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
+          '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM',
+        ];
+        final remaining = standardSlots.where((s) => s != slot).toList();
+        _availabilityBlocks[idx] = existing.copyWith(
+          isAllDay: false,
+          blockedSlots: remaining,
+        );
+      } else {
+        final currentSlots = List<String>.from(existing.blockedSlots);
+        if (currentSlots.contains(slot)) {
+          currentSlots.remove(slot);
+        } else {
+          currentSlots.add(slot);
+        }
+        if (currentSlots.isEmpty) {
+          _availabilityBlocks.removeAt(idx);
+        } else {
+          _availabilityBlocks[idx] = existing.copyWith(
+            blockedSlots: currentSlots,
+            reason: reason ?? existing.reason,
+          );
+        }
+      }
+    } else {
+      _availabilityBlocks.add(
+        CalendarAvailabilityBlock(
+          id: 'block_${DateTime.now().millisecondsSinceEpoch}',
+          detailerId: _currentUser.id,
+          date: normDate,
+          isAllDay: false,
+          blockedSlots: [slot],
+          reason: reason,
+          createdAt: DateTime.now(),
+        ),
+      );
+    }
+    LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+    notifyListeners();
+  }
+
+  bool isDateRecurringDayOff(DateTime date) {
+    return !_calendarPreferences.getHoursForWeekday(date.weekday).isOpen;
+  }
+
+  bool isDateFullyBlocked(String detailerId, DateTime date) {
+    if (isDateRecurringDayOff(date)) return true;
+    return _availabilityBlocks.any(
+      (b) => b.detailerId == detailerId &&
+             b.date.year == date.year &&
+             b.date.month == date.month &&
+             b.date.day == date.day &&
+             b.isAllDay,
+    );
+  }
+
+  bool isSlotBlocked(String detailerId, DateTime date, String slot) {
+    if (isDateFullyBlocked(detailerId, date)) return true;
+    return _availabilityBlocks.any(
+      (b) => b.detailerId == detailerId &&
+             b.date.year == date.year &&
+             b.date.month == date.month &&
+             b.date.day == date.day &&
+             (b.isAllDay ||
+              b.blockedSlots.contains(slot) ||
+              b.blockedSlots.any((bs) {
+                final cleanBs = bs.trim().toLowerCase();
+                final cleanSlot = slot.trim().toLowerCase();
+                return cleanBs == cleanSlot ||
+                       cleanBs.contains(cleanSlot) ||
+                       cleanSlot.contains(cleanBs);
+              })),
+    );
+  }
+
+  static int timeStringToMinutes(String timeStr) {
+    String clean = timeStr.trim();
+    if (clean.contains('-')) {
+      clean = clean.split('-').first.trim();
+    }
+    final upper = clean.toUpperCase();
+    final isPm = upper.contains('PM');
+    final digitsOnly = upper.replaceAll('AM', '').replaceAll('PM', '').trim();
+    final parts = digitsOnly.split(':');
+    int hour = int.tryParse(parts[0].trim()) ?? 0;
+    int min = parts.length > 1 ? (int.tryParse(parts[1].trim()) ?? 0) : 0;
+    if (isPm && hour != 12) hour += 12;
+    if (!isPm && hour == 12) hour = 0;
+    return hour * 60 + min;
+  }
+
+  bool isSlotWithinOperatingHours(DateTime date, String slot) {
+    final dayHours = _calendarPreferences.getHoursForWeekday(date.weekday);
+    if (!dayHours.isOpen) return false;
+    final slotMin = timeStringToMinutes(slot);
+    final openMin = timeStringToMinutes(dayHours.openTime);
+    final closeMin = timeStringToMinutes(dayHours.closeTime);
+    if (slotMin < openMin || slotMin >= closeMin) return false;
+    if (slot.contains('-')) {
+      final endMin = timeStringToMinutes(slot.split('-').last);
+      if (endMin > closeMin) return false;
+    }
+    return true;
+  }
+
+  bool isSlotWithinLeadTime(DateTime date, String slot) {
+    final leadHours = _calendarPreferences.advanceNoticeHours;
+    if (leadHours <= 0) return true;
+    final slotMin = timeStringToMinutes(slot);
+    final slotDate = DateTime(date.year, date.month, date.day, slotMin ~/ 60, slotMin % 60);
+    return slotDate.difference(DateTime.now()).inMinutes >= leadHours * 60;
+  }
+
+  DayBusinessHours getHoursForDate(DateTime date) {
+    return _calendarPreferences.getHoursForWeekday(date.weekday);
+  }
+
+  List<CalendarAvailabilityBlock> getBlocksForDate(DateTime date) {
+    return _availabilityBlocks.where(
+      (b) => b.date.year == date.year && b.date.month == date.month && b.date.day == date.day,
+    ).toList();
+  }
+
+  List<BookingAppointment> getBookingsForDate(DateTime date) {
+    return _bookings.where(
+      (b) => b.scheduledDate.year == date.year &&
+             b.scheduledDate.month == date.month &&
+             b.scheduledDate.day == date.day &&
+             b.status != BookingStatus.cancelled,
+    ).toList();
   }
 
   // ─── MESSAGING ────────────────────────────────────────────────────────────

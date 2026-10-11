@@ -78,8 +78,8 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     _adjustSelectedSlotIfBlocked();
   }
 
-  /// Check if a given time slot is already booked for this detailer on the selected date
-  bool _isSlotBooked(String slot) {
+  /// Check if slot is already reserved by another confirmed client booking
+  bool _isSlotBookedByOtherAppointment(String slot) {
     return widget.repository.bookings.any((b) {
       if (b.detailerId != widget.detailer.id) return false;
       if (b.status == BookingStatus.cancelled) return false;
@@ -88,7 +88,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       final isSameDay = b.scheduledDate.year == _selectedDate.year &&
           b.scheduledDate.month == _selectedDate.month &&
           b.scheduledDate.day == _selectedDate.day;
-      
+
       // If the booked package was multi-day (e.g. 2 days), block subsequent days
       final bookedDuration = b.package.estimatedDuration.toLowerCase();
       if (bookedDuration.contains('day')) {
@@ -102,6 +102,35 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
 
       return isSameDay && b.scheduledTimeSlot == slot;
     });
+  }
+
+  /// Returns reason string if slot is unavailable, or null if open
+  String? _getSlotUnavailableReason(String slot) {
+    if (widget.repository.isDateRecurringDayOff(_selectedDate)) {
+      return 'Shop Closed (Recurring Weekly Day Off)';
+    }
+    if (widget.repository.isDateFullyBlocked(widget.detailer.id, _selectedDate)) {
+      return 'Day Blocked by Detailer';
+    }
+    if (widget.repository.isSlotBlocked(widget.detailer.id, _selectedDate, slot)) {
+      return 'Time Window Blocked by Detailer';
+    }
+    if (!widget.repository.isSlotWithinOperatingHours(_selectedDate, slot)) {
+      return 'Outside Business Operating Hours';
+    }
+    if (!widget.repository.isSlotWithinLeadTime(_selectedDate, slot)) {
+      final hours = widget.repository.calendarPreferences.advanceNoticeHours;
+      return 'Requires ${hours}h Minimum Advance Notice';
+    }
+    if (_isSlotBookedByOtherAppointment(slot)) {
+      return 'Already Booked by Another Client';
+    }
+    return null;
+  }
+
+  /// Check if a given time slot is unavailable for any reason
+  bool _isSlotBooked(String slot) {
+    return _getSlotUnavailableReason(slot) != null;
   }
 
   /// Automatically select first available unblocked slot if currently selected is booked
@@ -159,7 +188,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       scheduledTimeSlot: _selectedTimeSlot,
       totalPrice: _calculatedTotal,
       depositAmount: _depositAmount,
-      status: BookingStatus.confirmed,
+      status: widget.repository.calendarPreferences.autoConfirmBookings
+          ? BookingStatus.confirmed
+          : BookingStatus.pending,
       clientNotes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
       warrantyPassportId: 'ADC-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
     );
@@ -361,6 +392,16 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     onPressed: () {
+                      if (_currentStep == 1 && _isSlotBooked(_selectedTimeSlot)) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(_getSlotUnavailableReason(_selectedTimeSlot) ?? 'Selected slot is unavailable. Please choose another date or time.'),
+                            backgroundColor: Colors.redAccent,
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                        return;
+                      }
                       if (_currentStep < 2) {
                         setState(() => _currentStep++);
                       } else {
@@ -726,11 +767,12 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                 onPressed: () async {
                   final now = DateUtils.dateOnly(DateTime.now());
                   final initial = _selectedDate.isBefore(now) ? now : DateUtils.dateOnly(_selectedDate);
+                  final horizonDays = widget.repository.calendarPreferences.maxAdvanceBookingDays;
                   final picked = await showDatePicker(
                     context: context,
                     initialDate: initial,
                     firstDate: now,
-                    lastDate: now.add(const Duration(days: 60)),
+                    lastDate: now.add(Duration(days: horizonDays > 0 ? horizonDays : 60)),
                   );
                   if (picked != null) {
                     setState(() {
@@ -744,16 +786,56 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
             ],
           ),
         ),
+        if (widget.repository.isDateRecurringDayOff(_selectedDate) ||
+            widget.repository.isDateFullyBlocked(widget.detailer.id, _selectedDate)) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.redAccent.withAlpha(20),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.redAccent.withAlpha(80)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline_rounded, color: Colors.redAccent, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.repository.isDateRecurringDayOff(_selectedDate)
+                        ? 'Studio is closed on ${DateFormat('EEEE').format(_selectedDate)}s (recurring weekly day off).'
+                        : 'Detailer has marked this entire day as unavailable.',
+                    style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: _timeSlots.map((slot) {
-            final isBooked = _isSlotBooked(slot);
-            final isSelected = _selectedTimeSlot == slot && !isBooked;
+            final reason = _getSlotUnavailableReason(slot);
+            final isUnavailable = reason != null;
+            final isSelected = _selectedTimeSlot == slot && !isUnavailable;
+
+            String badgeText = 'UNAVAILABLE';
+            if (reason != null) {
+              if (reason.contains('Booked')) {
+                badgeText = 'BOOKED';
+              } else if (reason.contains('Notice')) {
+                badgeText = 'LEAD TIME';
+              } else if (reason.contains('Blocked')) {
+                badgeText = 'BLOCKED';
+              } else if (reason.contains('Closed') || reason.contains('Operating')) {
+                badgeText = 'CLOSED';
+              }
+            }
 
             return Tooltip(
-              message: isBooked ? 'Detailer already booked for this time window' : 'Available',
+              message: reason ?? 'Available for Booking',
               child: FilterChip(
                 label: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -762,14 +844,14 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                       slot,
                       style: TextStyle(
                         fontSize: 12,
-                        decoration: isBooked ? TextDecoration.lineThrough : null,
-                        color: isBooked
+                        decoration: isUnavailable ? TextDecoration.lineThrough : null,
+                        color: isUnavailable
                             ? Colors.grey.shade600
                             : (isSelected ? Colors.black : Colors.white),
                         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                       ),
                     ),
-                    if (isBooked) ...[
+                    if (isUnavailable) ...[
                       const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -778,9 +860,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                           borderRadius: BorderRadius.circular(4),
                           border: Border.all(color: Colors.redAccent.withAlpha(100), width: 0.8),
                         ),
-                        child: const Text(
-                          'BOOKED',
-                          style: TextStyle(
+                        child: Text(
+                          badgeText,
+                          style: const TextStyle(
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
                             color: Colors.redAccent,
@@ -796,11 +878,11 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                 checkmarkColor: Colors.black,
                 showCheckmark: isSelected,
                 side: BorderSide(
-                  color: isBooked
+                  color: isUnavailable
                       ? Colors.redAccent.withAlpha(50)
                       : (isSelected ? AppTheme.primary : AppTheme.border),
                 ),
-                onSelected: isBooked
+                onSelected: isUnavailable
                     ? null
                     : (val) {
                         if (val) setState(() => _selectedTimeSlot = slot);

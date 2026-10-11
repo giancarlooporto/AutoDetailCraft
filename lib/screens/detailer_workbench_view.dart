@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
 import '../models/booking_models.dart';
@@ -13,8 +14,10 @@ import 'add_team_member_dialog.dart';
 import 'create_job_screen.dart';
 import 'edit_profile_dialog.dart';
 import 'public_studio_screen.dart';
+import 'calendar_preferences_dialog.dart';
 
 enum StudioHubSection {
+  calendar('Calendar', 'CALENDAR', 'Bookings & host schedule', Icons.calendar_month_rounded),
   portfolio('Portfolio', 'PORTFOLIO', 'Showcase builds & media', Icons.photo_library_rounded),
   services('Services', 'SERVICES', 'Packages & pricing menus', Icons.design_services_rounded),
   inventory('Inventory', 'INVENTORY', 'Hardware, chemicals, recipe', Icons.inventory_2_rounded),
@@ -52,6 +55,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   String? _selectedSavedJobId;
   String? _returnToServicePackageId;
   String? _returnToServicePackageTitle;
+
+  // Calendar state
+  DateTime _selectedCalendarDate = DateTime.now();
+  DateTime _calendarDisplayMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
 
   // Responsive state
   bool _isFocusMode = false;
@@ -130,6 +137,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   bool _hasActiveItemToInspect() {
     final user = widget.repository.currentUser;
     switch (_selectedHub) {
+      case StudioHubSection.calendar:
+        return true;
       case StudioHubSection.inventory:
         return widget.repository.inventoryItems.isNotEmpty;
       case StudioHubSection.teams:
@@ -147,6 +156,9 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
   void _openAdd({bool isMobile = false}) {
     switch (_selectedHub) {
+      case StudioHubSection.calendar:
+        CalendarPreferencesDialog.show(context, repository: widget.repository);
+        break;
       case StudioHubSection.inventory:
         InventoryCategory cat = InventoryCategory.hardware;
         if (_inventoryCategoryFilter == 'CHEMICALS') cat = InventoryCategory.chemicals;
@@ -213,6 +225,9 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   void _editActiveItem() {
     final user = widget.repository.currentUser;
     switch (_selectedHub) {
+      case StudioHubSection.calendar:
+        CalendarPreferencesDialog.show(context, repository: widget.repository);
+        break;
       case StudioHubSection.inventory:
         final inventory = widget.repository.inventoryItems;
         if (inventory.isEmpty) return;
@@ -296,6 +311,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     VoidCallback? deleteAction;
 
     switch (_selectedHub) {
+      case StudioHubSection.calendar:
+        return;
       case StudioHubSection.inventory:
         final inventory = widget.repository.inventoryItems;
         if (inventory.isEmpty) return;
@@ -634,6 +651,13 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
   int _getCountForHub(StudioHubSection section, int myJobs, int saved, UserProfile user, int invCount) {
     switch (section) {
+      case StudioHubSection.calendar:
+        return widget.repository.bookings.where((b) {
+          return b.detailerId == user.id &&
+                 b.scheduledDate.year == _calendarDisplayMonth.year &&
+                 b.scheduledDate.month == _calendarDisplayMonth.month &&
+                 b.status != BookingStatus.cancelled;
+        }).length;
       case StudioHubSection.portfolio:
         return myJobs;
       case StudioHubSection.savedRecipes:
@@ -806,8 +830,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             ),
           ],
 
-          // Bottom: [ + ADD ] button to add new team, portfolio, or service (Inventory add button transferred to Pane 3)
-          if (_selectedHub != StudioHubSection.savedRecipes && _selectedHub != StudioHubSection.inventory) ...[
+          // Bottom: [ + ADD ] button to add new team, portfolio, or service (Inventory add button transferred to Pane 3, Calendar has settings)
+          if (_selectedHub != StudioHubSection.savedRecipes && _selectedHub != StudioHubSection.inventory && _selectedHub != StudioHubSection.calendar) ...[
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: const BoxDecoration(
@@ -838,6 +862,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
   String _getPane2Subtitle() {
     switch (_selectedHub) {
+      case StudioHubSection.calendar:
+        return 'Monthly availability & bookings';
       case StudioHubSection.inventory:
         return 'Polishers, chemicals, formulas';
       case StudioHubSection.teams:
@@ -954,6 +980,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
   Widget _buildPane2Content(BuildContext context, {bool isMobile = false}) {
     switch (_selectedHub) {
+      case StudioHubSection.calendar:
+        return _buildCalendarMonthPane2(context, isMobile: isMobile);
       case StudioHubSection.inventory:
         return const SizedBox.shrink();
       case StudioHubSection.teams:
@@ -1442,6 +1470,294 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     );
   }
 
+  // --- CALENDAR MONTH VIEW (PANE 2) ---
+  Widget _buildCalendarMonthPane2(BuildContext context, {bool isMobile = false}) {
+    final user = widget.repository.currentUser;
+    final year = _calendarDisplayMonth.year;
+    final month = _calendarDisplayMonth.month;
+    final daysInMonth = DateUtils.getDaysInMonth(year, month);
+    final firstDayOfMonth = DateTime(year, month, 1);
+    final leadingBlanks = (firstDayOfMonth.weekday - 1);
+
+    final monthName = DateFormat('MMMM yyyy').format(_calendarDisplayMonth);
+    final today = DateUtils.dateOnly(DateTime.now());
+
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        // Month Selector Header
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left_rounded, size: 20),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Previous Month',
+                onPressed: () {
+                  setState(() {
+                    _calendarDisplayMonth = DateTime(year, month - 1, 1);
+                  });
+                },
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    monthName,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Colors.white),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(Icons.chevron_right_rounded, size: 20),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Next Month',
+                onPressed: () {
+                  setState(() {
+                    _calendarDisplayMonth = DateTime(year, month + 1, 1);
+                  });
+                },
+              ),
+              const SizedBox(width: 6),
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    final now = DateTime.now();
+                    _calendarDisplayMonth = DateTime(now.year, now.month, 1);
+                    _selectedCalendarDate = now;
+                  });
+                },
+                borderRadius: BorderRadius.circular(4),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  child: Text('Today', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // Day of Week Header
+        Row(
+          children: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((d) {
+            return Expanded(
+              child: Center(
+                child: Text(
+                  d,
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.textMuted),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 6),
+
+        // Monthly Grid (7 columns)
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            mainAxisSpacing: 5,
+            crossAxisSpacing: 5,
+            childAspectRatio: 0.8,
+          ),
+          itemCount: leadingBlanks + daysInMonth,
+          itemBuilder: (context, index) {
+            if (index < leadingBlanks) {
+              return const SizedBox.shrink();
+            }
+            final day = index - leadingBlanks + 1;
+            final cellDate = DateTime(year, month, day);
+            final isSelected = DateUtils.isSameDay(cellDate, _selectedCalendarDate);
+            final isToday = DateUtils.isSameDay(cellDate, today);
+            final isRecurringOff = widget.repository.isDateRecurringDayOff(cellDate);
+            final isFullyBlocked = widget.repository.isDateFullyBlocked(user.id, cellDate);
+            final dayBlocks = widget.repository.getBlocksForDate(cellDate);
+            final isPartiallyBlocked = !isFullyBlocked && dayBlocks.any((b) => b.blockedSlots.isNotEmpty);
+            final dayBookings = widget.repository.getBookingsForDate(cellDate);
+
+            return InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () {
+                setState(() {
+                  _selectedCalendarDate = cellDate;
+                  if (isMobile) _mobileStep = 2;
+                });
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? AppTheme.primary.withAlpha(35)
+                      : (isFullyBlocked
+                          ? Colors.redAccent.withAlpha(20)
+                          : (isRecurringOff
+                              ? AppTheme.surfaceLight.withAlpha(50)
+                              : AppTheme.surface)),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isSelected
+                        ? AppTheme.primary
+                        : (isFullyBlocked
+                            ? Colors.redAccent.withAlpha(100)
+                            : (isToday ? AppTheme.primary.withAlpha(80) : AppTheme.border)),
+                    width: isSelected ? 1.8 : 1,
+                  ),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Day number + today dot
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '$day',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: (isSelected || isToday) ? FontWeight.bold : FontWeight.normal,
+                              color: isSelected
+                                  ? AppTheme.primary
+                                  : (isRecurringOff ? AppTheme.textMuted : Colors.white),
+                            ),
+                          ),
+                          if (isToday) ...[
+                            const SizedBox(width: 2),
+                            Container(
+                              width: 4,
+                              height: 4,
+                              decoration: const BoxDecoration(
+                                color: AppTheme.primary,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+
+                      // Status Indicator Badges / Dots
+                      if (dayBookings.isNotEmpty) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.greenAccent.withAlpha(40),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '${dayBookings.length}bk',
+                            style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.greenAccent),
+                          ),
+                        ),
+                      ] else if (isFullyBlocked) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent.withAlpha(40),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'BLK',
+                            style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.bold, color: Colors.redAccent),
+                          ),
+                        ),
+                      ] else if (isPartiallyBlocked) ...[
+                        Container(
+                          width: 5,
+                          height: 5,
+                          decoration: const BoxDecoration(
+                            color: Colors.amber,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ] else if (isRecurringOff) ...[
+                        const Text(
+                          'OFF',
+                          style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.bold, color: AppTheme.textMuted),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+
+        const SizedBox(height: 16),
+        const Divider(color: AppTheme.border, height: 1),
+        const SizedBox(height: 12),
+
+        // Legend
+        Wrap(
+          spacing: 12,
+          runSpacing: 6,
+          children: [
+            _buildLegendItem(Colors.greenAccent, 'Booked Job'),
+            _buildLegendItem(Colors.redAccent, 'Full Day Blocked'),
+            _buildLegendItem(Colors.amber, 'Hourly Slots Blocked'),
+            _buildLegendItem(AppTheme.textMuted, 'Recurring Day Off'),
+          ],
+        ),
+
+        const SizedBox(height: 16),
+
+        // Schedule & Preferences Button
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppTheme.primary,
+              side: const BorderSide(color: AppTheme.primary),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            icon: const Icon(Icons.tune_rounded, size: 16),
+            label: const Text('Operating Hours & Preferences', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+            onPressed: () => CalendarPreferencesDialog.show(context, repository: widget.repository),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLegendItem(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 5),
+        Text(label, style: const TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+      ],
+    );
+  }
+
   // ==========================================
   // PANE 3: WORKSPACE CANVAS / INSPECTOR
   // ==========================================
@@ -1509,7 +1825,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   const SizedBox(width: 8),
                 ],
 
-                // Action controls for Inventory vs other hubs
+                // Action controls for Inventory vs Calendar vs other hubs
                 if (_selectedHub == StudioHubSection.inventory) ...[
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
@@ -1522,6 +1838,19 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     icon: const Icon(Icons.add_rounded, size: 16),
                     label: const Text('[ + ADD ]', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
                     onPressed: () => _openAdd(isMobile: isMobile),
+                  ),
+                ] else if (_selectedHub == StudioHubSection.calendar) ...[
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.primary,
+                      side: const BorderSide(color: AppTheme.primary),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: const Icon(Icons.tune_rounded, size: 14),
+                    label: const Text('Operating Hours', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                    onPressed: () => CalendarPreferencesDialog.show(context, repository: widget.repository),
                   ),
                 ] else if (_hasActiveItemToInspect() && _selectedHub != StudioHubSection.savedRecipes) ...[
                   ElevatedButton.icon(
@@ -1567,6 +1896,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
   Widget _buildInspectorBody(BuildContext context, {bool isMobile = false}) {
     switch (_selectedHub) {
+      case StudioHubSection.calendar:
+        return _buildCalendarDayInspector(context, isMobile: isMobile);
       case StudioHubSection.inventory:
         return const SizedBox.shrink();
       case StudioHubSection.teams:
@@ -2760,6 +3091,440 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           ),
           const SizedBox(height: 8),
           Text(content, style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary, height: 1.4)),
+        ],
+      ),
+    );
+  }
+
+  // --- CALENDAR DAY INSPECTOR (PANE 3) ---
+  Widget _buildCalendarDayInspector(BuildContext context, {bool isMobile = false}) {
+    final user = widget.repository.currentUser;
+    final date = _selectedCalendarDate;
+    final dateStr = DateFormat('EEEE, MMMM d, yyyy').format(date);
+    final isRecurringOff = widget.repository.isDateRecurringDayOff(date);
+    final isFullyBlocked = widget.repository.isDateFullyBlocked(user.id, date);
+    final hours = widget.repository.getHoursForDate(date);
+    final dayBookings = widget.repository.getBookingsForDate(date);
+    final dayBlocks = widget.repository.getBlocksForDate(date);
+    final prefs = widget.repository.calendarPreferences;
+
+    final standardSlots = [
+      '8:00 AM - 11:00 AM',
+      '9:00 AM - 12:00 PM',
+      '1:00 PM - 4:00 PM',
+      '3:00 PM - 6:00 PM',
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Day Header Card
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isFullyBlocked ? Colors.redAccent.withAlpha(100) : AppTheme.border,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isFullyBlocked
+                          ? Colors.redAccent.withAlpha(30)
+                          : (isRecurringOff ? AppTheme.surfaceLight : AppTheme.primary.withAlpha(30)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      isFullyBlocked
+                          ? Icons.block_rounded
+                          : (isRecurringOff ? Icons.nightlife_rounded : Icons.calendar_today_rounded),
+                      color: isFullyBlocked
+                          ? Colors.redAccent
+                          : (isRecurringOff ? AppTheme.textMuted : AppTheme.primary),
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          dateStr,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isFullyBlocked
+                                    ? Colors.redAccent.withAlpha(30)
+                                    : (isRecurringOff
+                                        ? Colors.amber.withAlpha(30)
+                                        : Colors.greenAccent.withAlpha(30)),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                isFullyBlocked
+                                    ? 'DAY BLOCKED'
+                                    : (isRecurringOff ? 'RECURRING DAY OFF' : 'OPEN FOR BOOKINGS'),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: isFullyBlocked
+                                      ? Colors.redAccent
+                                      : (isRecurringOff ? Colors.amber : Colors.greenAccent),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              hours.isOpen ? '${hours.openTime} - ${hours.closeTime}' : 'Studio Closed',
+                              style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+
+              // Quick Action Bar
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isFullyBlocked ? Colors.green : Colors.redAccent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: Icon(isFullyBlocked ? Icons.lock_open_rounded : Icons.lock_rounded, size: 16),
+                      label: Text(
+                        isFullyBlocked ? 'Unblock Full Day' : 'Block Full Day',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+                      onPressed: () {
+                        widget.repository.toggleBlockDay(date);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.primary,
+                      side: const BorderSide(color: AppTheme.border),
+                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    icon: const Icon(Icons.settings_outlined, size: 16),
+                    label: const Text('Schedule', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    onPressed: () => CalendarPreferencesDialog.show(context, repository: widget.repository),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 20),
+
+        // Section 1: Turo-Style Slot Availability
+        Row(
+          children: [
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'HOURLY SLOT AVAILABILITY',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Tap any window to block or open it for client bookings.',
+                    style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                  ),
+                ],
+              ),
+            ),
+            if (dayBlocks.any((b) => b.blockedSlots.isNotEmpty))
+              TextButton(
+                onPressed: () {
+                  final blk = dayBlocks.firstWhere((b) => b.blockedSlots.isNotEmpty);
+                  widget.repository.removeAvailabilityBlock(blk.id);
+                },
+                child: const Text('Clear Blocked Slots', style: TextStyle(fontSize: 11, color: Colors.redAccent)),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        // Slot Matrix
+        ...standardSlots.map((slot) {
+          final isBooked = dayBookings.any((b) => b.scheduledTimeSlot == slot);
+          final bookedAppt = isBooked ? dayBookings.firstWhere((b) => b.scheduledTimeSlot == slot) : null;
+          final isBlocked = widget.repository.isSlotBlocked(user.id, date, slot);
+          final inOperatingHours = widget.repository.isSlotWithinOperatingHours(date, slot);
+
+          Color borderColor = AppTheme.border;
+          Color bgColor = AppTheme.surface;
+          String statusTitle = 'Available for Booking';
+          Color statusColor = Colors.greenAccent;
+          IconData iconData = Icons.check_circle_outline_rounded;
+
+          if (isBooked) {
+            borderColor = Colors.green.withAlpha(120);
+            bgColor = Colors.green.withAlpha(20);
+            statusTitle = 'Booked by ${bookedAppt?.clientName ?? "Client"}';
+            statusColor = Colors.greenAccent;
+            iconData = Icons.directions_car_rounded;
+          } else if (isBlocked) {
+            borderColor = Colors.redAccent.withAlpha(100);
+            bgColor = Colors.redAccent.withAlpha(15);
+            statusTitle = 'Blocked by Detailer';
+            statusColor = Colors.redAccent;
+            iconData = Icons.block_rounded;
+          } else if (!inOperatingHours || isRecurringOff) {
+            borderColor = AppTheme.border;
+            bgColor = AppTheme.surfaceLight.withAlpha(60);
+            statusTitle = 'Outside Operating Hours';
+            statusColor = AppTheme.textMuted;
+            iconData = Icons.access_time_rounded;
+          }
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: borderColor),
+            ),
+            child: Row(
+              children: [
+                Icon(iconData, size: 18, color: statusColor),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        slot,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: isBlocked ? Colors.grey.shade400 : Colors.white,
+                          decoration: isBlocked ? TextDecoration.lineThrough : null,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        isBooked
+                            ? '${bookedAppt?.vehicleYearMakeModel ?? ""} • ${bookedAppt?.package.title ?? ""}'
+                            : statusTitle,
+                        style: TextStyle(fontSize: 11, color: statusColor, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!isBooked) ...[
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: isBlocked ? Colors.greenAccent : Colors.redAccent,
+                      side: BorderSide(color: isBlocked ? Colors.greenAccent.withAlpha(120) : Colors.redAccent.withAlpha(100)),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      visualDensity: VisualDensity.compact,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    ),
+                    onPressed: () {
+                      widget.repository.toggleBlockSlot(date, slot);
+                    },
+                    child: Text(
+                      isBlocked ? 'Reopen' : 'Block Slot',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.greenAccent.withAlpha(25),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '\$${bookedAppt?.totalPrice.toStringAsFixed(0) ?? "0"}',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.greenAccent),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        }),
+
+        const SizedBox(height: 20),
+
+        // Section 2: Confirmed Bookings List
+        Text(
+          'CONFIRMED APPOINTMENTS (${dayBookings.length})',
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
+        ),
+        const SizedBox(height: 8),
+
+        if (dayBookings.isEmpty) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.event_available_rounded, size: 20, color: AppTheme.textMuted),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'No client bookings scheduled for this date.',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ] else ...[
+          ...dayBookings.map((b) => _buildBookingAppointmentCard(b)),
+        ],
+
+        const SizedBox(height: 20),
+
+        // Section 3: Detailer Calendar Settings Summary
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.shield_outlined, size: 16, color: AppTheme.primary),
+                      SizedBox(width: 6),
+                      Text('CALENDAR SHIELD PREFERENCES', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.white)),
+                    ],
+                  ),
+                  TextButton(
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact, padding: EdgeInsets.zero),
+                    onPressed: () => CalendarPreferencesDialog.show(context, repository: widget.repository),
+                    child: const Text('Edit Preferences', style: TextStyle(fontSize: 11, color: AppTheme.primary)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _buildPrefRow(Icons.timer_outlined, 'Advance Notice:', '${prefs.advanceNoticeHours} hours lead time required'),
+              const SizedBox(height: 4),
+              _buildPrefRow(Icons.hourglass_empty_rounded, 'Turnaround Buffer:', '${prefs.bufferMinutesBetweenJobs} min buffer between jobs'),
+              const SizedBox(height: 4),
+              _buildPrefRow(Icons.calendar_today_outlined, 'Booking Horizon:', 'Clients can book up to ${prefs.maxAdvanceBookingDays} days in advance'),
+              const SizedBox(height: 4),
+              _buildPrefRow(Icons.bolt_rounded, 'Reservation Mode:', prefs.autoConfirmBookings ? 'Instant Auto-Confirm' : 'Manual Detailer Review'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPrefRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 13, color: AppTheme.textMuted),
+        const SizedBox(width: 6),
+        Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(value, style: const TextStyle(fontSize: 11, color: Colors.white), overflow: TextOverflow.ellipsis),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBookingAppointmentCard(BookingAppointment b) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.primary.withAlpha(80)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  b.vehicleYearMakeModel,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withAlpha(30),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '\$${b.totalPrice.toStringAsFixed(0)}',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${b.package.title} • ${b.scheduledTimeSlot}',
+            style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+          ),
+          const SizedBox(height: 8),
+          const Divider(color: AppTheme.border, height: 1),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(Icons.person_outline_rounded, size: 14, color: AppTheme.textMuted),
+              const SizedBox(width: 4),
+              Text(b.clientName, style: const TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              if (b.clientPhone.isNotEmpty) ...[
+                const Icon(Icons.phone_outlined, size: 13, color: AppTheme.textMuted),
+                const SizedBox(width: 4),
+                Text(b.clientPhone, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+              ],
+            ],
+          ),
         ],
       ),
     );
