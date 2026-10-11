@@ -3294,15 +3294,43 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               label: const Text('Auto-Gen', style: TextStyle(fontSize: 11)),
               onPressed: () => _showAutoGenerateSlotsDialog(context, date, hours),
             ),
-            if (dayBlocks.any((b) => b.blockedSlots.isNotEmpty)) ...[
-              const SizedBox(width: 4),
-              TextButton(
-                style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            if (daySlots.isNotEmpty) ...[
+              const SizedBox(width: 6),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.redAccent,
+                  side: BorderSide(color: Colors.redAccent.withAlpha(120)),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  visualDensity: VisualDensity.compact,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                icon: const Icon(Icons.delete_sweep_rounded, size: 13),
+                label: const Text('Clear Slots', style: TextStyle(fontSize: 11)),
+                onPressed: () => _confirmClearAllSlots(context, date),
+              ),
+            ],
+            if (dayBlocks.any((b) => b.blockedSlots.isNotEmpty || b.isAllDay)) ...[
+              const SizedBox(width: 6),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.greenAccent,
+                  side: BorderSide(color: Colors.greenAccent.withAlpha(120)),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  visualDensity: VisualDensity.compact,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                icon: const Icon(Icons.lock_open_rounded, size: 13),
+                label: const Text('Unblock All', style: TextStyle(fontSize: 11)),
                 onPressed: () {
-                  final blk = dayBlocks.firstWhere((b) => b.blockedSlots.isNotEmpty);
-                  widget.repository.removeAvailabilityBlock(blk.id);
+                  widget.repository.clearBlockedSlotsForDate(date, detailerId: user.id);
+                  setState(() {});
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Unblocked all slots for ${DateFormat('MMM d').format(date)}'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
                 },
-                child: const Text('Clear Blocks', style: TextStyle(fontSize: 11, color: Colors.redAccent)),
               ),
             ],
           ],
@@ -3323,16 +3351,52 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   const Icon(Icons.calendar_today_rounded, size: 28, color: AppTheme.textMuted),
                   const SizedBox(height: 8),
                   const Text('No slots defined for this day.', style: TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
-                  const SizedBox(height: 8),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      foregroundColor: Colors.black,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    icon: const Icon(Icons.add_rounded, size: 14),
-                    label: const Text('Add Time Slot'),
-                    onPressed: () => _showAddSlotDialog(context, date),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.black,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        icon: const Icon(Icons.add_rounded, size: 14),
+                        label: const Text('Add Time Slot'),
+                        onPressed: () => _showAddSlotDialog(context, date),
+                      ),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.textSecondary,
+                          side: const BorderSide(color: AppTheme.border),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        icon: const Icon(Icons.auto_awesome_rounded, size: 13),
+                        label: const Text('Auto-Gen Slots'),
+                        onPressed: () => _showAutoGenerateSlotsDialog(context, date, hours),
+                      ),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.primary,
+                          side: BorderSide(color: AppTheme.primary.withAlpha(120)),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        icon: const Icon(Icons.refresh_rounded, size: 13),
+                        label: const Text('Reset to Schedule Defaults'),
+                        onPressed: () {
+                          widget.repository.resetTimeSlotsForDateToDefaults(date, detailerId: user.id);
+                          setState(() {});
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Reset ${DateFormat('MMM d').format(date)} to operating hours slots'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -3494,10 +3558,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                       constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                       padding: const EdgeInsets.all(4),
                       tooltip: 'Delete Slot',
-                      onPressed: () {
-                        widget.repository.removeCustomTimeSlot(slot);
-                        setState(() {});
-                      },
+                      onPressed: () => _confirmDeleteTimeSlot(context, date, slot),
                     ),
                   ] else ...[
                     Container(
@@ -4109,6 +4170,159 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               ],
             );
           },
+        );
+      },
+    );
+  }
+
+  void _confirmDeleteTimeSlot(BuildContext context, DateTime date, String slot) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: AppTheme.border),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+              SizedBox(width: 8),
+              Text('Delete Time Slot', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Are you sure you want to delete the arrival window "$slot"?',
+                style: const TextStyle(fontSize: 13, color: Colors.white),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Choose whether to remove this window only for ${DateFormat('EEE, MMM d').format(date)} or across all operating days.',
+                style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+            ),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: AppTheme.border),
+              ),
+              onPressed: () {
+                widget.repository.removeCustomTimeSlot(
+                  slot,
+                  specificDate: date,
+                  applyAllDays: false,
+                  detailerId: widget.repository.currentUser.id,
+                );
+                Navigator.of(ctx).pop();
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Removed "$slot" for ${DateFormat('MMM d').format(date)}'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+              child: const Text('This Date Only'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                widget.repository.removeCustomTimeSlot(
+                  slot,
+                  specificDate: date,
+                  applyAllDays: true,
+                  detailerId: widget.repository.currentUser.id,
+                );
+                Navigator.of(ctx).pop();
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Removed "$slot" across all operating days'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+              child: const Text('All Operating Days', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _confirmClearAllSlots(BuildContext context, DateTime date) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: AppTheme.border),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.delete_sweep_rounded, color: Colors.redAccent, size: 20),
+              SizedBox(width: 8),
+              Text('Clear All Time Slots', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Are you sure you want to clear all arrival windows for ${DateFormat('EEEE, MMM d').format(date)}?',
+                style: const TextStyle(fontSize: 13, color: Colors.white),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'This day will have 0 open slots and clients will not be able to book until you add slots or reset to schedule defaults.',
+                style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                widget.repository.clearTimeSlotsForDate(
+                  date,
+                  detailerId: widget.repository.currentUser.id,
+                );
+                Navigator.of(ctx).pop();
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Cleared all slots for ${DateFormat('MMM d').format(date)}'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+              child: const Text('Clear Slots', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
         );
       },
     );

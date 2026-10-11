@@ -195,9 +195,7 @@ class DetailerCalendarPreferences {
       maxAdvanceBookingDays: json['maxAdvanceBookingDays'] as int? ?? 60,
       autoConfirmBookings: json['autoConfirmBookings'] as bool? ?? true,
       slotDurationHours: json['slotDurationHours'] as int? ?? 3,
-      customTimeSlots: customSlots != null && customSlots.isNotEmpty
-          ? customSlots
-          : defaultTimeSlots,
+      customTimeSlots: customSlots ?? defaultTimeSlots,
     );
   }
 }
@@ -209,6 +207,7 @@ class CalendarAvailabilityBlock {
   final bool isAllDay;
   final List<String> blockedSlots; // e.g. ['09:00 AM', '10:00 AM'] when isAllDay == false
   final List<String> customSlots; // Date-specific extra slots added for this date
+  final bool hasCustomSlotsOverride; // When true, customSlots (even if empty) overrides schedule defaults
   final String? reason;
   final DateTime createdAt;
 
@@ -219,6 +218,7 @@ class CalendarAvailabilityBlock {
     this.isAllDay = true,
     this.blockedSlots = const [],
     this.customSlots = const [],
+    this.hasCustomSlotsOverride = false,
     this.reason,
     required this.createdAt,
   });
@@ -230,6 +230,7 @@ class CalendarAvailabilityBlock {
     bool? isAllDay,
     List<String>? blockedSlots,
     List<String>? customSlots,
+    bool? hasCustomSlotsOverride,
     String? reason,
     DateTime? createdAt,
   }) {
@@ -240,6 +241,7 @@ class CalendarAvailabilityBlock {
       isAllDay: isAllDay ?? this.isAllDay,
       blockedSlots: blockedSlots ?? this.blockedSlots,
       customSlots: customSlots ?? this.customSlots,
+      hasCustomSlotsOverride: hasCustomSlotsOverride ?? this.hasCustomSlotsOverride,
       reason: reason ?? this.reason,
       createdAt: createdAt ?? this.createdAt,
     );
@@ -252,6 +254,7 @@ class CalendarAvailabilityBlock {
     'isAllDay': isAllDay,
     'blockedSlots': blockedSlots,
     'customSlots': customSlots,
+    'hasCustomSlotsOverride': hasCustomSlotsOverride,
     'reason': reason,
     'createdAt': createdAt.toIso8601String(),
   };
@@ -264,6 +267,7 @@ class CalendarAvailabilityBlock {
       isAllDay: json['isAllDay'] as bool? ?? true,
       blockedSlots: (json['blockedSlots'] as List<dynamic>?)?.map((s) => s.toString()).toList() ?? [],
       customSlots: (json['customSlots'] as List<dynamic>?)?.map((s) => s.toString()).toList() ?? [],
+      hasCustomSlotsOverride: json['hasCustomSlotsOverride'] as bool? ?? false,
       reason: json['reason'] as String?,
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
     );

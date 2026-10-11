@@ -3173,5 +3173,135 @@ void main() {
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
   });
+
+  test('JobRepository slot deletion, clear slots (0 slots), unblock all, and reset to defaults', () {
+    final repository = JobRepository();
+    final user = repository.currentUser;
+    final now = DateTime.now();
+    // Use an upcoming Monday
+    int daysUntilMonday = (DateTime.monday - now.weekday + 7) % 7;
+    if (daysUntilMonday == 0) daysUntilMonday = 7;
+    final mondayDate = DateTime(now.year, now.month, now.day).add(Duration(days: daysUntilMonday));
+    final nextMondayDate = mondayDate.add(const Duration(days: 7));
+
+    // Initial slots
+    final initialSlots = repository.getTimeSlotsForDate(mondayDate);
+    expect(initialSlots.contains('8:00 AM - 11:00 AM'), isTrue);
+
+    // 1. Delete slot for "This Date Only"
+    repository.removeCustomTimeSlot(
+      '8:00 AM - 11:00 AM',
+      specificDate: mondayDate,
+      applyAllDays: false,
+    );
+    final mondaySlotsAfterSingleDateDelete = repository.getTimeSlotsForDate(mondayDate);
+    expect(mondaySlotsAfterSingleDateDelete.contains('8:00 AM - 11:00 AM'), isFalse);
+    // Other Monday still has the slot
+    final nextMondaySlots = repository.getTimeSlotsForDate(nextMondayDate);
+    expect(nextMondaySlots.contains('8:00 AM - 11:00 AM'), isTrue);
+
+    // 2. Delete slot for "All Operating Days"
+    repository.removeCustomTimeSlot(
+      '9:00 AM - 12:00 PM',
+      specificDate: mondayDate,
+      applyAllDays: true,
+    );
+    expect(repository.getTimeSlotsForDate(mondayDate).contains('9:00 AM - 12:00 PM'), isFalse);
+    expect(repository.getTimeSlotsForDate(nextMondayDate).contains('9:00 AM - 12:00 PM'), isFalse);
+
+    // 3. Clear all slots for date -> must return 0 slots, NOT defaulting to 2 open slots!
+    repository.clearTimeSlotsForDate(mondayDate);
+    final clearedSlots = repository.getTimeSlotsForDate(mondayDate);
+    expect(clearedSlots.isEmpty, isTrue);
+
+    // 4. Reset date to schedule defaults
+    repository.resetTimeSlotsForDateToDefaults(mondayDate);
+    final resetSlots = repository.getTimeSlotsForDate(mondayDate);
+    expect(resetSlots.isNotEmpty, isTrue);
+    expect(resetSlots.contains('8:00 AM - 11:00 AM'), isTrue);
+
+    // 5. Unblock all without erasing custom slots
+    repository.addCustomTimeSlot('6:00 AM - 8:00 AM', specificDate: mondayDate);
+    repository.toggleBlockSlot(mondayDate, '8:00 AM - 11:00 AM');
+    expect(repository.isSlotExplicitlyBlocked(user.id, mondayDate, '8:00 AM - 11:00 AM'), isTrue);
+
+    repository.clearBlockedSlotsForDate(mondayDate);
+    expect(repository.isSlotExplicitlyBlocked(user.id, mondayDate, '8:00 AM - 11:00 AM'), isFalse);
+    // Custom slot is preserved after unblocking
+    expect(repository.getTimeSlotsForDate(mondayDate).contains('6:00 AM - 8:00 AM'), isTrue);
+  });
+
+  testWidgets('Detailer Workbench UI slot delete confirmation, clear slots (empty state), and unblock buttons', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1200, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final repository = JobRepository();
+    if (repository.currentUser.role != UserRole.detailer) {
+      repository.toggleHostMode();
+    }
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: DetailerWorkbenchView(repository: repository),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Navigate to Calendar
+    await tester.tap(find.text('Calendar'));
+    await tester.pumpAndSettle();
+
+    // Verify Clear Slots button exists when slots are present
+    expect(find.text('Clear Slots'), findsWidgets);
+
+    // Tap Clear Slots
+    await tester.tap(find.text('Clear Slots').first);
+    await tester.pumpAndSettle();
+
+    // Dialog pops up
+    expect(find.text('Clear All Time Slots'), findsOneWidget);
+    // Confirm Clear Slots in dialog
+    await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Clear Slots')));
+    await tester.pumpAndSettle();
+
+    // Empty state container must now be rendered (0 slots defined for this day!)
+    expect(find.text('No slots defined for this day.'), findsOneWidget);
+    expect(find.text('Reset to Schedule Defaults'), findsOneWidget);
+
+    // Tap Reset to Schedule Defaults
+    await tester.tap(find.text('Reset to Schedule Defaults'));
+    await tester.pumpAndSettle();
+
+    // Slots are back
+    expect(find.text('No slots defined for this day.'), findsNothing);
+    expect(find.byIcon(Icons.delete_outline_rounded), findsWidgets);
+
+    // Tap Delete on first slot
+    await tester.tap(find.byIcon(Icons.delete_outline_rounded).first);
+    await tester.pumpAndSettle();
+
+    // Confirmation dialog pops up
+    expect(find.text('Delete Time Slot'), findsOneWidget);
+    expect(find.text('This Date Only'), findsOneWidget);
+    expect(find.text('All Operating Days'), findsOneWidget);
+
+    // Tap This Date Only
+    await tester.tap(find.text('This Date Only'));
+    await tester.pumpAndSettle();
+
+    // Dialog is dismissed
+    expect(find.text('Delete Time Slot'), findsNothing);
+
+    debugNetworkImageHttpClientProvider = null;
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
 }
 

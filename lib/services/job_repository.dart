@@ -990,24 +990,36 @@ class JobRepository extends ChangeNotifier {
              b.isAllDay,
     );
     if (idx != -1) {
-      _availabilityBlocks.removeAt(idx);
+      final existing = _availabilityBlocks[idx];
+      if (existing.hasCustomSlotsOverride || existing.customSlots.isNotEmpty) {
+        _availabilityBlocks[idx] = existing.copyWith(isAllDay: false);
+      } else {
+        _availabilityBlocks.removeAt(idx);
+      }
     } else {
-      _availabilityBlocks.removeWhere(
+      final existingIdx = _availabilityBlocks.indexWhere(
         (b) => b.detailerId == targetDetailerId &&
                b.date.year == normDate.year &&
                b.date.month == normDate.month &&
                b.date.day == normDate.day,
       );
-      _availabilityBlocks.add(
-        CalendarAvailabilityBlock(
-          id: 'block_${DateTime.now().millisecondsSinceEpoch}',
-          detailerId: targetDetailerId,
-          date: normDate,
+      if (existingIdx != -1) {
+        _availabilityBlocks[existingIdx] = _availabilityBlocks[existingIdx].copyWith(
           isAllDay: true,
           reason: reason,
-          createdAt: DateTime.now(),
-        ),
-      );
+        );
+      } else {
+        _availabilityBlocks.add(
+          CalendarAvailabilityBlock(
+            id: 'block_${DateTime.now().millisecondsSinceEpoch}',
+            detailerId: targetDetailerId,
+            date: normDate,
+            isAllDay: true,
+            reason: reason,
+            createdAt: DateTime.now(),
+          ),
+        );
+      }
     }
     LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
     notifyListeners();
@@ -1038,7 +1050,7 @@ class JobRepository extends ChangeNotifier {
         } else {
           currentSlots.add(slot);
         }
-        if (currentSlots.isEmpty) {
+        if (currentSlots.isEmpty && !existing.hasCustomSlotsOverride && existing.customSlots.isEmpty) {
           _availabilityBlocks.removeAt(idx);
         } else {
           _availabilityBlocks[idx] = existing.copyWith(
@@ -1101,21 +1113,17 @@ class JobRepository extends ChangeNotifier {
     final dayHours = getHoursForDate(date, detailerId: targetDetailerId);
     final normDate = DateTime(date.year, date.month, date.day);
 
-    // 1. Check if date-specific custom slots exist
-    final specificBlock = _availabilityBlocks.firstWhere(
+    // 1. Check if date-specific custom slots override exists
+    final specificBlockIdx = _availabilityBlocks.indexWhere(
       (b) => b.detailerId == targetDetailerId &&
              b.date.year == normDate.year &&
              b.date.month == normDate.month &&
              b.date.day == normDate.day &&
-             b.customSlots.isNotEmpty,
-      orElse: () => CalendarAvailabilityBlock(
-        id: '',
-        detailerId: '',
-        date: normDate,
-        createdAt: normDate,
-      ),
+             (b.hasCustomSlotsOverride || b.customSlots.isNotEmpty),
     );
-    if (specificBlock.customSlots.isNotEmpty) {
+    if (specificBlockIdx != -1) {
+      final specificBlock = _availabilityBlocks[specificBlockIdx];
+      // Detailer explicitly configured slots for this specific date (even if empty)
       return List<String>.from(specificBlock.customSlots);
     }
 
@@ -1173,6 +1181,13 @@ class JobRepository extends ChangeNotifier {
 
     if (specificDate != null) {
       final normDate = DateTime(specificDate.year, specificDate.month, specificDate.day);
+      final currentSlots = getTimeSlotsForDate(specificDate, detailerId: targetDetailerId);
+      final list = List<String>.from(currentSlots);
+      if (!list.contains(cleanSlot)) {
+        list.add(cleanSlot);
+        list.sort((a, b) => timeStringToMinutes(a).compareTo(timeStringToMinutes(b)));
+      }
+
       final idx = _availabilityBlocks.indexWhere(
         (b) => b.detailerId == targetDetailerId &&
                b.date.year == normDate.year &&
@@ -1181,12 +1196,10 @@ class JobRepository extends ChangeNotifier {
       );
       if (idx != -1) {
         final existing = _availabilityBlocks[idx];
-        final list = List<String>.from(existing.customSlots);
-        if (!list.contains(cleanSlot)) {
-          list.add(cleanSlot);
-          list.sort((a, b) => timeStringToMinutes(a).compareTo(timeStringToMinutes(b)));
-          _availabilityBlocks[idx] = existing.copyWith(customSlots: list);
-        }
+        _availabilityBlocks[idx] = existing.copyWith(
+          customSlots: list,
+          hasCustomSlotsOverride: true,
+        );
       } else {
         _availabilityBlocks.add(
           CalendarAvailabilityBlock(
@@ -1194,7 +1207,8 @@ class JobRepository extends ChangeNotifier {
             detailerId: targetDetailerId,
             date: normDate,
             isAllDay: false,
-            customSlots: [cleanSlot],
+            customSlots: list,
+            hasCustomSlotsOverride: true,
             createdAt: DateTime.now(),
           ),
         );
@@ -1220,6 +1234,16 @@ class JobRepository extends ChangeNotifier {
 
     if (specificDate != null) {
       final normDate = DateTime(specificDate.year, specificDate.month, specificDate.day);
+      final currentSlots = getTimeSlotsForDate(specificDate, detailerId: targetDetailerId);
+      final list = List<String>.from(currentSlots);
+      final pos = list.indexOf(oldSlot);
+      if (pos != -1) {
+        list[pos] = cleanNew;
+      } else {
+        list.add(cleanNew);
+      }
+      list.sort((a, b) => timeStringToMinutes(a).compareTo(timeStringToMinutes(b)));
+
       final idx = _availabilityBlocks.indexWhere(
         (b) => b.detailerId == targetDetailerId &&
                b.date.year == normDate.year &&
@@ -1228,15 +1252,24 @@ class JobRepository extends ChangeNotifier {
       );
       if (idx != -1) {
         final existing = _availabilityBlocks[idx];
-        final list = List<String>.from(existing.customSlots);
-        final pos = list.indexOf(oldSlot);
-        if (pos != -1) {
-          list[pos] = cleanNew;
-          list.sort((a, b) => timeStringToMinutes(a).compareTo(timeStringToMinutes(b)));
-          _availabilityBlocks[idx] = existing.copyWith(customSlots: list);
-          LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
-        }
+        _availabilityBlocks[idx] = existing.copyWith(
+          customSlots: list,
+          hasCustomSlotsOverride: true,
+        );
+      } else {
+        _availabilityBlocks.add(
+          CalendarAvailabilityBlock(
+            id: 'block_${DateTime.now().millisecondsSinceEpoch}',
+            detailerId: targetDetailerId,
+            date: normDate,
+            isAllDay: false,
+            customSlots: list,
+            hasCustomSlotsOverride: true,
+            createdAt: DateTime.now(),
+          ),
+        );
       }
+      LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
     } else {
       final prefs = getCalendarPreferences(detailerId: targetDetailerId);
       final list = List<String>.from(prefs.customTimeSlots);
@@ -1253,10 +1286,38 @@ class JobRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  void removeCustomTimeSlot(String slot, {DateTime? specificDate, String? detailerId}) {
+  void removeCustomTimeSlot(
+    String slot, {
+    DateTime? specificDate,
+    bool applyAllDays = false,
+    String? detailerId,
+  }) {
     final targetDetailerId = detailerId ?? _currentUser.id;
-    if (specificDate != null) {
+
+    if (applyAllDays || specificDate == null) {
+      final prefs = getCalendarPreferences(detailerId: targetDetailerId);
+      List<String> list = List<String>.from(prefs.customTimeSlots);
+      if (list.isEmpty) {
+        list = List<String>.from(DetailerCalendarPreferences.defaultTimeSlots);
+      }
+      list.remove(slot);
+      final updated = prefs.copyWith(customTimeSlots: list);
+      updateCalendarPreferences(updated, detailerId: targetDetailerId);
+
+      // Also remove from date-specific custom slots overrides if present
+      for (int i = 0; i < _availabilityBlocks.length; i++) {
+        final b = _availabilityBlocks[i];
+        if (b.detailerId == targetDetailerId && b.customSlots.contains(slot)) {
+          final updatedCustom = List<String>.from(b.customSlots)..remove(slot);
+          _availabilityBlocks[i] = b.copyWith(customSlots: updatedCustom);
+        }
+      }
+      LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+    } else {
       final normDate = DateTime(specificDate.year, specificDate.month, specificDate.day);
+      final currentSlots = getTimeSlotsForDate(specificDate, detailerId: targetDetailerId);
+      final remainingSlots = List<String>.from(currentSlots)..remove(slot);
+
       final idx = _availabilityBlocks.indexWhere(
         (b) => b.detailerId == targetDetailerId &&
                b.date.year == normDate.year &&
@@ -1265,15 +1326,24 @@ class JobRepository extends ChangeNotifier {
       );
       if (idx != -1) {
         final existing = _availabilityBlocks[idx];
-        final list = List<String>.from(existing.customSlots)..remove(slot);
-        _availabilityBlocks[idx] = existing.copyWith(customSlots: list);
-        LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+        _availabilityBlocks[idx] = existing.copyWith(
+          customSlots: remainingSlots,
+          hasCustomSlotsOverride: true,
+        );
+      } else {
+        _availabilityBlocks.add(
+          CalendarAvailabilityBlock(
+            id: 'block_${DateTime.now().millisecondsSinceEpoch}',
+            detailerId: targetDetailerId,
+            date: normDate,
+            isAllDay: false,
+            customSlots: remainingSlots,
+            hasCustomSlotsOverride: true,
+            createdAt: DateTime.now(),
+          ),
+        );
       }
-    } else {
-      final prefs = getCalendarPreferences(detailerId: targetDetailerId);
-      final list = List<String>.from(prefs.customTimeSlots)..remove(slot);
-      final updated = prefs.copyWith(customTimeSlots: list);
-      updateCalendarPreferences(updated, detailerId: targetDetailerId);
+      LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
     }
     notifyListeners();
   }
@@ -1302,7 +1372,10 @@ class JobRepository extends ChangeNotifier {
                b.date.day == normDate.day,
       );
       if (idx != -1) {
-        _availabilityBlocks[idx] = _availabilityBlocks[idx].copyWith(customSlots: generated);
+        _availabilityBlocks[idx] = _availabilityBlocks[idx].copyWith(
+          customSlots: generated,
+          hasCustomSlotsOverride: true,
+        );
       } else {
         _availabilityBlocks.add(
           CalendarAvailabilityBlock(
@@ -1311,6 +1384,7 @@ class JobRepository extends ChangeNotifier {
             date: normDate,
             isAllDay: false,
             customSlots: generated,
+            hasCustomSlotsOverride: true,
             createdAt: DateTime.now(),
           ),
         );
@@ -1325,6 +1399,85 @@ class JobRepository extends ChangeNotifier {
       updateCalendarPreferences(updated, detailerId: targetDetailerId);
     }
     notifyListeners();
+  }
+
+  void clearTimeSlotsForDate(DateTime date, {String? detailerId}) {
+    final targetDetailerId = detailerId ?? _currentUser.id;
+    final normDate = DateTime(date.year, date.month, date.day);
+    final idx = _availabilityBlocks.indexWhere(
+      (b) => b.detailerId == targetDetailerId &&
+             b.date.year == normDate.year &&
+             b.date.month == normDate.month &&
+             b.date.day == normDate.day,
+    );
+    if (idx != -1) {
+      _availabilityBlocks[idx] = _availabilityBlocks[idx].copyWith(
+        customSlots: [],
+        hasCustomSlotsOverride: true,
+      );
+    } else {
+      _availabilityBlocks.add(
+        CalendarAvailabilityBlock(
+          id: 'block_${DateTime.now().millisecondsSinceEpoch}',
+          detailerId: targetDetailerId,
+          date: normDate,
+          isAllDay: false,
+          customSlots: [],
+          hasCustomSlotsOverride: true,
+          createdAt: DateTime.now(),
+        ),
+      );
+    }
+    LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+    notifyListeners();
+  }
+
+  void resetTimeSlotsForDateToDefaults(DateTime date, {String? detailerId}) {
+    final targetDetailerId = detailerId ?? _currentUser.id;
+    final normDate = DateTime(date.year, date.month, date.day);
+    final idx = _availabilityBlocks.indexWhere(
+      (b) => b.detailerId == targetDetailerId &&
+             b.date.year == normDate.year &&
+             b.date.month == normDate.month &&
+             b.date.day == normDate.day,
+    );
+    if (idx != -1) {
+      final existing = _availabilityBlocks[idx];
+      if (existing.blockedSlots.isEmpty && !existing.isAllDay) {
+        _availabilityBlocks.removeAt(idx);
+      } else {
+        _availabilityBlocks[idx] = existing.copyWith(
+          customSlots: [],
+          hasCustomSlotsOverride: false,
+        );
+      }
+      LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+      notifyListeners();
+    }
+  }
+
+  void clearBlockedSlotsForDate(DateTime date, {String? detailerId}) {
+    final targetDetailerId = detailerId ?? _currentUser.id;
+    final normDate = DateTime(date.year, date.month, date.day);
+    final idx = _availabilityBlocks.indexWhere(
+      (b) => b.detailerId == targetDetailerId &&
+             b.date.year == normDate.year &&
+             b.date.month == normDate.month &&
+             b.date.day == normDate.day,
+    );
+    if (idx != -1) {
+      final existing = _availabilityBlocks[idx];
+      if (!existing.hasCustomSlotsOverride && existing.customSlots.isEmpty) {
+        _availabilityBlocks.removeAt(idx);
+      } else {
+        _availabilityBlocks[idx] = existing.copyWith(
+          isAllDay: false,
+          blockedSlots: [],
+        );
+      }
+      LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+      notifyListeners();
+    }
   }
 
   bool isDateRecurringDayOff(DateTime date, {String? detailerId}) {
