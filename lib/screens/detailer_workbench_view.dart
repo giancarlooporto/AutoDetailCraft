@@ -72,6 +72,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   // Calendar state
   DateTime _selectedCalendarDate = DateTime.now();
   DateTime _calendarDisplayMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
+  String _selectedCalendarTeamMemberId = 'all'; // 'all' (Studio), 'founder', or teamMemberId
 
   // Responsive state
   bool _isFocusMode = false;
@@ -1488,6 +1489,95 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     );
   }
 
+  // --- CALENDAR TEAM FILTER BAR ---
+  Widget _buildCalendarTeamFilterBar() {
+    final user = widget.repository.currentUser;
+    final staff = widget.repository.getStudioStaff(detailerId: user.id);
+    if (staff.length <= 1) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _buildTeamFilterChip(
+              id: 'all',
+              label: 'All Team (Studio)',
+              icon: Icons.groups_rounded,
+              isSelected: _selectedCalendarTeamMemberId == 'all',
+            ),
+            const SizedBox(width: 6),
+            ...staff.map((m) {
+              return Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: _buildTeamFilterChip(
+                  id: m.id,
+                  label: m.isFounder ? 'Founder (You)' : m.name,
+                  avatarUrl: m.avatarUrl,
+                  isFounder: m.isFounder,
+                  isSelected: _selectedCalendarTeamMemberId == m.id,
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTeamFilterChip({
+    required String id,
+    required String label,
+    IconData? icon,
+    String? avatarUrl,
+    bool isFounder = false,
+    required bool isSelected,
+  }) {
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedCalendarTeamMemberId = id;
+        });
+      },
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.primary.withAlpha(35) : AppTheme.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? AppTheme.primary : AppTheme.border,
+            width: isSelected ? 1.5 : 1.0,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (avatarUrl != null && avatarUrl.isNotEmpty) ...[
+              CircleAvatar(
+                radius: 9,
+                backgroundImage: NetworkImage(avatarUrl),
+              ),
+              const SizedBox(width: 6),
+            ] else if (icon != null) ...[
+              Icon(icon, size: 14, color: isSelected ? AppTheme.primary : AppTheme.textMuted),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                color: isSelected ? AppTheme.primary : Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // --- CALENDAR MONTH VIEW (PANE 2) ---
   Widget _buildCalendarMonthPane2(BuildContext context, {bool isMobile = false}) {
     final user = widget.repository.currentUser;
@@ -1503,6 +1593,9 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
+        // Team Filter Bar
+        _buildCalendarTeamFilterBar(),
+
         // Month Selector Header
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -1603,13 +1696,29 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             final cellDate = DateTime(year, month, day);
             final isSelected = DateUtils.isSameDay(cellDate, _selectedCalendarDate);
             final isToday = DateUtils.isSameDay(cellDate, today);
-            final isRecurringOff = widget.repository.isDateRecurringDayOff(cellDate, detailerId: user.id);
-            final isExplicitlyBlocked = widget.repository.isDateExplicitlyBlocked(user.id, cellDate);
-            final isFullyBlocked = widget.repository.isDateFullyBlocked(user.id, cellDate);
+            final isViewingAll = _selectedCalendarTeamMemberId == 'all';
+            final targetMemberId = isViewingAll ? null : _selectedCalendarTeamMemberId;
+
+            final isRecurringOff = isViewingAll
+                ? widget.repository.isDateRecurringDayOff(cellDate, detailerId: user.id)
+                : widget.repository.isMemberRecurringDayOff(_selectedCalendarTeamMemberId, cellDate, detailerId: user.id);
+            final isExplicitlyBlocked = widget.repository.isDateExplicitlyBlocked(user.id, cellDate, teamMemberId: targetMemberId);
+            final isFullyBlocked = isViewingAll
+                ? widget.repository.isDateFullyBlocked(user.id, cellDate)
+                : !widget.repository.isMemberOnDutyOnDate(_selectedCalendarTeamMemberId, cellDate, detailerId: user.id);
             final dayBlocks = widget.repository.getBlocksForDate(cellDate, detailerId: user.id);
-            final isPartiallyBlocked = !isExplicitlyBlocked && dayBlocks.any((b) => b.blockedSlots.isNotEmpty);
-            final dayBookings = widget.repository.getBookingsForDate(cellDate, detailerId: user.id);
-            final isFullyBooked = !isFullyBlocked && !isRecurringOff && widget.repository.isDateFullyBooked(cellDate, detailerId: user.id);
+            final isPartiallyBlocked = isViewingAll
+                ? (!isExplicitlyBlocked && dayBlocks.any((b) => b.blockedSlots.isNotEmpty))
+                : (!isExplicitlyBlocked && widget.repository.getTimeSlotsForDate(cellDate, detailerId: user.id).any(
+                    (s) => widget.repository.isSlotExplicitlyBlocked(user.id, cellDate, s, teamMemberId: _selectedCalendarTeamMemberId),
+                  ));
+            final staff = widget.repository.getStudioStaff(detailerId: user.id);
+            final dayBookings = isViewingAll
+                ? widget.repository.getBookingsForDate(cellDate, detailerId: user.id)
+                : widget.repository.getBookingsForDate(cellDate, detailerId: user.id).where(
+                    (b) => b.assignedTeamMemberId == _selectedCalendarTeamMemberId || staff.length <= 1,
+                  ).toList();
+            final isFullyBooked = !isFullyBlocked && !isRecurringOff && widget.repository.isDateFullyBooked(cellDate, detailerId: user.id, teamMemberId: targetMemberId);
 
             return InkWell(
               borderRadius: BorderRadius.circular(8),
@@ -1925,7 +2034,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       case StudioHubSection.inventory:
         return const SizedBox.shrink();
       case StudioHubSection.teams:
-        return _buildTeamInspector(context);
+        return _buildTeamInspector(context, isMobile: isMobile);
       case StudioHubSection.portfolio:
         return _buildPortfolioInspector(context);
       case StudioHubSection.services:
@@ -2508,7 +2617,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   }
 
   // --- TEAM MEMBER INSPECTOR ---
-  Widget _buildTeamInspector(BuildContext context) {
+  Widget _buildTeamInspector(BuildContext context, {bool isMobile = false}) {
     final user = widget.repository.currentUser;
     final isFounder = _selectedTeamMemberId == 'founder' || _selectedTeamMemberId == null || user.teamMembers.isEmpty;
 
@@ -2543,6 +2652,28 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     ),
                   ],
                 ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.calendar_month_rounded, size: 16),
+                label: const Text('View Calendar & Shifts', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                onPressed: () {
+                  setState(() {
+                    _selectedHub = StudioHubSection.calendar;
+                    _selectedCalendarTeamMemberId = 'founder';
+                    if (isMobile) _mobileStep = 1;
+                  });
+                },
               ),
             ],
           ),
@@ -2596,6 +2727,40 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             ),
           ],
         ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              icon: const Icon(Icons.calendar_month_rounded, size: 16),
+              label: Text('View ${member.name.split(" ").first}\'s Calendar', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              onPressed: () {
+                setState(() {
+                  _selectedHub = StudioHubSection.calendar;
+                  _selectedCalendarTeamMemberId = member.id;
+                  if (isMobile) _mobileStep = 1;
+                });
+              },
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.primary,
+                side: const BorderSide(color: AppTheme.border),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              icon: const Icon(Icons.edit_calendar_rounded, size: 16),
+              label: const Text('Shift Schedule', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              onPressed: () => _showEditTeamMemberScheduleDialog(context, member),
+            ),
+          ],
+        ),
         const SizedBox(height: 20),
         const Divider(color: AppTheme.border),
         const SizedBox(height: 14),
@@ -2604,7 +2769,198 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           content: 'Responsible for ${member.roleTitle.toLowerCase()} workflows, paint gauge mapping, and multi-stage correction.',
           icon: Icons.work_outline_rounded,
         ),
+        const SizedBox(height: 14),
+        _buildTeamMemberScheduleCard(context, member),
       ],
+    );
+  }
+
+  Widget _buildTeamMemberScheduleCard(BuildContext context, TeamMember member) {
+    final user = widget.repository.currentUser;
+    final studioPrefs = widget.repository.getCalendarPreferences(detailerId: user.id);
+
+    final days = [
+      (1, 'Mon'),
+      (2, 'Tue'),
+      (3, 'Wed'),
+      (4, 'Thu'),
+      (5, 'Fri'),
+      (6, 'Sat'),
+      (7, 'Sun'),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.calendar_today_rounded, size: 16, color: AppTheme.primary),
+                  SizedBox(width: 6),
+                  Text('WEEKLY WORKING SHIFTS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.white)),
+                ],
+              ),
+              TextButton(
+                style: TextButton.styleFrom(visualDensity: VisualDensity.compact, padding: EdgeInsets.zero),
+                onPressed: () => _showEditTeamMemberScheduleDialog(context, member),
+                child: const Text('Edit Shifts', style: TextStyle(fontSize: 11, color: AppTheme.primary)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: days.map((d) {
+              final weekday = d.$1;
+              final dayLabel = d.$2;
+
+              bool isWorking = true;
+              if (member.customWeeklySchedule != null && member.customWeeklySchedule!.isNotEmpty) {
+                final dayHours = member.customWeeklySchedule!.firstWhere(
+                  (h) => h.weekday == weekday,
+                  orElse: () => DayBusinessHours(weekday: weekday, isOpen: true),
+                );
+                isWorking = dayHours.isOpen;
+              } else {
+                final dayHours = studioPrefs.getHoursForWeekday(weekday);
+                isWorking = dayHours.isOpen;
+              }
+
+              return Expanded(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isWorking ? Colors.greenAccent.withAlpha(20) : AppTheme.surfaceLight.withAlpha(50),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: isWorking ? Colors.greenAccent.withAlpha(80) : AppTheme.border,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(dayLabel, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+                      const SizedBox(height: 2),
+                      Text(
+                        isWorking ? 'ON' : 'OFF',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          color: isWorking ? Colors.greenAccent : AppTheme.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEditTeamMemberScheduleDialog(BuildContext context, TeamMember member) {
+    final user = widget.repository.currentUser;
+    final studioPrefs = widget.repository.getCalendarPreferences(detailerId: user.id);
+
+    final currentSchedule = member.customWeeklySchedule != null && member.customWeeklySchedule!.isNotEmpty
+        ? List<DayBusinessHours>.from(member.customWeeklySchedule!)
+        : List<DayBusinessHours>.from(studioPrefs.weeklySchedule);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          return AlertDialog(
+            backgroundColor: AppTheme.surface,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: AppTheme.border)),
+            title: Text('Edit Shifts for ${member.name}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Configure regular weekly working days and days off for this technician:', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                  const SizedBox(height: 14),
+                  ...[1, 2, 3, 4, 5, 6, 7].map((weekday) {
+                    final idx = currentSchedule.indexWhere((h) => h.weekday == weekday);
+                    final dayHours = idx != -1
+                        ? currentSchedule[idx]
+                        : DayBusinessHours(weekday: weekday, isOpen: true);
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceLight,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: dayHours.isOpen ? Colors.greenAccent.withAlpha(80) : AppTheme.border),
+                      ),
+                      child: SwitchListTile(
+                        dense: true,
+                        title: Text(dayHours.weekdayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        subtitle: Text(
+                          dayHours.isOpen ? 'Working (${dayHours.openTime} - ${dayHours.closeTime})' : 'Recurring Day Off',
+                          style: TextStyle(fontSize: 11, color: dayHours.isOpen ? Colors.greenAccent : AppTheme.textMuted),
+                        ),
+                        value: dayHours.isOpen,
+                        activeThumbColor: Colors.greenAccent,
+                        onChanged: (val) {
+                          setDialogState(() {
+                            final updated = DayBusinessHours(
+                              weekday: weekday,
+                              isOpen: val,
+                              openTime: dayHours.openTime,
+                              closeTime: dayHours.closeTime,
+                            );
+                            if (idx != -1) {
+                              currentSchedule[idx] = updated;
+                            } else {
+                              currentSchedule.add(updated);
+                            }
+                          });
+                        },
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.black,
+                ),
+                onPressed: () {
+                  widget.repository.updateTeamMemberWeeklySchedule(member.id, currentSchedule);
+                  Navigator.pop(ctx);
+                  setState(() {});
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Updated weekly schedule for ${member.name}'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+                child: const Text('Save Shifts', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -3123,12 +3479,29 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   // --- CALENDAR DAY INSPECTOR (PANE 3) ---
   Widget _buildCalendarDayInspector(BuildContext context, {bool isMobile = false}) {
     final user = widget.repository.currentUser;
+    final staff = widget.repository.getStudioStaff(detailerId: user.id);
     final date = _selectedCalendarDate;
     final dateStr = DateFormat('EEEE, MMMM d, yyyy').format(date);
-    final isRecurringOff = widget.repository.isDateRecurringDayOff(date, detailerId: user.id);
-    final isExplicitlyBlocked = widget.repository.isDateExplicitlyBlocked(user.id, date);
+    final isViewingAll = _selectedCalendarTeamMemberId == 'all';
+    final currentMember = staff.firstWhere((s) => s.id == _selectedCalendarTeamMemberId, orElse: () => staff.first);
+
+    final isRecurringOff = isViewingAll
+        ? widget.repository.isDateRecurringDayOff(date, detailerId: user.id)
+        : widget.repository.isMemberRecurringDayOff(_selectedCalendarTeamMemberId, date, detailerId: user.id);
+    final isExplicitlyBlocked = widget.repository.isDateExplicitlyBlocked(
+      user.id,
+      date,
+      teamMemberId: isViewingAll ? null : _selectedCalendarTeamMemberId,
+    );
+    final isMemberOnDuty = isViewingAll
+        ? true
+        : widget.repository.isMemberOnDutyOnDate(_selectedCalendarTeamMemberId, date, detailerId: user.id);
+
     final hours = widget.repository.getHoursForDate(date, detailerId: user.id);
-    final dayBookings = widget.repository.getBookingsForDate(date, detailerId: user.id);
+    final allDayBookings = widget.repository.getBookingsForDate(date, detailerId: user.id);
+    final dayBookings = isViewingAll
+        ? allDayBookings
+        : allDayBookings.where((b) => b.assignedTeamMemberId == _selectedCalendarTeamMemberId || staff.length <= 1).toList();
     final dayBlocks = widget.repository.getBlocksForDate(date, detailerId: user.id);
     final prefs = widget.repository.getCalendarPreferences(detailerId: user.id);
 
@@ -3137,6 +3510,41 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Team Selector Filter Bar
+        _buildCalendarTeamFilterBar(),
+
+        // If viewing individual technician personal schedule, show banner
+        if (!isViewingAll) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withAlpha(20),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppTheme.primary.withAlpha(80)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.person_pin_rounded, size: 16, color: AppTheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Viewing Personal Schedule: ${currentMember.name} (${currentMember.roleTitle})',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ),
+                InkWell(
+                  onTap: () => setState(() => _selectedCalendarTeamMemberId = 'all'),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    child: Text('Back to All Team', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         // Day Header Card
         Container(
           padding: const EdgeInsets.all(16),
@@ -3144,7 +3552,9 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             color: AppTheme.surface,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: isExplicitlyBlocked ? Colors.redAccent.withAlpha(100) : AppTheme.border,
+              color: (isViewingAll ? isExplicitlyBlocked : !isMemberOnDuty)
+                  ? Colors.redAccent.withAlpha(100)
+                  : AppTheme.border,
             ),
           ),
           child: Column(
@@ -3156,16 +3566,18 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: isExplicitlyBlocked
+                      color: (isViewingAll ? isExplicitlyBlocked : !isMemberOnDuty)
                           ? Colors.redAccent.withAlpha(30)
                           : (isRecurringOff ? AppTheme.surfaceLight : AppTheme.primary.withAlpha(30)),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
-                      isExplicitlyBlocked
-                          ? Icons.block_rounded
-                          : (isRecurringOff ? Icons.nightlife_rounded : Icons.calendar_today_rounded),
-                      color: isExplicitlyBlocked
+                      isViewingAll
+                          ? (isExplicitlyBlocked
+                              ? Icons.block_rounded
+                              : (isRecurringOff ? Icons.nightlife_rounded : Icons.calendar_today_rounded))
+                          : (isMemberOnDuty ? Icons.person_rounded : Icons.person_off_rounded),
+                      color: (isViewingAll ? isExplicitlyBlocked : !isMemberOnDuty)
                           ? Colors.redAccent
                           : (isRecurringOff ? AppTheme.textMuted : AppTheme.primary),
                       size: 22,
@@ -3186,7 +3598,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: isExplicitlyBlocked
+                                color: (isViewingAll ? isExplicitlyBlocked : !isMemberOnDuty)
                                     ? Colors.redAccent.withAlpha(30)
                                     : (isRecurringOff
                                         ? Colors.amber.withAlpha(30)
@@ -3194,13 +3606,17 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
-                                isExplicitlyBlocked
-                                    ? 'DAY BLOCKED'
-                                    : (isRecurringOff ? 'RECURRING DAY OFF' : 'OPEN FOR BOOKINGS'),
+                                isViewingAll
+                                    ? (isExplicitlyBlocked
+                                        ? 'DAY BLOCKED'
+                                        : (isRecurringOff ? 'RECURRING DAY OFF' : 'OPEN FOR BOOKINGS'))
+                                    : (isMemberOnDuty
+                                        ? 'ON DUTY TODAY'
+                                        : (isExplicitlyBlocked ? 'OFF TODAY (BLOCKED)' : 'WEEKLY DAY OFF')),
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
-                                  color: isExplicitlyBlocked
+                                  color: (isViewingAll ? isExplicitlyBlocked : !isMemberOnDuty)
                                       ? Colors.redAccent
                                       : (isRecurringOff ? Colors.amber : Colors.greenAccent),
                                 ),
@@ -3226,18 +3642,46 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   Expanded(
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: isExplicitlyBlocked ? Colors.green : Colors.redAccent,
+                        backgroundColor: (isViewingAll ? isExplicitlyBlocked : !isMemberOnDuty)
+                            ? Colors.green
+                            : Colors.redAccent,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 10),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      icon: Icon(isExplicitlyBlocked ? Icons.lock_open_rounded : Icons.lock_rounded, size: 16),
+                      icon: Icon(
+                        (isViewingAll ? isExplicitlyBlocked : !isMemberOnDuty)
+                            ? Icons.lock_open_rounded
+                            : Icons.lock_rounded,
+                        size: 16,
+                      ),
                       label: Text(
-                        isExplicitlyBlocked ? 'Unblock Full Day' : 'Block Full Day',
+                        isViewingAll
+                            ? (isExplicitlyBlocked ? 'Unblock Full Day' : 'Block Full Day')
+                            : (isMemberOnDuty
+                                ? 'Give ${currentMember.name.split(" ").first} Day Off'
+                                : 'Set ${currentMember.name.split(" ").first} as Working'),
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                       ),
                       onPressed: () {
-                        widget.repository.toggleBlockDay(date, detailerId: user.id);
+                        if (isViewingAll) {
+                          if (isExplicitlyBlocked) {
+                            widget.repository.toggleBlockDay(date, detailerId: user.id);
+                            setState(() {});
+                          } else if (staff.length > 1) {
+                            _showBlockDayScopeDialog(context, date, user.id);
+                          } else {
+                            widget.repository.toggleBlockDay(date, detailerId: user.id);
+                            setState(() {});
+                          }
+                        } else {
+                          widget.repository.toggleBlockDay(
+                            date,
+                            teamMemberId: _selectedCalendarTeamMemberId,
+                            detailerId: user.id,
+                          );
+                          setState(() {});
+                        }
                       },
                     ),
                   ),
@@ -3259,23 +3703,40 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           ),
         ),
 
+        // Staff Roster Today Card (Visible in All Team view)
+        if (isViewingAll && staff.length > 1) ...[
+          _buildStaffRosterTodayCard(context, date, staff, user.id),
+        ],
+
         const SizedBox(height: 20),
 
         // Section 1: Turo-Style Slot Availability
         Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'HOURLY SLOT AVAILABILITY',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    children: [
+                      const Text(
+                        'HOURLY SLOT AVAILABILITY',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
+                      ),
+                      _badge(
+                        isViewingAll ? 'ALL TEAM' : currentMember.name.toUpperCase(),
+                        AppTheme.primary,
+                      ),
+                    ],
                   ),
-                  SizedBox(height: 2),
+                  const SizedBox(height: 2),
                   Text(
-                    'Tap any window to block/open, or edit and add custom slots.',
-                    style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                    isViewingAll
+                        ? 'Tap any window to manage studio or technician booking capacity.'
+                        : 'Manage ${currentMember.name.split(" ").first}\'s hourly working availability.',
+                    style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
                   ),
                 ],
               ),
@@ -3333,7 +3794,11 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 icon: const Icon(Icons.lock_open_rounded, size: 13),
                 label: const Text('Unblock All', style: TextStyle(fontSize: 11)),
                 onPressed: () {
-                  widget.repository.clearBlockedSlotsForDate(date, detailerId: user.id);
+                  widget.repository.clearBlockedSlotsForDate(
+                    date,
+                    detailerId: user.id,
+                    teamMemberId: isViewingAll ? null : _selectedCalendarTeamMemberId,
+                  );
                   setState(() {});
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
@@ -3416,131 +3881,398 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         else
           // Slot Matrix
           ...daySlots.map((slot) {
-            final conflictingAppt = widget.repository.getConflictingBookingForSlot(date, slot, detailerId: user.id);
-            final isBooked = conflictingAppt != null;
-            final isExactMatch = isBooked && conflictingAppt.scheduledTimeSlot.trim().toLowerCase() == slot.trim().toLowerCase();
-            final isDayOff = !hours.isOpen || isRecurringOff;
-            final isDayExplicitlyBlocked = widget.repository.isDateExplicitlyBlocked(user.id, date);
-            final isSlotExplicitlyBlocked = widget.repository.isSlotExplicitlyBlocked(user.id, date, slot);
-            final inOperatingHours = widget.repository.isSlotWithinOperatingHours(date, slot, detailerId: user.id);
+            if (isViewingAll) {
+              final status = widget.repository.getSlotStaffingStatus(date, slot, detailerId: user.id);
+              final conflictingAppt = widget.repository.getConflictingBookingForSlot(date, slot, detailerId: user.id);
+              final isBooked = conflictingAppt != null;
+              final isExactMatch = isBooked && conflictingAppt.scheduledTimeSlot == slot;
+              final isDayOff = !hours.isOpen || isRecurringOff;
+              final isDayExplicitlyBlocked = widget.repository.isDateExplicitlyBlocked(user.id, date);
+              final isStudioSlotBlocked = widget.repository.isSlotExplicitlyBlocked(user.id, date, slot);
+              final inOperatingHours = widget.repository.isSlotWithinOperatingHours(date, slot, detailerId: user.id);
+              final hasDayConflict = isBooked && (isDayOff || isDayExplicitlyBlocked);
 
-            Color borderColor = AppTheme.border;
-            Color bgColor = AppTheme.surface;
-            String statusTitle = 'Available for Booking';
-            Color statusColor = Colors.greenAccent;
-            IconData iconData = Icons.check_circle_outline_rounded;
-            bool isStruck = false;
+              Color borderColor = AppTheme.border;
+              Color bgColor = AppTheme.surface;
+              String statusTitle = 'Available for Booking';
+              Color statusColor = Colors.greenAccent;
+              IconData iconData = Icons.check_circle_outline_rounded;
+              bool isStruck = false;
 
-            if (isBooked) {
-              final hasDayConflict = isDayOff || isDayExplicitlyBlocked;
-              borderColor = hasDayConflict ? Colors.amber.withAlpha(140) : Colors.green.withAlpha(120);
-              bgColor = hasDayConflict ? Colors.amber.withAlpha(20) : Colors.green.withAlpha(20);
-              statusTitle = isExactMatch
-                  ? (hasDayConflict
-                      ? 'Booked by ${conflictingAppt.clientName} (Conflict: Day Closed/Blocked)'
-                      : 'Booked by ${conflictingAppt.clientName}')
-                  : (hasDayConflict
-                      ? 'Reserved • Overlaps with ${conflictingAppt.clientName} (Day Closed/Blocked)'
-                      : 'Reserved • Overlaps with ${conflictingAppt.clientName} (${conflictingAppt.scheduledTimeSlot})');
-              statusColor = hasDayConflict ? Colors.amber : Colors.greenAccent;
-              iconData = hasDayConflict ? Icons.warning_amber_rounded : Icons.directions_car_rounded;
-              isStruck = false;
-            } else if (isDayExplicitlyBlocked) {
-              borderColor = Colors.redAccent.withAlpha(100);
-              bgColor = Colors.redAccent.withAlpha(15);
-              statusTitle = 'Day Blocked by Detailer';
-              statusColor = Colors.redAccent;
-              iconData = Icons.block_rounded;
-              isStruck = true;
-            } else if (isDayOff) {
-              borderColor = AppTheme.border;
-              bgColor = AppTheme.surfaceLight.withAlpha(45);
-              statusTitle = 'Studio Closed (Day Off)';
-              statusColor = AppTheme.textMuted;
-              iconData = Icons.nightlife_rounded;
-              isStruck = true;
-            } else if (isSlotExplicitlyBlocked) {
-              borderColor = Colors.redAccent.withAlpha(100);
-              bgColor = Colors.redAccent.withAlpha(15);
-              statusTitle = 'Blocked by Detailer';
-              statusColor = Colors.redAccent;
-              iconData = Icons.block_rounded;
-              isStruck = true;
-            } else if (!inOperatingHours && hours.isOpen) {
-              borderColor = AppTheme.border;
-              bgColor = AppTheme.surfaceLight.withAlpha(60);
-              statusTitle = 'Outside Operating Hours';
-              statusColor = AppTheme.textMuted;
-              iconData = Icons.access_time_rounded;
-              isStruck = true;
-            }
+              if (staff.length <= 1) {
+                if (isBooked) {
+                  borderColor = hasDayConflict ? Colors.amber.withAlpha(140) : Colors.green.withAlpha(120);
+                  bgColor = hasDayConflict ? Colors.amber.withAlpha(20) : Colors.green.withAlpha(20);
+                  statusTitle = isExactMatch
+                      ? (hasDayConflict
+                          ? 'Booked by ${conflictingAppt.clientName} (Conflict: Day Closed/Blocked)'
+                          : 'Booked by ${conflictingAppt.clientName}')
+                      : (hasDayConflict
+                          ? 'Reserved • Overlaps with ${conflictingAppt.clientName} (Day Closed/Blocked)'
+                          : 'Reserved • Overlaps with ${conflictingAppt.clientName} (${conflictingAppt.scheduledTimeSlot})');
+                  statusColor = hasDayConflict ? Colors.amber : Colors.greenAccent;
+                  iconData = hasDayConflict ? Icons.warning_amber_rounded : Icons.directions_car_rounded;
+                  isStruck = false;
+                } else if (isDayExplicitlyBlocked) {
+                  borderColor = Colors.redAccent.withAlpha(100);
+                  bgColor = Colors.redAccent.withAlpha(15);
+                  statusTitle = 'Day Blocked by Detailer';
+                  statusColor = Colors.redAccent;
+                  iconData = Icons.block_rounded;
+                  isStruck = true;
+                } else if (isDayOff) {
+                  borderColor = AppTheme.border;
+                  bgColor = AppTheme.surfaceLight.withAlpha(45);
+                  statusTitle = 'Studio Closed (Day Off)';
+                  statusColor = AppTheme.textMuted;
+                  iconData = Icons.nightlife_rounded;
+                  isStruck = true;
+                } else if (isStudioSlotBlocked) {
+                  borderColor = Colors.redAccent.withAlpha(100);
+                  bgColor = Colors.redAccent.withAlpha(15);
+                  statusTitle = 'Blocked by Detailer';
+                  statusColor = Colors.redAccent;
+                  iconData = Icons.block_rounded;
+                  isStruck = true;
+                } else if (!inOperatingHours && hours.isOpen) {
+                  borderColor = AppTheme.border;
+                  bgColor = AppTheme.surfaceLight.withAlpha(60);
+                  statusTitle = 'Outside Operating Hours';
+                  statusColor = AppTheme.textMuted;
+                  iconData = Icons.access_time_rounded;
+                  isStruck = true;
+                } else {
+                  borderColor = AppTheme.border;
+                  bgColor = AppTheme.surface;
+                  statusTitle = 'Available for Booking';
+                  statusColor = Colors.greenAccent;
+                  iconData = Icons.check_circle_outline_rounded;
+                  isStruck = false;
+                }
+              } else {
+                // Multi-technician studio (staff.length > 1)
+                if (isDayExplicitlyBlocked) {
+                  borderColor = Colors.redAccent.withAlpha(100);
+                  bgColor = Colors.redAccent.withAlpha(15);
+                  statusTitle = 'Day Blocked by Detailer';
+                  statusColor = Colors.redAccent;
+                  iconData = Icons.block_rounded;
+                  isStruck = true;
+                } else if (isStudioSlotBlocked) {
+                  borderColor = Colors.redAccent.withAlpha(100);
+                  bgColor = Colors.redAccent.withAlpha(15);
+                  statusTitle = 'Blocked by Detailer';
+                  statusColor = Colors.redAccent;
+                  iconData = Icons.block_rounded;
+                  isStruck = true;
+                } else if (isDayOff) {
+                  borderColor = AppTheme.border;
+                  bgColor = AppTheme.surfaceLight.withAlpha(45);
+                  statusTitle = 'Studio Closed (Day Off)';
+                  statusColor = AppTheme.textMuted;
+                  iconData = Icons.nightlife_rounded;
+                  isStruck = true;
+                } else if (!inOperatingHours && hours.isOpen) {
+                  borderColor = AppTheme.border;
+                  bgColor = AppTheme.surfaceLight.withAlpha(60);
+                  statusTitle = 'Outside Operating Hours';
+                  statusColor = AppTheme.textMuted;
+                  iconData = Icons.access_time_rounded;
+                  isStruck = true;
+                } else if (status.isFullyBooked) {
+                  borderColor = Colors.green.withAlpha(120);
+                  bgColor = Colors.green.withAlpha(20);
+                  statusTitle = 'Fully Booked (${status.activeBookingsCount} of ${status.onDutyCount} Reserved)';
+                  statusColor = Colors.greenAccent;
+                  iconData = Icons.directions_car_rounded;
+                  isStruck = false;
+                } else if (status.activeBookingsCount > 0) {
+                  borderColor = Colors.cyanAccent.withAlpha(120);
+                  bgColor = Colors.cyanAccent.withAlpha(15);
+                  statusTitle = '${status.availableCapacity} Techs Available (${status.activeBookingsCount} Booked)';
+                  statusColor = Colors.cyanAccent;
+                  iconData = Icons.groups_rounded;
+                  isStruck = false;
+                } else {
+                  borderColor = AppTheme.border;
+                  bgColor = AppTheme.surface;
+                  statusTitle = 'Available for Booking';
+                  statusColor = Colors.greenAccent;
+                  iconData = Icons.check_circle_outline_rounded;
+                  isStruck = false;
+                }
+              }
 
-            return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: bgColor,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: borderColor),
-              ),
-              child: Row(
-                children: [
-                  Icon(iconData, size: 18, color: statusColor),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: borderColor),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        Text(
-                          slot,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: isStruck ? Colors.grey.shade400 : Colors.white,
-                            decoration: isStruck ? TextDecoration.lineThrough : null,
+                        Icon(iconData, size: 18, color: statusColor),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                slot,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: isStruck ? Colors.grey.shade400 : Colors.white,
+                                  decoration: isStruck ? TextDecoration.lineThrough : null,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                statusTitle,
+                                style: TextStyle(fontSize: 11, color: statusColor, fontWeight: FontWeight.w600),
+                              ),
+                              if (conflictingAppt != null) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  isExactMatch
+                                      ? ((isDayOff || isDayExplicitlyBlocked)
+                                          ? '⚠️ Day is closed/blocked • ${conflictingAppt.vehicleYearMakeModel}'
+                                          : '${conflictingAppt.vehicleYearMakeModel} • ${conflictingAppt.package.title}')
+                                      : 'Conflict shield: ${conflictingAppt.package.title} (${conflictingAppt.package.estimatedDuration})',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: (isDayOff || isDayExplicitlyBlocked) ? Colors.amber : AppTheme.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          statusTitle,
-                          style: TextStyle(fontSize: 11, color: statusColor, fontWeight: FontWeight.w600),
-                        ),
-                        if (isBooked) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            isExactMatch
-                                ? ((isDayOff || isDayExplicitlyBlocked)
-                                    ? '⚠️ Day is closed/blocked • ${conflictingAppt.vehicleYearMakeModel}'
-                                    : '${conflictingAppt.vehicleYearMakeModel} • ${conflictingAppt.package.title}')
-                                : 'Conflict shield: ${conflictingAppt.package.title} (${conflictingAppt.package.estimatedDuration})',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              color: (isDayOff || isDayExplicitlyBlocked) ? Colors.amber : AppTheme.textSecondary,
+                        if (!status.isFullyBooked && !isBooked) ...[
+                          if (isDayOff && !isDayExplicitlyBlocked && !isStudioSlotBlocked) ...[
+                            OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppTheme.textMuted,
+                                side: const BorderSide(color: AppTheme.border),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                visualDensity: VisualDensity.compact,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                              ),
+                              onPressed: () => CalendarPreferencesDialog.show(context, repository: widget.repository),
+                              child: const Text('Day Off', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                            ),
+                          ] else ...[
+                            OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: (isStudioSlotBlocked || isDayExplicitlyBlocked) ? Colors.greenAccent : Colors.redAccent,
+                                side: BorderSide(
+                                  color: (isStudioSlotBlocked || isDayExplicitlyBlocked)
+                                      ? Colors.greenAccent.withAlpha(120)
+                                      : Colors.redAccent.withAlpha(100),
+                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                visualDensity: VisualDensity.compact,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                              ),
+                              onPressed: () {
+                                if (isStudioSlotBlocked || isDayExplicitlyBlocked) {
+                                  widget.repository.toggleBlockSlot(date, slot, detailerId: user.id);
+                                  setState(() {});
+                                } else if (staff.length > 1) {
+                                  _showBlockSlotScopeDialog(context, date, slot, user.id);
+                                } else {
+                                  widget.repository.toggleBlockSlot(date, slot, detailerId: user.id);
+                                  setState(() {});
+                                }
+                              },
+                              child: Text(
+                                (isStudioSlotBlocked || isDayExplicitlyBlocked) ? 'Reopen' : 'Block Slot',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ] else if ((status.isFullyBooked || isBooked) && conflictingAppt != null) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.greenAccent.withAlpha(25),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              'FULL',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.greenAccent),
                             ),
                           ),
                         ],
+                        if (staff.length > 1 && conflictingAppt != null)
+                          IconButton(
+                            icon: const Icon(Icons.person_add_alt_1_rounded, size: 16, color: AppTheme.primary),
+                            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                            padding: const EdgeInsets.all(4),
+                            tooltip: 'Assign Technician',
+                            onPressed: () => _showAssignTechnicianDialog(context, conflictingAppt),
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 16, color: AppTheme.textSecondary),
+                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                          padding: const EdgeInsets.all(4),
+                          tooltip: 'Edit Slot',
+                          onPressed: () => _showEditSlotDialog(context, date, slot),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent),
+                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                          padding: const EdgeInsets.all(4),
+                          tooltip: 'Delete Slot',
+                          onPressed: () => _confirmDeleteTimeSlot(context, date, slot),
+                        ),
                       ],
                     ),
-                  ),
-                  if (!isBooked) ...[
-                    if (isDayOff && !isDayExplicitlyBlocked && !isSlotExplicitlyBlocked) ...[
-                      OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.textMuted,
-                          side: const BorderSide(color: AppTheme.border),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          visualDensity: VisualDensity.compact,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                        ),
-                        onPressed: () => CalendarPreferencesDialog.show(context, repository: widget.repository),
-                        child: const Text('Day Off', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    if (staff.length > 1) ...[
+                      const SizedBox(height: 8),
+                      const Divider(color: AppTheme.border, height: 1),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: staff.map((m) {
+                          final isOff = status.offMemberIds.contains(m.id);
+                          final booking = allDayBookings.where((b) =>
+                            b.assignedTeamMemberId == m.id &&
+                            widget.repository.isBookingConflictingWithSlot(b, date, slot),
+                          ).firstOrNull;
+
+                          Color chipBg = Colors.greenAccent.withAlpha(20);
+                          Color chipBorder = Colors.greenAccent.withAlpha(80);
+                          Color chipText = Colors.greenAccent;
+                          String chipLabel = '${m.name.split(' ').first}: Available';
+
+                          if (isOff) {
+                            chipBg = AppTheme.surfaceLight.withAlpha(40);
+                            chipBorder = AppTheme.border;
+                            chipText = AppTheme.textMuted;
+                            chipLabel = '${m.name.split(' ').first}: Off';
+                          } else if (booking != null) {
+                            chipBg = Colors.amber.withAlpha(25);
+                            chipBorder = Colors.amber.withAlpha(100);
+                            chipText = Colors.amber;
+                            chipLabel = '${m.name.split(' ').first}: Booked (${booking.clientName.split(' ').first})';
+                          }
+
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: chipBg,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: chipBorder),
+                            ),
+                            child: Text(
+                              chipLabel,
+                              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: chipText),
+                            ),
+                          );
+                        }).toList(),
                       ),
-                    ] else ...[
+                    ],
+                  ],
+                ),
+              );
+            } else {
+              // Individual Technician View for this slot
+              final isSlotBooked = widget.repository.isMemberBookedForSlot(_selectedCalendarTeamMemberId, date, slot, detailerId: user.id);
+              final isSlotBlocked = widget.repository.isSlotExplicitlyBlocked(user.id, date, slot, teamMemberId: _selectedCalendarTeamMemberId);
+              final isMemberOff = !isMemberOnDuty;
+              final conflictingAppt = widget.repository.getConflictingBookingForSlot(
+                date,
+                slot,
+                detailerId: user.id,
+                teamMemberId: _selectedCalendarTeamMemberId,
+              );
+              final inOperatingHours = widget.repository.isSlotWithinOperatingHours(date, slot, detailerId: user.id);
+
+              Color borderColor = AppTheme.border;
+              Color bgColor = AppTheme.surface;
+              String statusTitle = 'Available for Booking';
+              Color statusColor = Colors.greenAccent;
+              IconData iconData = Icons.check_circle_outline_rounded;
+              bool isStruck = false;
+
+              if (isSlotBooked) {
+                borderColor = Colors.green.withAlpha(120);
+                bgColor = Colors.green.withAlpha(20);
+                statusTitle = conflictingAppt != null
+                    ? 'Booked: ${conflictingAppt.vehicleYearMakeModel} (${conflictingAppt.clientName})'
+                    : 'Booked by Client';
+                statusColor = Colors.greenAccent;
+                iconData = Icons.directions_car_rounded;
+                isStruck = false;
+              } else if (isSlotBlocked || isMemberOff) {
+                borderColor = Colors.redAccent.withAlpha(100);
+                bgColor = Colors.redAccent.withAlpha(15);
+                statusTitle = isMemberOff ? 'Tech Off Today' : 'Slot Blocked for ${currentMember.name.split(" ").first}';
+                statusColor = Colors.redAccent;
+                iconData = Icons.block_rounded;
+                isStruck = true;
+              } else if (!inOperatingHours) {
+                borderColor = AppTheme.border;
+                bgColor = AppTheme.surfaceLight.withAlpha(60);
+                statusTitle = 'Outside Operating Hours';
+                statusColor = AppTheme.textMuted;
+                iconData = Icons.access_time_rounded;
+                isStruck = true;
+              }
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: borderColor),
+                ),
+                child: Row(
+                  children: [
+                    Icon(iconData, size: 18, color: statusColor),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            slot,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: isStruck ? Colors.grey.shade400 : Colors.white,
+                              decoration: isStruck ? TextDecoration.lineThrough : null,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            statusTitle,
+                            style: TextStyle(fontSize: 11, color: statusColor, fontWeight: FontWeight.w600),
+                          ),
+                          if (conflictingAppt != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              '${conflictingAppt.package.title} • \$${conflictingAppt.totalPrice.toStringAsFixed(0)}',
+                              style: const TextStyle(fontSize: 10.5, color: AppTheme.textSecondary),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (!isSlotBooked) ...[
                       OutlinedButton(
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: (isDayExplicitlyBlocked || isSlotExplicitlyBlocked) ? Colors.greenAccent : Colors.redAccent,
+                          foregroundColor: isSlotBlocked ? Colors.greenAccent : Colors.redAccent,
                           side: BorderSide(
-                            color: (isDayExplicitlyBlocked || isSlotExplicitlyBlocked)
+                            color: isSlotBlocked
                                 ? Colors.greenAccent.withAlpha(120)
                                 : Colors.redAccent.withAlpha(100),
                           ),
@@ -3549,51 +4281,31 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                         ),
                         onPressed: () {
-                          widget.repository.toggleBlockSlot(date, slot, detailerId: user.id);
+                          widget.repository.toggleBlockSlot(
+                            date,
+                            slot,
+                            teamMemberId: _selectedCalendarTeamMemberId,
+                            detailerId: user.id,
+                          );
+                          setState(() {});
                         },
                         child: Text(
-                          (isDayExplicitlyBlocked || isSlotExplicitlyBlocked) ? 'Reopen' : 'Block Slot',
+                          isSlotBlocked ? 'Reopen' : 'Block Slot',
                           style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
-                    IconButton(
-                      icon: const Icon(Icons.edit_outlined, size: 16, color: AppTheme.textSecondary),
-                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                      padding: const EdgeInsets.all(4),
-                      tooltip: 'Edit Slot',
-                      onPressed: () => _showEditSlotDialog(context, date, slot),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent),
-                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                      padding: const EdgeInsets.all(4),
-                      tooltip: 'Delete Slot',
-                      onPressed: () => _confirmDeleteTimeSlot(context, date, slot),
-                    ),
-                  ] else ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.greenAccent.withAlpha(25),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        '\$${conflictingAppt.totalPrice.toStringAsFixed(0)}',
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.greenAccent),
-                      ),
-                    ),
                   ],
-                ],
-              ),
-            );
+                ),
+              );
+            }
           }),
 
         const SizedBox(height: 20),
 
         // Section 2: Confirmed Bookings List
         Text(
-          'CONFIRMED APPOINTMENTS (${dayBookings.length})',
+          isViewingAll ? 'CONFIRMED APPOINTMENTS (${dayBookings.length})' : '${currentMember.name.toUpperCase()}\'S APPOINTMENTS (${dayBookings.length})',
           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
         ),
         const SizedBox(height: 8),
@@ -3606,14 +4318,16 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: AppTheme.border),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                Icon(Icons.event_available_rounded, size: 20, color: AppTheme.textMuted),
-                SizedBox(width: 10),
+                const Icon(Icons.event_available_rounded, size: 20, color: AppTheme.textMuted),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'No client bookings scheduled for this date.',
-                    style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                    isViewingAll
+                        ? 'No client bookings scheduled for this date.'
+                        : 'No appointments assigned to ${currentMember.name} for this date.',
+                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                   ),
                 ),
               ],
@@ -3668,6 +4382,417 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     );
   }
 
+  Widget _buildStaffRosterTodayCard(BuildContext context, DateTime date, List<TeamMember> staff, String detailerId) {
+    final onDutyStaff = staff.where((s) => widget.repository.isMemberOnDutyOnDate(s.id, date, detailerId: detailerId)).toList();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.groups_rounded, size: 18, color: AppTheme.primary),
+                  SizedBox(width: 8),
+                  Text(
+                    'DAILY STAFF ROSTER',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white, letterSpacing: 0.5),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: onDutyStaff.isNotEmpty ? Colors.greenAccent.withAlpha(25) : Colors.redAccent.withAlpha(25),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '${onDutyStaff.length} of ${staff.length} on duty',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: onDutyStaff.isNotEmpty ? Colors.greenAccent : Colors.redAccent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Divider(color: AppTheme.border, height: 1),
+          const SizedBox(height: 10),
+          ...staff.map((m) {
+            final isOnDuty = widget.repository.isMemberOnDutyOnDate(m.id, date, detailerId: detailerId);
+            final isRecurringOff = widget.repository.isMemberRecurringDayOff(m.id, date, detailerId: detailerId);
+            final isExplicitlyBlocked = widget.repository.isDateExplicitlyBlocked(detailerId, date, teamMemberId: m.id);
+
+            String statusText = 'Working Today';
+            Color statusColor = Colors.greenAccent;
+            if (isExplicitlyBlocked) {
+              statusText = 'Off Today (Blocked)';
+              statusColor = Colors.redAccent;
+            } else if (isRecurringOff) {
+              statusText = 'Weekly Day Off';
+              statusColor = Colors.amber;
+            }
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceLight.withAlpha(50),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: isOnDuty ? AppTheme.border : Colors.redAccent.withAlpha(60)),
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 14,
+                    backgroundImage: m.avatarUrl.isNotEmpty ? NetworkImage(m.avatarUrl) : null,
+                    child: m.avatarUrl.isEmpty ? Text(m.name.substring(0, 1)) : null,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                m.name,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Colors.white),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (m.isFounder) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primary.withAlpha(30),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text('FOUNDER', style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                              ),
+                            ],
+                          ],
+                        ),
+                        Text(
+                          statusText,
+                          style: TextStyle(fontSize: 10.5, color: statusColor, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: isOnDuty ? Colors.redAccent : Colors.greenAccent,
+                      side: BorderSide(color: isOnDuty ? Colors.redAccent.withAlpha(120) : Colors.greenAccent.withAlpha(120)),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      visualDensity: VisualDensity.compact,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    ),
+                    onPressed: () {
+                      widget.repository.toggleBlockDay(date, teamMemberId: m.id, detailerId: detailerId);
+                      setState(() {});
+                    },
+                    child: Text(
+                      isOnDuty ? 'Give Day Off' : 'Set Working',
+                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  InkWell(
+                    onTap: () {
+                      setState(() {
+                        _selectedCalendarTeamMemberId = m.id;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceLight,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Icon(Icons.calendar_month_rounded, size: 14, color: AppTheme.primary),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  void _showBlockDayScopeDialog(BuildContext context, DateTime date, String detailerId) {
+    final staff = widget.repository.getStudioStaff(detailerId: detailerId);
+    if (staff.length <= 1) {
+      widget.repository.toggleBlockDay(date, detailerId: detailerId);
+      return;
+    }
+
+    final dateStr = DateFormat('EEE, MMM d').format(date);
+    final isStudioBlocked = widget.repository.isDateExplicitlyBlocked(detailerId, date);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          return AlertDialog(
+            backgroundColor: AppTheme.surface,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: AppTheme.border)),
+            title: Text('Manage Availability for $dateStr', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Choose whether to close the entire studio or give specific team members the day off:', style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary)),
+                  const SizedBox(height: 16),
+
+                  // Entire Studio Block Toggle
+                  ListTile(
+                    tileColor: AppTheme.surfaceLight,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: isStudioBlocked ? Colors.redAccent.withAlpha(120) : AppTheme.border)),
+                    leading: Icon(isStudioBlocked ? Icons.lock_rounded : Icons.storefront_rounded, color: isStudioBlocked ? Colors.redAccent : AppTheme.primary),
+                    title: const Text('Entire Studio (All Team)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    subtitle: Text(isStudioBlocked ? 'Studio currently closed to all bookings' : 'Close shop entirely for all technicians', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                    trailing: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isStudioBlocked ? Colors.green : Colors.redAccent,
+                        foregroundColor: Colors.white,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () {
+                        widget.repository.toggleBlockDay(date, detailerId: detailerId);
+                        Navigator.pop(ctx);
+                        setState(() {});
+                      },
+                      child: Text(isStudioBlocked ? 'Reopen' : 'Close Studio'),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+                  const Text('OR MANAGE INDIVIDUAL SHIFTS:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                  const SizedBox(height: 8),
+
+                  ...staff.map((m) {
+                    final isOnDuty = widget.repository.isMemberOnDutyOnDate(m.id, date, detailerId: detailerId);
+                    final isMemberBlocked = widget.repository.isDateExplicitlyBlocked(detailerId, date, teamMemberId: m.id);
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceLight.withAlpha(80),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                        leading: CircleAvatar(
+                          radius: 14,
+                          backgroundImage: m.avatarUrl.isNotEmpty ? NetworkImage(m.avatarUrl) : null,
+                          child: m.avatarUrl.isEmpty ? const Icon(Icons.person, size: 14) : null,
+                        ),
+                        title: Text(m.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        subtitle: Text(isOnDuty ? 'Working (On Duty)' : (isMemberBlocked ? 'Day Off (Blocked)' : 'Weekly Day Off'), style: TextStyle(fontSize: 10.5, color: isOnDuty ? Colors.greenAccent : Colors.amber)),
+                        trailing: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: isOnDuty ? Colors.redAccent : Colors.greenAccent,
+                            side: BorderSide(color: isOnDuty ? Colors.redAccent.withAlpha(120) : Colors.greenAccent.withAlpha(120)),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: () {
+                            widget.repository.toggleBlockDay(date, teamMemberId: m.id, detailerId: detailerId);
+                            setDialogState(() {});
+                            setState(() {});
+                          },
+                          child: Text(isOnDuty ? 'Give Day Off' : 'Set Working', style: const TextStyle(fontSize: 10.5)),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showBlockSlotScopeDialog(BuildContext context, DateTime date, String slot, String detailerId) {
+    final staff = widget.repository.getStudioStaff(detailerId: detailerId);
+    final isStudioSlotBlocked = widget.repository.isSlotExplicitlyBlocked(detailerId, date, slot);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          return AlertDialog(
+            backgroundColor: AppTheme.surface,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: AppTheme.border)),
+            title: Text('Manage Slot: $slot', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Select whether to block this time window for the whole shop or a specific technician:', style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary)),
+                  const SizedBox(height: 16),
+
+                  ListTile(
+                    tileColor: AppTheme.surfaceLight,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: isStudioSlotBlocked ? Colors.redAccent.withAlpha(120) : AppTheme.border)),
+                    leading: Icon(isStudioSlotBlocked ? Icons.lock_rounded : Icons.storefront_rounded, color: isStudioSlotBlocked ? Colors.redAccent : AppTheme.primary),
+                    title: const Text('Entire Studio (All Team)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    subtitle: Text(isStudioSlotBlocked ? 'Window currently blocked for all' : 'Block this window for all clients', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                    trailing: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isStudioSlotBlocked ? Colors.green : Colors.redAccent,
+                        foregroundColor: Colors.white,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () {
+                        widget.repository.toggleBlockSlot(date, slot, detailerId: detailerId);
+                        Navigator.pop(ctx);
+                        setState(() {});
+                      },
+                      child: Text(isStudioSlotBlocked ? 'Unblock' : 'Block Slot'),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+                  const Text('OR BLOCK FOR INDIVIDUAL TECHNICIAN:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                  const SizedBox(height: 8),
+
+                  ...staff.map((m) {
+                    final isMemberSlotBlocked = widget.repository.isSlotExplicitlyBlocked(detailerId, date, slot, teamMemberId: m.id);
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceLight.withAlpha(80),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                        leading: CircleAvatar(
+                          radius: 14,
+                          backgroundImage: m.avatarUrl.isNotEmpty ? NetworkImage(m.avatarUrl) : null,
+                          child: m.avatarUrl.isEmpty ? const Icon(Icons.person, size: 14) : null,
+                        ),
+                        title: Text(m.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        subtitle: Text(isMemberSlotBlocked ? 'Window Blocked' : 'Window Open', style: TextStyle(fontSize: 10.5, color: isMemberSlotBlocked ? Colors.redAccent : Colors.greenAccent)),
+                        trailing: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: isMemberSlotBlocked ? Colors.greenAccent : Colors.redAccent,
+                            side: BorderSide(color: isMemberSlotBlocked ? Colors.greenAccent.withAlpha(120) : Colors.redAccent.withAlpha(120)),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: () {
+                            widget.repository.toggleBlockSlot(date, slot, teamMemberId: m.id, detailerId: detailerId);
+                            setDialogState(() {});
+                            setState(() {});
+                          },
+                          child: Text(isMemberSlotBlocked ? 'Open' : 'Block', style: const TextStyle(fontSize: 10.5)),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showAssignTechnicianDialog(BuildContext context, BookingAppointment b) {
+    final user = widget.repository.currentUser;
+    final staff = widget.repository.getStudioStaff(detailerId: user.id);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: AppTheme.border)),
+        title: const Text('Assign Technician to Booking', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Vehicle: ${b.vehicleYearMakeModel} (${b.package.title})', style: const TextStyle(fontSize: 12.5, color: AppTheme.textSecondary)),
+            const SizedBox(height: 12),
+            ...staff.map((m) {
+              final isAssigned = b.assignedTeamMemberId == m.id;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                decoration: BoxDecoration(
+                  color: isAssigned ? AppTheme.primary.withAlpha(20) : AppTheme.surfaceLight,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: isAssigned ? AppTheme.primary : AppTheme.border),
+                ),
+                child: ListTile(
+                  dense: true,
+                  leading: CircleAvatar(
+                    radius: 14,
+                    backgroundImage: m.avatarUrl.isNotEmpty ? NetworkImage(m.avatarUrl) : null,
+                    child: m.avatarUrl.isEmpty ? const Icon(Icons.person, size: 14) : null,
+                  ),
+                  title: Text(m.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                  subtitle: Text(m.roleTitle, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                  trailing: isAssigned
+                      ? const Icon(Icons.check_circle_rounded, color: AppTheme.primary, size: 20)
+                      : TextButton(
+                          child: const Text('Assign', style: TextStyle(fontSize: 12, color: AppTheme.primary)),
+                          onPressed: () {
+                            widget.repository.assignBookingTechnician(b.id, m.id, m.name);
+                            Navigator.pop(ctx);
+                            setState(() {});
+                          },
+                        ),
+                ),
+              );
+            }),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPrefRow(IconData icon, String label, String value) {
     return Row(
       children: [
@@ -3683,6 +4808,9 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   }
 
   Widget _buildBookingAppointmentCard(BookingAppointment b) {
+    final user = widget.repository.currentUser;
+    final staff = widget.repository.getStudioStaff(detailerId: user.id);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
@@ -3738,6 +4866,46 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               ],
             ],
           ),
+          if (staff.length > 1) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.badge_outlined, size: 13, color: AppTheme.primary),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    b.assignedTeamMemberName != null && b.assignedTeamMemberName!.isNotEmpty
+                        ? 'Assigned: ${b.assignedTeamMemberName}'
+                        : 'Unassigned (General Studio Booking)',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: b.assignedTeamMemberName != null ? AppTheme.primary : AppTheme.textMuted,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                InkWell(
+                  onTap: () => _showAssignTechnicianDialog(context, b),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withAlpha(20),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: AppTheme.primary.withAlpha(80)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.swap_horiz_rounded, size: 12, color: AppTheme.primary),
+                        SizedBox(width: 3),
+                        Text('Assign', style: TextStyle(fontSize: 10.5, color: AppTheme.primary, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

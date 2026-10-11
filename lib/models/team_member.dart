@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'calendar_availability_block.dart';
 
 class TeamMember {
   final String id;
@@ -11,6 +12,7 @@ class TeamMember {
   final int completedJobsCount;
   final bool isAvailable;
   final bool isFounder; // Owner / Founder badge
+  final List<DayBusinessHours>? customWeeklySchedule; // Custom shifts & recurring days off (null = inherits studio schedule)
 
   const TeamMember({
     required this.id,
@@ -22,6 +24,7 @@ class TeamMember {
     this.completedJobsCount = 0,
     this.isAvailable = true,
     this.isFounder = false,
+    this.customWeeklySchedule,
   });
 
   Map<String, dynamic> toJson() {
@@ -35,10 +38,15 @@ class TeamMember {
       'completedJobsCount': completedJobsCount,
       'isAvailable': isAvailable,
       'isFounder': isFounder,
+      if (customWeeklySchedule != null)
+        'customWeeklySchedule': customWeeklySchedule!.map((h) => h.toJson()).toList(),
     };
   }
 
   factory TeamMember.fromJson(Map<String, dynamic> json) {
+    final schedList = json['customWeeklySchedule'] as List<dynamic>?;
+    final schedule = schedList?.map((item) => DayBusinessHours.fromJson(item as Map<String, dynamic>)).toList();
+
     return TeamMember(
       id: json['id'] as String? ?? 'tm_${DateTime.now().millisecondsSinceEpoch}',
       name: json['name'] as String? ?? '',
@@ -49,6 +57,7 @@ class TeamMember {
       completedJobsCount: json['completedJobsCount'] as int? ?? 0,
       isAvailable: json['isAvailable'] as bool? ?? true,
       isFounder: json['isFounder'] as bool? ?? false,
+      customWeeklySchedule: schedule,
     );
   }
 
@@ -64,6 +73,7 @@ class TeamMember {
     int? completedJobsCount,
     bool? isAvailable,
     bool? isFounder,
+    List<DayBusinessHours>? customWeeklySchedule,
   }) {
     return TeamMember(
       id: id ?? this.id,
@@ -75,6 +85,7 @@ class TeamMember {
       completedJobsCount: completedJobsCount ?? this.completedJobsCount,
       isAvailable: isAvailable ?? this.isAvailable,
       isFounder: isFounder ?? this.isFounder,
+      customWeeklySchedule: customWeeklySchedule ?? this.customWeeklySchedule,
     );
   }
 }

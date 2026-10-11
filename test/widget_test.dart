@@ -22,6 +22,7 @@ import 'package:detail_craft/screens/service_package_editor_dialog.dart';
 import 'package:detail_craft/screens/calendar_preferences_dialog.dart';
 import 'package:detail_craft/screens/booking_flow_screen.dart';
 import 'package:detail_craft/models/inventory_item.dart';
+import 'package:detail_craft/models/team_member.dart';
 
 import 'dart:async';
 import 'dart:io';
@@ -3517,6 +3518,160 @@ void main() {
     expect(teamsTop < savedRecipesTop, isTrue);
 
     debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('My Teams is linked to Calendar with personal schedules, multi-tech slot capacity, and synced customer booking flow', (tester) async {
+    tester.view.physicalSize = const Size(1200, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final repository = JobRepository();
+    if (repository.currentUser.role != UserRole.detailer) {
+      repository.toggleHostMode();
+    }
+
+    final testDate = DateTime.now().add(const Duration(days: 3));
+
+    // Ensure test date is open
+    final openSchedule = repository.calendarPreferences.weeklySchedule.map((d) {
+      return d.copyWith(isOpen: true, openTime: '08:00 AM', closeTime: '08:00 PM');
+    }).toList();
+    repository.updateCalendarPreferences(
+      repository.calendarPreferences.copyWith(weeklySchedule: openSchedule),
+    );
+
+    // Add Tyler Reed to team roster
+    const tech = TeamMember(
+      id: 'tm_tyler',
+      name: 'Tyler Reed',
+      roleTitle: 'Senior Correction Tech',
+      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80',
+      rating: 5.0,
+      completedJobsCount: 42,
+    );
+    repository.addTeamMember(tech);
+
+    final staff = repository.getStudioStaff(detailerId: repository.currentUser.id);
+    expect(staff.length, 2);
+
+    // 1. Mount DetailerWorkbenchView
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: DetailerWorkbenchView(
+          repository: repository,
+          initialCalendarDate: testDate,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // 2. Navigate to My Teams in Pane 1
+    await tester.tap(find.text('My Teams'));
+    await tester.pumpAndSettle();
+
+    // Select Tyler Reed in team list
+    final tylerItem = find.text('Tyler Reed');
+    expect(tylerItem, findsWidgets);
+    await tester.tap(tylerItem.first);
+    await tester.pumpAndSettle();
+
+    // Verify "View Tyler's Calendar" button is present and tap it
+    final viewCalendarBtn = find.text("View Tyler's Calendar");
+    expect(viewCalendarBtn, findsOneWidget);
+    await tester.tap(viewCalendarBtn);
+    await tester.pumpAndSettle();
+
+    // Verify switched to Calendar showing Tyler's personal schedule banner
+    expect(find.textContaining('Viewing Personal Schedule: Tyler Reed'), findsOneWidget);
+    expect(find.text('Back to All Team'), findsOneWidget);
+
+    // 3. Switch back to All Team (Studio) master calendar
+    await tester.tap(find.text('Back to All Team'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('DAILY STAFF ROSTER'), findsOneWidget);
+    expect(find.textContaining('Tyler Reed'), findsWidgets);
+
+    // 4. Toggle Tyler to Off today using the Roster toggle
+    final giveDayOffBtn = find.widgetWithText(OutlinedButton, 'Give Day Off');
+    expect(giveDayOffBtn, findsWidgets);
+    await tester.tap(giveDayOffBtn.last); // Tyler is the second member in staff roster
+    await tester.pumpAndSettle();
+
+    // Tyler is now off today; on duty count is 1 (the founder)
+    expect(repository.isMemberOnDutyOnDate('tm_tyler', testDate, detailerId: repository.currentUser.id), isFalse);
+    final testSlot = repository.getTimeSlotsForDate(testDate, detailerId: repository.currentUser.id).first;
+    final statusWhenOneOff = repository.getSlotStaffingStatus(testDate, testSlot, detailerId: repository.currentUser.id);
+    expect(statusWhenOneOff.onDutyCount, 1);
+    expect(statusWhenOneOff.availableCapacity, 1);
+
+    // 5. Book the slot: 1 booking uses up the sole on-duty tech's capacity
+    final appt = BookingAppointment(
+      id: 'appt_multi_test',
+      clientId: 'usr_alex',
+      clientName: 'Alex Rivera',
+      detailerId: repository.currentUser.id,
+      detailerName: repository.currentUser.displayName,
+      detailerBusinessName: repository.currentUser.businessName,
+      detailerAvatar: repository.currentUser.avatarUrl,
+      clientPhone: '555-0199',
+      clientEmail: 'alex@example.com',
+      vehicleYearMakeModel: '2023 Porsche 911 GT3',
+      vehicleSize: VehicleSize.coupeSedan,
+      package: repository.currentUser.servicePackages.first,
+      locationType: ServiceLocationType.shop,
+      clientAddress: 'Detail Studio',
+      scheduledDate: testDate,
+      scheduledTimeSlot: testSlot,
+      totalPrice: 280.0,
+      depositAmount: 50.0,
+      status: BookingStatus.confirmed,
+    );
+    repository.addBooking(appt);
+    await tester.pumpAndSettle();
+
+    final statusFull = repository.getSlotStaffingStatus(testDate, testSlot, detailerId: repository.currentUser.id);
+    expect(statusFull.isFullyBooked, isTrue);
+
+    // 6. Customer Perspective: verify slot is fully booked for customers
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: BookingFlowScreen(
+        repository: repository,
+        detailer: repository.currentUser,
+        initialDate: testDate,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Proceed to Step 1 (Vehicle & Schedule)
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    // In BookingFlowScreen, the slot is struck off / booked
+    expect(find.text(testSlot), findsWidgets);
+    expect(find.text('BOOKED'), findsWidgets);
+
+    // 7. Put Tyler back on duty
+    repository.toggleBlockDay(testDate, teamMemberId: 'tm_tyler', detailerId: repository.currentUser.id);
+    final statusTwoTechs = repository.getSlotStaffingStatus(testDate, testSlot, detailerId: repository.currentUser.id);
+    expect(statusTwoTechs.onDutyCount, 2);
+    expect(statusTwoTechs.activeBookingsCount, 1);
+    expect(statusTwoTechs.availableCapacity, 1);
+    expect(statusTwoTechs.isFullyBooked, isFalse);
+
+    // Customer can now book the slot because 2 techs - 1 booking = 1 capacity available
+    expect(repository.isSlotConflictedByBooking(testDate, testSlot, detailerId: repository.currentUser.id), isFalse);
+
+    debugNetworkImageHttpClientProvider = null;
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
   });
 }
 

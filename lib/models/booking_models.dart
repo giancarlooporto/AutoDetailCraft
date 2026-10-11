@@ -128,6 +128,8 @@ class BookingAppointment {
   final String? clientNotes;
   final String? preInspectionSummary;
   final String? warrantyPassportId;
+  final String? assignedTeamMemberId;
+  final String? assignedTeamMemberName;
 
   const BookingAppointment({
     required this.id,
@@ -152,7 +154,61 @@ class BookingAppointment {
     this.clientNotes,
     this.preInspectionSummary,
     this.warrantyPassportId,
+    this.assignedTeamMemberId,
+    this.assignedTeamMemberName,
   });
+
+  BookingAppointment copyWith({
+    String? id,
+    String? clientId,
+    String? detailerId,
+    String? detailerName,
+    String? detailerBusinessName,
+    String? detailerAvatar,
+    String? clientName,
+    String? clientPhone,
+    String? clientEmail,
+    String? vehicleYearMakeModel,
+    VehicleSize? vehicleSize,
+    ServicePackage? package,
+    ServiceLocationType? locationType,
+    String? clientAddress,
+    DateTime? scheduledDate,
+    String? scheduledTimeSlot,
+    double? totalPrice,
+    double? depositAmount,
+    BookingStatus? status,
+    String? clientNotes,
+    String? preInspectionSummary,
+    String? warrantyPassportId,
+    String? assignedTeamMemberId,
+    String? assignedTeamMemberName,
+  }) => BookingAppointment(
+    id: id ?? this.id,
+    clientId: clientId ?? this.clientId,
+    detailerId: detailerId ?? this.detailerId,
+    detailerName: detailerName ?? this.detailerName,
+    detailerBusinessName: detailerBusinessName ?? this.detailerBusinessName,
+    detailerAvatar: detailerAvatar ?? this.detailerAvatar,
+    clientName: clientName ?? this.clientName,
+    clientPhone: clientPhone ?? this.clientPhone,
+    clientEmail: clientEmail ?? this.clientEmail,
+    vehicleYearMakeModel: vehicleYearMakeModel ?? this.vehicleYearMakeModel,
+    vehicleSize: vehicleSize ?? this.vehicleSize,
+    package: package ?? this.package,
+    locationType: locationType ?? this.locationType,
+    clientAddress: clientAddress ?? this.clientAddress,
+    scheduledDate: scheduledDate ?? this.scheduledDate,
+    scheduledTimeSlot: scheduledTimeSlot ?? this.scheduledTimeSlot,
+    totalPrice: totalPrice ?? this.totalPrice,
+    depositAmount: depositAmount ?? this.depositAmount,
+    status: status ?? this.status,
+    clientNotes: clientNotes ?? this.clientNotes,
+    preInspectionSummary: preInspectionSummary ?? this.preInspectionSummary,
+    warrantyPassportId: warrantyPassportId ?? this.warrantyPassportId,
+    assignedTeamMemberId: assignedTeamMemberId ?? this.assignedTeamMemberId,
+    assignedTeamMemberName: assignedTeamMemberName ?? this.assignedTeamMemberName,
+  );
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -177,6 +233,8 @@ class BookingAppointment {
     'clientNotes': clientNotes,
     'preInspectionSummary': preInspectionSummary,
     'warrantyPassportId': warrantyPassportId,
+    if (assignedTeamMemberId != null) 'assignedTeamMemberId': assignedTeamMemberId,
+    if (assignedTeamMemberName != null) 'assignedTeamMemberName': assignedTeamMemberName,
   };
 
   factory BookingAppointment.fromJson(Map<String, dynamic> json) => BookingAppointment(
@@ -211,5 +269,7 @@ class BookingAppointment {
     clientNotes: json['clientNotes'] as String?,
     preInspectionSummary: json['preInspectionSummary'] as String?,
     warrantyPassportId: json['warrantyPassportId'] as String?,
+    assignedTeamMemberId: json['assignedTeamMemberId'] as String?,
+    assignedTeamMemberName: json['assignedTeamMemberName'] as String?,
   );
 }

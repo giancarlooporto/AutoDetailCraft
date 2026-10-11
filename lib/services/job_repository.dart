@@ -979,16 +979,59 @@ class JobRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleBlockDay(DateTime date, {String? reason, String? detailerId}) {
+  void toggleBlockDay(
+    DateTime date, {
+    String? reason,
+    String? detailerId,
+    String? teamMemberId,
+    List<String>? targetTeamMemberIds,
+  }) {
     final targetDetailerId = detailerId ?? _currentUser.id;
     final normDate = DateTime(date.year, date.month, date.day);
+
+    if (targetTeamMemberIds != null && targetTeamMemberIds.isNotEmpty) {
+      for (final mId in targetTeamMemberIds) {
+        final idx = _availabilityBlocks.indexWhere(
+          (b) => b.detailerId == targetDetailerId &&
+                 b.date.year == normDate.year &&
+                 b.date.month == normDate.month &&
+                 b.date.day == normDate.day &&
+                 b.isAllDay &&
+                 b.teamMemberId == mId,
+        );
+        if (idx != -1) {
+          _availabilityBlocks.removeAt(idx);
+        } else {
+          _availabilityBlocks.add(
+            CalendarAvailabilityBlock(
+              id: 'block_${DateTime.now().millisecondsSinceEpoch}_$mId',
+              detailerId: targetDetailerId,
+              teamMemberId: mId,
+              date: normDate,
+              isAllDay: true,
+              reason: reason,
+              createdAt: DateTime.now(),
+            ),
+          );
+        }
+      }
+      LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+      notifyListeners();
+      return;
+    }
+
+    final isSpecificMember = teamMemberId != null && teamMemberId != 'all';
     final idx = _availabilityBlocks.indexWhere(
       (b) => b.detailerId == targetDetailerId &&
              b.date.year == normDate.year &&
              b.date.month == normDate.month &&
              b.date.day == normDate.day &&
-             b.isAllDay,
+             b.isAllDay &&
+             (isSpecificMember
+                 ? b.teamMemberId == teamMemberId
+                 : (b.teamMemberId == null || b.teamMemberId == 'all')),
     );
+
     if (idx != -1) {
       final existing = _availabilityBlocks[idx];
       if (existing.hasCustomSlotsOverride || existing.customSlots.isNotEmpty) {
@@ -997,42 +1040,57 @@ class JobRepository extends ChangeNotifier {
         _availabilityBlocks.removeAt(idx);
       }
     } else {
-      final existingIdx = _availabilityBlocks.indexWhere(
-        (b) => b.detailerId == targetDetailerId &&
-               b.date.year == normDate.year &&
-               b.date.month == normDate.month &&
-               b.date.day == normDate.day,
-      );
-      if (existingIdx != -1) {
-        _availabilityBlocks[existingIdx] = _availabilityBlocks[existingIdx].copyWith(
+      _availabilityBlocks.add(
+        CalendarAvailabilityBlock(
+          id: 'block_${DateTime.now().millisecondsSinceEpoch}',
+          detailerId: targetDetailerId,
+          teamMemberId: isSpecificMember ? teamMemberId : null,
+          date: normDate,
           isAllDay: true,
           reason: reason,
-        );
-      } else {
-        _availabilityBlocks.add(
-          CalendarAvailabilityBlock(
-            id: 'block_${DateTime.now().millisecondsSinceEpoch}',
-            detailerId: targetDetailerId,
-            date: normDate,
-            isAllDay: true,
-            reason: reason,
-            createdAt: DateTime.now(),
-          ),
-        );
-      }
+          createdAt: DateTime.now(),
+        ),
+      );
     }
     LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
     notifyListeners();
   }
 
-  void toggleBlockSlot(DateTime date, String slot, {String? reason, String? detailerId}) {
+  void toggleBlockSlot(
+    DateTime date,
+    String slot, {
+    String? reason,
+    String? detailerId,
+    String? teamMemberId,
+    List<String>? targetTeamMemberIds,
+  }) {
     final targetDetailerId = detailerId ?? _currentUser.id;
     final normDate = DateTime(date.year, date.month, date.day);
+
+    if (targetTeamMemberIds != null && targetTeamMemberIds.isNotEmpty) {
+      for (final mId in targetTeamMemberIds) {
+        _toggleBlockSlotSingle(normDate, slot, targetDetailerId, mId, reason, date);
+      }
+      LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+      notifyListeners();
+      return;
+    }
+
+    final mId = (teamMemberId != null && teamMemberId != 'all') ? teamMemberId : null;
+    _toggleBlockSlotSingle(normDate, slot, targetDetailerId, mId, reason, date);
+    LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+    notifyListeners();
+  }
+
+  void _toggleBlockSlotSingle(DateTime normDate, String slot, String targetDetailerId, String? mId, String? reason, DateTime date) {
     final idx = _availabilityBlocks.indexWhere(
       (b) => b.detailerId == targetDetailerId &&
              b.date.year == normDate.year &&
              b.date.month == normDate.month &&
-             b.date.day == normDate.day,
+             b.date.day == normDate.day &&
+             (mId == null
+                 ? (b.teamMemberId == null || b.teamMemberId == 'all')
+                 : b.teamMemberId == mId),
     );
     if (idx != -1) {
       final existing = _availabilityBlocks[idx];
@@ -1062,8 +1120,9 @@ class JobRepository extends ChangeNotifier {
     } else {
       _availabilityBlocks.add(
         CalendarAvailabilityBlock(
-          id: 'block_${DateTime.now().millisecondsSinceEpoch}',
+          id: 'block_${DateTime.now().millisecondsSinceEpoch}_${mId ?? "all"}',
           detailerId: targetDetailerId,
+          teamMemberId: mId,
           date: normDate,
           isAllDay: false,
           blockedSlots: [slot],
@@ -1072,8 +1131,6 @@ class JobRepository extends ChangeNotifier {
         ),
       );
     }
-    LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
-    notifyListeners();
   }
 
   static String formatMinutesToTime(int totalMinutes) {
@@ -1470,28 +1527,77 @@ class JobRepository extends ChangeNotifier {
     }
   }
 
-  void clearBlockedSlotsForDate(DateTime date, {String? detailerId}) {
+  void clearBlockedSlotsForDate(DateTime date, {String? detailerId, String? teamMemberId}) {
     final targetDetailerId = detailerId ?? _currentUser.id;
     final normDate = DateTime(date.year, date.month, date.day);
-    final idx = _availabilityBlocks.indexWhere(
+    _availabilityBlocks.removeWhere(
       (b) => b.detailerId == targetDetailerId &&
              b.date.year == normDate.year &&
              b.date.month == normDate.month &&
-             b.date.day == normDate.day,
+             b.date.day == normDate.day &&
+             !b.hasCustomSlotsOverride &&
+             b.customSlots.isEmpty &&
+             (teamMemberId == null || teamMemberId == 'all' || b.teamMemberId == teamMemberId),
     );
-    if (idx != -1) {
-      final existing = _availabilityBlocks[idx];
-      if (!existing.hasCustomSlotsOverride && existing.customSlots.isEmpty) {
-        _availabilityBlocks.removeAt(idx);
-      } else {
-        _availabilityBlocks[idx] = existing.copyWith(
+    for (int i = 0; i < _availabilityBlocks.length; i++) {
+      final b = _availabilityBlocks[i];
+      if (b.detailerId == targetDetailerId &&
+          b.date.year == normDate.year &&
+          b.date.month == normDate.month &&
+          b.date.day == normDate.day &&
+          (teamMemberId == null || teamMemberId == 'all' || b.teamMemberId == teamMemberId)) {
+        _availabilityBlocks[i] = b.copyWith(
+          blockedSlots: const [],
           isAllDay: false,
-          blockedSlots: [],
         );
       }
-      LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
-      notifyListeners();
     }
+    LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+    notifyListeners();
+  }
+
+  /// Returns complete studio staff roster (Founder + registered team members).
+  List<TeamMember> getStudioStaff({String? detailerId}) {
+    final targetId = detailerId ?? _currentUser.id;
+    final user = (targetId != _currentUser.id)
+        ? (publicDetailers.firstWhere((u) => u.id == targetId, orElse: () => _currentUser))
+        : _currentUser;
+
+    final founder = TeamMember(
+      id: 'founder',
+      name: '${user.displayName} (Founder)',
+      roleTitle: 'Shop Owner / Lead Detailer',
+      avatarUrl: user.avatarUrl,
+      localAvatarBytes: user.localAvatarBytes,
+      rating: user.averageRating,
+      completedJobsCount: user.totalJobsCount,
+      isAvailable: true,
+      isFounder: true,
+    );
+
+    return [founder, ...user.teamMembers];
+  }
+
+  bool isMemberRecurringDayOff(String memberId, DateTime date, {String? detailerId}) {
+    final targetId = detailerId ?? _currentUser.id;
+    final user = (targetId != _currentUser.id)
+        ? (publicDetailers.firstWhere((u) => u.id == targetId, orElse: () => _currentUser))
+        : _currentUser;
+
+    if (memberId == 'founder' || memberId == user.id) {
+      return isDateRecurringDayOff(date, detailerId: targetId);
+    }
+
+    final member = user.teamMembers.where((m) => m.id == memberId).firstOrNull;
+    if (member != null && member.customWeeklySchedule != null && member.customWeeklySchedule!.isNotEmpty) {
+      final dayHours = member.customWeeklySchedule!.firstWhere(
+        (h) => h.weekday == date.weekday,
+        orElse: () => DayBusinessHours(weekday: date.weekday, isOpen: true),
+      );
+      return !dayHours.isOpen;
+    }
+
+    return isDateRecurringDayOff(date, detailerId: targetId);
   }
 
   bool isDateRecurringDayOff(DateTime date, {String? detailerId}) {
@@ -1499,20 +1605,55 @@ class JobRepository extends ChangeNotifier {
     return !prefs.getHoursForWeekday(date.weekday).isOpen;
   }
 
-  bool isDateExplicitlyBlocked(String detailerId, DateTime date) {
+  bool isDateExplicitlyBlocked(String detailerId, DateTime date, {String? teamMemberId}) {
     final normDate = DateTime(date.year, date.month, date.day);
     return _availabilityBlocks.any(
       (b) => b.detailerId == detailerId &&
              b.date.year == normDate.year &&
              b.date.month == normDate.month &&
              b.date.day == normDate.day &&
-             b.isAllDay,
+             b.isAllDay &&
+             (teamMemberId == null
+                 ? (b.teamMemberId == null || b.teamMemberId == 'all')
+                 : (b.teamMemberId == null || b.teamMemberId == 'all' || b.teamMemberId == teamMemberId)),
     );
+  }
+
+  bool isMemberOnDutyOnDate(String memberId, DateTime date, {String? detailerId}) {
+    final targetId = detailerId ?? _currentUser.id;
+    // 1. If entire studio is blocked all day
+    if (isDateExplicitlyBlocked(targetId, date)) return false;
+    // 2. If studio operating hours are closed
+    final hours = getHoursForDate(date, detailerId: targetId);
+    if (!hours.isOpen) return false;
+    // 3. If member has recurring day off
+    if (isMemberRecurringDayOff(memberId, date, detailerId: targetId)) return false;
+    // 4. If member is explicitly blocked for this date
+    final normDate = DateTime(date.year, date.month, date.day);
+    final memberBlocked = _availabilityBlocks.any(
+      (b) => b.detailerId == targetId &&
+             b.date.year == normDate.year &&
+             b.date.month == normDate.month &&
+             b.date.day == normDate.day &&
+             b.isAllDay &&
+             (b.teamMemberId == memberId || b.teamMemberId == null || b.teamMemberId == 'all'),
+    );
+    if (memberBlocked) return false;
+    return true;
   }
 
   bool isDateFullyBlocked(String detailerId, DateTime date) {
     if (isDateRecurringDayOff(date, detailerId: detailerId)) return true;
+    final hours = getHoursForDate(date, detailerId: detailerId);
+    if (!hours.isOpen) return true;
     if (isDateExplicitlyBlocked(detailerId, date)) return true;
+
+    // Check if ALL studio staff are off or blocked on this date
+    final staff = getStudioStaff(detailerId: detailerId);
+    if (staff.isNotEmpty && !staff.any((s) => isMemberOnDutyOnDate(s.id, date, detailerId: detailerId))) {
+      return true;
+    }
+
     final normDate = DateTime(date.year, date.month, date.day);
     // Check if covered by multi-day booking
     final coveredByMultiDay = _bookings.any((b) {
@@ -1530,12 +1671,15 @@ class JobRepository extends ChangeNotifier {
     return coveredByMultiDay;
   }
 
-  bool isSlotExplicitlyBlocked(String detailerId, DateTime date, String slot) {
+  bool isSlotExplicitlyBlocked(String detailerId, DateTime date, String slot, {String? teamMemberId}) {
     return _availabilityBlocks.any(
       (b) => b.detailerId == detailerId &&
              b.date.year == date.year &&
              b.date.month == date.month &&
              b.date.day == date.day &&
+             (teamMemberId == null
+                 ? (b.teamMemberId == null || b.teamMemberId == 'all')
+                 : (b.teamMemberId == null || b.teamMemberId == 'all' || b.teamMemberId == teamMemberId)) &&
              (b.isAllDay ||
               b.blockedSlots.contains(slot) ||
               b.blockedSlots.any((bs) {
@@ -1548,9 +1692,76 @@ class JobRepository extends ChangeNotifier {
     );
   }
 
+  /// Calculates staffing breakdown and remaining client booking capacity for a time slot.
+  SlotStaffingStatus getSlotStaffingStatus(DateTime date, String slot, {String? detailerId}) {
+    final targetId = detailerId ?? _currentUser.id;
+    final staff = getStudioStaff(detailerId: targetId);
+    final totalStaff = staff.length;
+
+    final studioBlocked = isDateExplicitlyBlocked(targetId, date) || isDateRecurringDayOff(date, detailerId: targetId);
+    final withinHours = isSlotWithinOperatingHours(date, slot, detailerId: targetId);
+
+    if (studioBlocked || !withinHours) {
+      return SlotStaffingStatus(
+        totalStaff: totalStaff,
+        onDutyCount: 0,
+        onDutyMemberIds: const [],
+        offMemberIds: staff.map((s) => s.id).toList(),
+        availableCapacity: 0,
+        activeBookingsCount: 0,
+        isFullyBooked: false,
+        isBlocked: true,
+      );
+    }
+
+    final onDutyIds = <String>[];
+    final offIds = <String>[];
+    for (final m in staff) {
+      if (isMemberOnDutyOnDate(m.id, date, detailerId: targetId) &&
+          !isSlotExplicitlyBlocked(targetId, date, slot, teamMemberId: m.id)) {
+        onDutyIds.add(m.id);
+      } else {
+        offIds.add(m.id);
+      }
+    }
+
+    final onDutyCount = onDutyIds.length;
+    if (onDutyCount == 0) {
+      return SlotStaffingStatus(
+        totalStaff: totalStaff,
+        onDutyCount: 0,
+        onDutyMemberIds: const [],
+        offMemberIds: offIds,
+        availableCapacity: 0,
+        activeBookingsCount: 0,
+        isFullyBooked: false,
+        isBlocked: true,
+      );
+    }
+
+    final bookingsOnDate = getBookingsForDate(date, detailerId: targetId);
+    final conflictingBookings = bookingsOnDate.where((b) => isBookingConflictingWithSlot(b, date, slot)).toList();
+    final activeBookingsCount = conflictingBookings.length;
+
+    final availableCapacity = (onDutyCount - activeBookingsCount).clamp(0, onDutyCount);
+    final isFullyBooked = activeBookingsCount >= onDutyCount;
+
+    return SlotStaffingStatus(
+      totalStaff: totalStaff,
+      onDutyCount: onDutyCount,
+      onDutyMemberIds: onDutyIds,
+      offMemberIds: offIds,
+      availableCapacity: availableCapacity,
+      activeBookingsCount: activeBookingsCount,
+      isFullyBooked: isFullyBooked,
+      isBlocked: false,
+    );
+  }
+
   bool isSlotBlocked(String detailerId, DateTime date, String slot) {
     if (isDateFullyBlocked(detailerId, date)) return true;
-    return isSlotExplicitlyBlocked(detailerId, date, slot);
+    final status = getSlotStaffingStatus(date, slot, detailerId: detailerId);
+    return status.isBlocked;
   }
 
   static int timeStringToMinutes(String timeStr) {
@@ -1665,38 +1876,110 @@ class JobRepository extends ChangeNotifier {
     return overlapStart < overlapEnd;
   }
 
+  /// Checks if a specific team member is booked for [slot] on [date].
+  bool isMemberBookedForSlot(String memberId, DateTime date, String slot, {String? detailerId}) {
+    final targetDetailerId = detailerId ?? _currentUser.id;
+    final staff = getStudioStaff(detailerId: targetDetailerId);
+    final bookingsOnDate = getBookingsForDate(date, detailerId: targetDetailerId);
+    final conflictingBookings = bookingsOnDate.where((b) => isBookingConflictingWithSlot(b, date, slot)).toList();
+    if (conflictingBookings.isEmpty) return false;
+
+    // 1. If this member is explicitly assigned to any conflicting booking
+    if (conflictingBookings.any((b) => b.assignedTeamMemberId == memberId)) {
+      return true;
+    }
+
+    // 2. If studio has only 1 staff member (e.g. solo founder), any booking blocks them
+    if (staff.length <= 1) {
+      return true;
+    }
+
+    // 3. For unassigned bookings, check if remaining capacity is exhausted
+    final status = getSlotStaffingStatus(date, slot, detailerId: targetDetailerId);
+    return status.isFullyBooked;
+  }
+
   /// Returns the first non-cancelled booking conflicting with [slot] on [date] for [detailerId].
-  BookingAppointment? getConflictingBookingForSlot(DateTime date, String slot, {String? detailerId}) {
+  BookingAppointment? getConflictingBookingForSlot(
+    DateTime date,
+    String slot, {
+    String? detailerId,
+    String? teamMemberId,
+  }) {
     final targetDetailerId = detailerId ?? _currentUser.id;
     for (final b in _bookings) {
       if (b.detailerId == targetDetailerId && isBookingConflictingWithSlot(b, date, slot)) {
-        return b;
+        if (teamMemberId == null || teamMemberId == 'all' || b.assignedTeamMemberId == teamMemberId) {
+          return b;
+        }
       }
     }
     return null;
   }
 
   /// Checks if [slot] on [date] is booked or overlaps with any booked appointment.
-  bool isSlotConflictedByBooking(DateTime date, String slot, {String? detailerId}) {
-    return getConflictingBookingForSlot(date, slot, detailerId: detailerId) != null;
+  /// When [teamMemberId] is specified, checks availability of that specific technician.
+  /// When null or 'all', returns true only if the slot is fully booked across all on-duty technicians.
+  bool isSlotConflictedByBooking(
+    DateTime date,
+    String slot, {
+    String? detailerId,
+    String? teamMemberId,
+  }) {
+    final targetDetailerId = detailerId ?? _currentUser.id;
+    if (teamMemberId != null && teamMemberId != 'all') {
+      return isMemberBookedForSlot(teamMemberId, date, slot, detailerId: targetDetailerId);
+    }
+    final status = getSlotStaffingStatus(date, slot, detailerId: targetDetailerId);
+    return status.isFullyBooked;
   }
 
   /// Checks if all slots on [date] are filled by bookings or conflicted.
-  bool isDateFullyBooked(DateTime date, {String? detailerId}) {
+  bool isDateFullyBooked(
+    DateTime date, {
+    String? detailerId,
+    String? teamMemberId,
+  }) {
     final targetDetailerId = detailerId ?? _currentUser.id;
-    if (isDateRecurringDayOff(date, detailerId: targetDetailerId)) return false;
+    if (isDateRecurringDayOff(date, detailerId: targetDetailerId)) return true;
     final hours = getHoursForDate(date, detailerId: targetDetailerId);
-    if (!hours.isOpen) return false;
-    if (isDateExplicitlyBlocked(targetDetailerId, date)) return false;
+    if (!hours.isOpen) return true;
+    if (isDateExplicitlyBlocked(targetDetailerId, date, teamMemberId: teamMemberId)) return true;
     final slots = getTimeSlotsForDate(date, detailerId: targetDetailerId);
     if (slots.isEmpty) return false;
     final bookings = getBookingsForDate(date, detailerId: targetDetailerId);
     if (bookings.isEmpty) return false;
-    return slots.every((s) =>
-      isSlotExplicitlyBlocked(targetDetailerId, date, s) ||
-      isSlotConflictedByBooking(date, s, detailerId: targetDetailerId) ||
-      !isSlotWithinOperatingHours(date, s, detailerId: targetDetailerId),
-    );
+    return slots.every((s) {
+      if (teamMemberId != null && teamMemberId != 'all') {
+        return isSlotExplicitlyBlocked(targetDetailerId, date, s, teamMemberId: teamMemberId) ||
+               isMemberBookedForSlot(teamMemberId, date, s, detailerId: targetDetailerId) ||
+               !isSlotWithinOperatingHours(date, s, detailerId: targetDetailerId);
+      }
+      final status = getSlotStaffingStatus(date, s, detailerId: targetDetailerId);
+      return status.isFullyBooked || status.isBlocked;
+    });
+  }
+
+  void assignBookingTechnician(String bookingId, String memberId, String memberName) {
+    final idx = _bookings.indexWhere((b) => b.id == bookingId);
+    if (idx != -1) {
+      _bookings[idx] = _bookings[idx].copyWith(
+        assignedTeamMemberId: memberId,
+        assignedTeamMemberName: memberName,
+      );
+      notifyListeners();
+    }
+  }
+
+  void updateTeamMemberWeeklySchedule(String memberId, List<DayBusinessHours> schedule) {
+    final updatedMembers = _currentUser.teamMembers.map((m) {
+      if (m.id == memberId) {
+        return m.copyWith(customWeeklySchedule: schedule);
+      }
+      return m;
+    }).toList();
+    _currentUser = _currentUser.copyWith(teamMembers: updatedMembers);
+    notifyListeners();
   }
 
   bool isSlotWithinOperatingHours(DateTime date, String slot, {String? detailerId}) {

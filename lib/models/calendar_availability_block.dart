@@ -203,6 +203,7 @@ class DetailerCalendarPreferences {
 class CalendarAvailabilityBlock {
   final String id;
   final String detailerId;
+  final String? teamMemberId; // null or 'all' = entire studio; 'founder' or member id = specific staff member
   final DateTime date; // Year, Month, Day normalized
   final bool isAllDay;
   final List<String> blockedSlots; // e.g. ['09:00 AM', '10:00 AM'] when isAllDay == false
@@ -214,6 +215,7 @@ class CalendarAvailabilityBlock {
   const CalendarAvailabilityBlock({
     required this.id,
     required this.detailerId,
+    this.teamMemberId,
     required this.date,
     this.isAllDay = true,
     this.blockedSlots = const [],
@@ -226,6 +228,7 @@ class CalendarAvailabilityBlock {
   CalendarAvailabilityBlock copyWith({
     String? id,
     String? detailerId,
+    String? teamMemberId,
     DateTime? date,
     bool? isAllDay,
     List<String>? blockedSlots,
@@ -237,6 +240,7 @@ class CalendarAvailabilityBlock {
     return CalendarAvailabilityBlock(
       id: id ?? this.id,
       detailerId: detailerId ?? this.detailerId,
+      teamMemberId: teamMemberId ?? this.teamMemberId,
       date: date ?? this.date,
       isAllDay: isAllDay ?? this.isAllDay,
       blockedSlots: blockedSlots ?? this.blockedSlots,
@@ -250,6 +254,7 @@ class CalendarAvailabilityBlock {
   Map<String, dynamic> toJson() => {
     'id': id,
     'detailerId': detailerId,
+    if (teamMemberId != null) 'teamMemberId': teamMemberId,
     'date': date.toIso8601String(),
     'isAllDay': isAllDay,
     'blockedSlots': blockedSlots,
@@ -263,6 +268,7 @@ class CalendarAvailabilityBlock {
     return CalendarAvailabilityBlock(
       id: json['id'] as String? ?? 'block_${DateTime.now().millisecondsSinceEpoch}',
       detailerId: json['detailerId'] as String? ?? '',
+      teamMemberId: json['teamMemberId'] as String?,
       date: DateTime.tryParse(json['date'] as String? ?? '') ?? DateTime.now(),
       isAllDay: json['isAllDay'] as bool? ?? true,
       blockedSlots: (json['blockedSlots'] as List<dynamic>?)?.map((s) => s.toString()).toList() ?? [],
@@ -273,3 +279,26 @@ class CalendarAvailabilityBlock {
     );
   }
 }
+
+class SlotStaffingStatus {
+  final int totalStaff;
+  final int onDutyCount;
+  final List<String> onDutyMemberIds;
+  final List<String> offMemberIds;
+  final int availableCapacity;
+  final int activeBookingsCount;
+  final bool isFullyBooked;
+  final bool isBlocked;
+
+  const SlotStaffingStatus({
+    required this.totalStaff,
+    required this.onDutyCount,
+    required this.onDutyMemberIds,
+    required this.offMemberIds,
+    required this.availableCapacity,
+    required this.activeBookingsCount,
+    required this.isFullyBooked,
+    required this.isBlocked,
+  });
+}
+

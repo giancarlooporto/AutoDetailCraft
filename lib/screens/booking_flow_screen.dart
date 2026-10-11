@@ -104,6 +104,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       _selectedDate,
       slot,
       detailerId: widget.detailer.id,
+      teamMemberId: _selectedTeamMember?.id,
     );
   }
 
@@ -119,8 +120,17 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     if (widget.repository.isDateFullyBlocked(widget.detailer.id, _selectedDate)) {
       return 'Day Blocked by Detailer';
     }
-    if (widget.repository.isSlotBlocked(widget.detailer.id, _selectedDate, slot)) {
-      return 'Time Window Blocked by Detailer';
+    if (_selectedTeamMember != null) {
+      if (!widget.repository.isMemberOnDutyOnDate(_selectedTeamMember!.id, _selectedDate, detailerId: widget.detailer.id)) {
+        return '${_selectedTeamMember!.name} is Off Duty on this Date';
+      }
+      if (widget.repository.isSlotExplicitlyBlocked(widget.detailer.id, _selectedDate, slot, teamMemberId: _selectedTeamMember!.id)) {
+        return '${_selectedTeamMember!.name} Unavailable for this Time Window';
+      }
+    } else {
+      if (widget.repository.isSlotBlocked(widget.detailer.id, _selectedDate, slot)) {
+        return 'Time Window Blocked by Detailer';
+      }
     }
     if (!widget.repository.isSlotWithinOperatingHours(_selectedDate, slot, detailerId: widget.detailer.id)) {
       return 'Outside Business Operating Hours';
@@ -130,7 +140,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       return 'Requires ${leadHours}h Minimum Advance Notice';
     }
     if (_isSlotBookedByOtherAppointment(slot)) {
-      return 'Already Booked by Another Client';
+      return _selectedTeamMember != null
+          ? '${_selectedTeamMember!.name} is Booked for this Window'
+          : 'Shop Fully Booked for this Time Window';
     }
     return null;
   }
@@ -190,6 +202,8 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       id: 'book_${DateTime.now().millisecondsSinceEpoch}',
       clientId: widget.repository.isLoggedIn ? widget.repository.currentUser.id : null,
       detailerId: widget.detailer.id,
+      assignedTeamMemberId: _selectedTeamMember?.id,
+      assignedTeamMemberName: _selectedTeamMember?.name,
       detailerName: _selectedTeamMember != null
           ? '${widget.detailer.businessName} (${_selectedTeamMember!.name})'
           : widget.detailer.displayName,
@@ -607,7 +621,12 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           Row(
             children: [
               GestureDetector(
-                onTap: () => setState(() => _selectedTeamMember = null),
+                onTap: () {
+                  setState(() {
+                    _selectedTeamMember = null;
+                    _adjustSelectedSlotIfBlocked();
+                  });
+                },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
@@ -628,29 +647,60 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
               const SizedBox(width: 8),
               ...team.map((m) {
                 final isSelected = _selectedTeamMember?.id == m.id;
+                final isOff = !widget.repository.isMemberOnDutyOnDate(m.id, _selectedDate, detailerId: widget.detailer.id);
                 return GestureDetector(
-                  onTap: () => setState(() => _selectedTeamMember = m),
+                  onTap: () {
+                    setState(() {
+                      _selectedTeamMember = m;
+                      _adjustSelectedSlotIfBlocked();
+                    });
+                  },
                   child: Container(
                     margin: const EdgeInsets.only(right: 8),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: isSelected ? AppTheme.primary.withAlpha(25) : AppTheme.surface,
+                      color: isSelected
+                          ? AppTheme.primary.withAlpha(25)
+                          : (isOff ? AppTheme.surfaceLight.withAlpha(80) : AppTheme.surface),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: isSelected ? AppTheme.primary : AppTheme.border),
+                      border: Border.all(
+                        color: isSelected
+                            ? AppTheme.primary
+                            : (isOff ? AppTheme.border.withAlpha(100) : AppTheme.border),
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        CircleAvatar(radius: 12, backgroundImage: NetworkImage(m.avatarUrl)),
+                        Opacity(
+                          opacity: isOff ? 0.5 : 1.0,
+                          child: CircleAvatar(radius: 12, backgroundImage: NetworkImage(m.avatarUrl)),
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           m.name.split(' ').first,
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: isSelected ? AppTheme.primary : AppTheme.textPrimary,
+                            color: isSelected
+                                ? AppTheme.primary
+                                : (isOff ? AppTheme.textMuted : AppTheme.textPrimary),
                           ),
                         ),
+                        if (isOff) ...[
+                          const SizedBox(width: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: AppTheme.border,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'OFF',
+                              style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppTheme.textMuted),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
