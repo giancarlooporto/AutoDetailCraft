@@ -18,10 +18,10 @@ import 'calendar_preferences_dialog.dart';
 import '../models/calendar_availability_block.dart';
 
 enum StudioHubSection {
-  calendar('Calendar', 'CALENDAR', 'Bookings & host schedule', Icons.calendar_month_rounded),
   portfolio('Portfolio', 'PORTFOLIO', 'Showcase builds & media', Icons.photo_library_rounded),
   services('Services', 'SERVICES', 'Packages & pricing menus', Icons.design_services_rounded),
   inventory('Inventory', 'INVENTORY', 'Hardware, chemicals, recipe', Icons.inventory_2_rounded),
+  calendar('Calendar', 'CALENDAR', 'Bookings & host schedule', Icons.calendar_month_rounded),
   teams('My Teams', 'MY TEAMS', 'Staff roles & technicians', Icons.groups_rounded),
   savedRecipes('Saved Recipes', 'SAVED RECIPES', 'Technical playbook', Icons.bookmark_rounded);
 
@@ -47,6 +47,16 @@ class DetailerWorkbenchView extends StatefulWidget {
 }
 
 class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
+  // Hardcoded arrangement B (Notebook Sketch sequence)
+  static const List<StudioHubSection> _hardcodedHubSections = [
+    StudioHubSection.portfolio,
+    StudioHubSection.services,
+    StudioHubSection.inventory,
+    StudioHubSection.calendar,
+    StudioHubSection.teams,
+    StudioHubSection.savedRecipes,
+  ];
+
   StudioHubSection _selectedHub = StudioHubSection.portfolio;
   String _inventoryCategoryFilter = 'HARDWARE'; // HARDWARE, CHEMICALS, RECIPE
 
@@ -71,6 +81,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   void initState() {
     super.initState();
     if (widget.initialCalendarDate != null) {
+      _selectedHub = StudioHubSection.calendar;
       _selectedCalendarDate = widget.initialCalendarDate!;
       _calendarDisplayMonth = DateTime(_selectedCalendarDate.year, _selectedCalendarDate.month, 1);
     }
@@ -616,7 +627,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     ),
                   ),
                 ),
-                for (final section in StudioHubSection.values) ...[
+                for (final section in _hardcodedHubSections) ...[
                   _buildHubTile(
                     section: section,
                     isSelected: _selectedHub == section,

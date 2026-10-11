@@ -3463,5 +3463,60 @@ void main() {
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
   });
+
+  testWidgets('Detailer Workbench Pane 1 hardcoded arrangement B sequence', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1200, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final repository = JobRepository();
+    if (repository.currentUser.role != UserRole.detailer) {
+      repository.toggleHostMode();
+    }
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: DetailerWorkbenchView(repository: repository),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Verify Pane 1 items are in exact order B:
+    // Portfolio -> Services -> Inventory -> Calendar -> My Teams -> Saved Recipes
+    final expectedTitles = [
+      'Portfolio',
+      'Services',
+      'Inventory',
+      'Calendar',
+      'My Teams',
+      'Saved Recipes',
+    ];
+
+    for (final title in expectedTitles) {
+      expect(find.text(title), findsWidgets);
+    }
+
+    // Verify vertical order in Pane 1 list
+    final portfolioTop = tester.getTopLeft(find.text('Portfolio').first).dy;
+    final servicesTop = tester.getTopLeft(find.text('Services').first).dy;
+    final inventoryTop = tester.getTopLeft(find.text('Inventory').first).dy;
+    final calendarTop = tester.getTopLeft(find.text('Calendar').first).dy;
+    final teamsTop = tester.getTopLeft(find.text('My Teams').first).dy;
+    final savedRecipesTop = tester.getTopLeft(find.text('Saved Recipes').first).dy;
+
+    expect(portfolioTop < servicesTop, isTrue);
+    expect(servicesTop < inventoryTop, isTrue);
+    expect(inventoryTop < calendarTop, isTrue);
+    expect(calendarTop < teamsTop, isTrue);
+    expect(teamsTop < savedRecipesTop, isTrue);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
 }
 
