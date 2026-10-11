@@ -580,7 +580,7 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
               ),
               Wrap(
                 spacing: 6,
-                children: [1, 2, 3, 4].map((d) {
+                children: [1, 2, 3, 4, 5, 6, 8].map((d) {
                   final isSel = _slotDurationHours == d;
                   return ChoiceChip(
                     label: Text('${d}h'),
@@ -594,7 +594,12 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
                       fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
                     ),
                     onSelected: (val) {
-                      if (val) setState(() => _slotDurationHours = d);
+                      if (val) {
+                        setState(() {
+                          _slotDurationHours = d;
+                          _autoGenerateSlotsFromSchedule();
+                        });
+                      }
                     },
                   );
                 }).toList(),

@@ -3303,5 +3303,165 @@ void main() {
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
   });
+
+  test('JobRepository autoGenerateTimeSlots across other hour durations (1h, 2h, 4h, 5h, 6h, 8h) and overrides clearance', () {
+    final repository = JobRepository();
+
+    final mondayDate = DateTime(2026, 10, 12); // Monday
+    final tuesdayDate = DateTime(2026, 10, 13); // Tuesday
+
+    // 1. Test 4-hour slot generation on 8:00 AM - 6:00 PM
+    repository.autoGenerateTimeSlots(
+      openTime: '08:00 AM',
+      closeTime: '06:00 PM',
+      slotDurationHours: 4,
+    );
+    final slots4h = repository.getTimeSlotsForDate(mondayDate);
+    expect(slots4h, equals(['8:00 AM - 12:00 PM', '12:00 PM - 4:00 PM']));
+    expect(repository.calendarPreferences.slotDurationHours, equals(4));
+
+    // 2. Test 2-hour slot generation
+    repository.autoGenerateTimeSlots(
+      openTime: '08:00 AM',
+      closeTime: '06:00 PM',
+      slotDurationHours: 2,
+    );
+    final slots2h = repository.getTimeSlotsForDate(mondayDate);
+    expect(slots2h.length, equals(5));
+    expect(slots2h.first, equals('8:00 AM - 10:00 AM'));
+    expect(slots2h.last, equals('4:00 PM - 6:00 PM'));
+
+    // 3. Test 1-hour slot generation
+    repository.autoGenerateTimeSlots(
+      openTime: '08:00 AM',
+      closeTime: '06:00 PM',
+      slotDurationHours: 1,
+    );
+    final slots1h = repository.getTimeSlotsForDate(mondayDate);
+    expect(slots1h.length, equals(10));
+    expect(slots1h.first, equals('8:00 AM - 9:00 AM'));
+    expect(slots1h.last, equals('5:00 PM - 6:00 PM'));
+
+    // 4. Test 6-hour slot generation
+    repository.autoGenerateTimeSlots(
+      openTime: '08:00 AM',
+      closeTime: '06:00 PM',
+      slotDurationHours: 6,
+    );
+    final slots6h = repository.getTimeSlotsForDate(mondayDate);
+    expect(slots6h, equals(['8:00 AM - 2:00 PM']));
+
+    // 5. Test 8-hour slot generation
+    repository.autoGenerateTimeSlots(
+      openTime: '08:00 AM',
+      closeTime: '06:00 PM',
+      slotDurationHours: 8,
+    );
+    final slots8h = repository.getTimeSlotsForDate(mondayDate);
+    expect(slots8h, equals(['8:00 AM - 4:00 PM']));
+
+    // 6. Test that auto-generating for "All Operating Days" clears date overrides
+    // Create a date override on Monday by clearing slots
+    repository.clearTimeSlotsForDate(mondayDate);
+    expect(repository.getTimeSlotsForDate(mondayDate).isEmpty, isTrue);
+
+    // Auto-generate 4h slots globally (specificDate == null)
+    repository.autoGenerateTimeSlots(
+      openTime: '08:00 AM',
+      closeTime: '06:00 PM',
+      slotDurationHours: 4,
+    );
+    // Monday MUST immediately adopt the newly generated 4h slots, not stay empty!
+    final refreshedMonday = repository.getTimeSlotsForDate(mondayDate);
+    expect(refreshedMonday, equals(['8:00 AM - 12:00 PM', '12:00 PM - 4:00 PM']));
+
+    // 7. Test single-date auto-generation (specificDate != null)
+    repository.autoGenerateTimeSlots(
+      openTime: '08:00 AM',
+      closeTime: '06:00 PM',
+      slotDurationHours: 2,
+      specificDate: tuesdayDate,
+    );
+    // Tuesday has 2h slots (date override)
+    expect(repository.getTimeSlotsForDate(tuesdayDate).length, equals(5));
+    // Monday retains global 4h slots
+    expect(repository.getTimeSlotsForDate(mondayDate).length, equals(2));
+  });
+
+  testWidgets('Detailer Workbench UI auto-generate slots dialog with duration chips and live preview', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1200, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final repository = JobRepository();
+    if (repository.currentUser.role != UserRole.detailer) {
+      repository.toggleHostMode();
+    }
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: DetailerWorkbenchView(repository: repository),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Navigate to Calendar
+    await tester.tap(find.text('Calendar'));
+    await tester.pumpAndSettle();
+
+    // Tap Auto-Gen button in calendar inspector
+    expect(find.text('Auto-Gen'), findsWidgets);
+    await tester.tap(find.text('Auto-Gen').first);
+    await tester.pumpAndSettle();
+
+    // Auto-Gen dialog is visible
+    expect(find.text('Auto-Generate Slots'), findsOneWidget);
+    expect(find.text('Slot Duration / Interval'), findsOneWidget);
+
+    // Verify all duration chips are rendered
+    expect(find.text('1 Hour'), findsOneWidget);
+    expect(find.text('2 Hours'), findsOneWidget);
+    expect(find.text('3 Hours'), findsOneWidget);
+    expect(find.text('4 Hours'), findsOneWidget);
+    expect(find.text('5 Hours'), findsOneWidget);
+    expect(find.text('6 Hours'), findsOneWidget);
+    expect(find.text('8 Hours'), findsOneWidget);
+
+    // Tap 4 Hours chip
+    await tester.tap(find.text('4 Hours'));
+    await tester.pumpAndSettle();
+
+    // Verify live preview shows 4h windows
+    expect(find.text('4h windows'), findsOneWidget);
+    expect(find.text('8:00 AM - 12:00 PM'), findsWidgets);
+
+    // Tap 2 Hours chip
+    await tester.tap(find.text('2 Hours'));
+    await tester.pumpAndSettle();
+
+    // Verify live preview shows 2h windows
+    expect(find.text('2h windows'), findsOneWidget);
+    expect(find.text('8:00 AM - 10:00 AM'), findsWidgets);
+
+    // Confirm Generate Slots
+    await tester.tap(find.text('Generate Slots'));
+    await tester.pumpAndSettle();
+
+    // Dialog is dismissed
+    expect(find.text('Auto-Generate Slots'), findsNothing);
+
+    // Verify slots are generated and visible in workbench
+    expect(find.text('8:00 AM - 10:00 AM'), findsWidgets);
+
+    debugNetworkImageHttpClientProvider = null;
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
 }
 

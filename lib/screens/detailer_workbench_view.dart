@@ -4065,14 +4065,45 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   }
 
   void _showAutoGenerateSlotsDialog(BuildContext context, DateTime date, DayBusinessHours hours) {
-    int duration = widget.repository.calendarPreferences.slotDurationHours;
+    final prefs = widget.repository.getCalendarPreferences(detailerId: widget.repository.currentUser.id);
+    int duration = prefs.slotDurationHours;
+    if (![1, 2, 3, 4, 5, 6, 8].contains(duration)) {
+      duration = 3;
+    }
     bool applyAllDays = true;
+
+    // Resolve initial operating window (fallback to open days if viewing a closed day)
+    String startTime = hours.isOpen ? hours.openTime : '08:00 AM';
+    String endTime = hours.isOpen ? hours.closeTime : '06:00 PM';
+    if (!hours.isOpen) {
+      final openDay = prefs.weeklySchedule.firstWhere(
+        (d) => d.isOpen,
+        orElse: () => const DayBusinessHours(weekday: 1, openTime: '08:00 AM', closeTime: '06:00 PM'),
+      );
+      startTime = openDay.openTime;
+      endTime = openDay.closeTime;
+    }
+
+    final timeOptions = [
+      '05:00 AM', '06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM',
+      '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM',
+      '07:00 PM', '08:00 PM', '09:00 PM', '10:00 PM',
+    ];
+    if (!timeOptions.contains(startTime)) timeOptions.add(startTime);
+    if (!timeOptions.contains(endTime)) timeOptions.add(endTime);
+    timeOptions.sort((a, b) => JobRepository.timeStringToMinutes(a).compareTo(JobRepository.timeStringToMinutes(b)));
 
     showDialog(
       context: context,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (dialogCtx, setDialogState) {
+            final previewSlots = JobRepository.generateSlotsForHours(
+              openTime: startTime,
+              closeTime: endTime,
+              slotDurationHours: duration,
+            );
+
             return AlertDialog(
               backgroundColor: AppTheme.surface,
               shape: RoundedRectangleBorder(
@@ -4086,64 +4117,211 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   Text('Auto-Generate Slots', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                 ],
               ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Rebuild appointment windows from business hours (${hours.openTime} - ${hours.closeTime}):',
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
-                  ),
-                  const SizedBox(height: 14),
-                  const Text('Slot Duration / Interval', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    children: [1, 2, 3, 4].map((d) {
-                      final isSel = duration == d;
-                      return ChoiceChip(
-                        label: Text('$d Hour${d > 1 ? "s" : ""}'),
-                        selected: isSel,
-                        selectedColor: AppTheme.primary,
-                        backgroundColor: AppTheme.surfaceLight,
-                        labelStyle: TextStyle(
-                          color: isSel ? Colors.black : Colors.white,
-                          fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
-                          fontSize: 11,
+              content: SizedBox(
+                width: 480,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Automatically generate booking arrival windows across operating hours.',
+                        style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Time Range Selector
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Start Time', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.surfaceLight,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: AppTheme.border),
+                                  ),
+                                  child: DropdownButtonHideUnderline(
+                                    child: DropdownButton<String>(
+                                      value: timeOptions.contains(startTime) ? startTime : timeOptions.first,
+                                      isExpanded: true,
+                                      dropdownColor: AppTheme.surface,
+                                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                                      items: timeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                                      onChanged: (val) {
+                                        if (val != null) setDialogState(() => startTime = val);
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+                            child: Text('to', style: TextStyle(color: AppTheme.textMuted)),
+                          ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('End Time', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.surfaceLight,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: AppTheme.border),
+                                  ),
+                                  child: DropdownButtonHideUnderline(
+                                    child: DropdownButton<String>(
+                                      value: timeOptions.contains(endTime) ? endTime : timeOptions.last,
+                                      isExpanded: true,
+                                      dropdownColor: AppTheme.surface,
+                                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                                      items: timeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                                      onChanged: (val) {
+                                        if (val != null) setDialogState(() => endTime = val);
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Duration Selector
+                      const Text('Slot Duration / Interval', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [1, 2, 3, 4, 5, 6, 8].map((d) {
+                          final isSel = duration == d;
+                          return ChoiceChip(
+                            label: Text('$d Hour${d > 1 ? "s" : ""}'),
+                            selected: isSel,
+                            selectedColor: AppTheme.primary,
+                            backgroundColor: AppTheme.surfaceLight,
+                            labelStyle: TextStyle(
+                              color: isSel ? Colors.black : Colors.white,
+                              fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
+                              fontSize: 11,
+                            ),
+                            onSelected: (val) {
+                              if (val) setDialogState(() => duration = d);
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Live Slot Preview
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceLight.withAlpha(50),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppTheme.border),
                         ),
-                        onSelected: (val) {
-                          if (val) setDialogState(() => duration = d);
-                        },
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppTheme.surfaceLight.withAlpha(40),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppTheme.border),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Column(
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Apply to all operating days', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
-                            Text('Replaces general slot template', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+                            Row(
+                              children: [
+                                const Icon(Icons.preview_rounded, size: 14, color: AppTheme.primary),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Generated Slots Preview (${previewSlots.length})',
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                                ),
+                                const Spacer(),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.primary.withAlpha(25),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    '${duration}h windows',
+                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            if (previewSlots.isEmpty)
+                              const Text(
+                                'No full windows fit in this interval. Adjust start/end time or duration.',
+                                style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                              )
+                            else
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: previewSlots.map((s) => Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.surface,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: AppTheme.primary.withAlpha(60)),
+                                  ),
+                                  child: Text(
+                                    s,
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
+                                  ),
+                                )).toList(),
+                              ),
                           ],
                         ),
-                        Switch(
-                          value: applyAllDays,
-                          activeThumbColor: AppTheme.primary,
-                          onChanged: (val) => setDialogState(() => applyAllDays = val),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Apply all days toggle
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceLight.withAlpha(40),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppTheme.border),
                         ),
-                      ],
-                    ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Apply to all operating days', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                                  Text(
+                                    applyAllDays
+                                        ? 'Replaces template and refreshes all calendar dates'
+                                        : 'Applies exclusively to ${DateFormat('MMM d').format(date)}',
+                                    style: const TextStyle(fontSize: 10, color: AppTheme.textMuted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Switch(
+                              value: applyAllDays,
+                              activeThumbColor: AppTheme.primary,
+                              onChanged: (val) => setDialogState(() => applyAllDays = val),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
               actions: [
                 TextButton(
@@ -4157,13 +4335,23 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   ),
                   onPressed: () {
                     widget.repository.autoGenerateTimeSlots(
-                      openTime: hours.openTime,
-                      closeTime: hours.closeTime,
+                      openTime: startTime,
+                      closeTime: endTime,
                       slotDurationHours: duration,
                       specificDate: applyAllDays ? null : date,
                     );
                     Navigator.of(ctx).pop();
                     setState(() {});
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          applyAllDays
+                              ? 'Auto-generated $duration-hour slots for all operating days.'
+                              : 'Auto-generated $duration-hour slots for ${DateFormat('MMM d').format(date)}.',
+                        ),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
                   },
                   child: const Text('Generate Slots', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),

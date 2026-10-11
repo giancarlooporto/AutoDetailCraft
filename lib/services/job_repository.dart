@@ -1090,6 +1090,7 @@ class JobRepository extends ChangeNotifier {
     required String openTime,
     required String closeTime,
     int slotDurationHours = 3,
+    bool allowPartialTrailingSlot = false,
   }) {
     final openMin = timeStringToMinutes(openTime);
     final closeMin = timeStringToMinutes(closeTime);
@@ -1100,10 +1101,20 @@ class JobRepository extends ChangeNotifier {
     int cur = openMin;
 
     while (cur < closeMin) {
-      final end = (cur + stepMin <= closeMin) ? cur + stepMin : closeMin;
-      result.add('${formatMinutesToTime(cur)} - ${formatMinutesToTime(end)}');
+      final end = cur + stepMin;
+      if (end <= closeMin) {
+        result.add('${formatMinutesToTime(cur)} - ${formatMinutesToTime(end)}');
+      } else if (allowPartialTrailingSlot) {
+        result.add('${formatMinutesToTime(cur)} - ${formatMinutesToTime(closeMin)}');
+      }
       cur += stepMin;
     }
+
+    // Fallback: If operating window is shorter than duration, generate one slot for the full window
+    if (result.isEmpty && closeMin > openMin) {
+      result.add('${formatMinutesToTime(openMin)} - ${formatMinutesToTime(closeMin)}');
+    }
+
     return result;
   }
 
@@ -1136,30 +1147,18 @@ class JobRepository extends ChangeNotifier {
     // 3. If open, ensure operating hours match
     if (dayHours.isOpen) {
       final openMin = timeStringToMinutes(dayHours.openTime);
-      final closeMin = timeStringToMinutes(dayHours.closeTime);
-
-      // If open time is earlier than the earliest slot, prepend morning slot(s)
-      final earliestSlotMin = slots.isEmpty
-          ? 1440
-          : slots.map(timeStringToMinutes).reduce((a, b) => a < b ? a : b);
-      if (openMin < earliestSlotMin) {
-        int cur = openMin;
-        final step = (prefs.slotDurationHours <= 0 ? 3 : prefs.slotDurationHours) * 60;
-        final extra = <String>[];
-        while (cur < earliestSlotMin) {
-          final end = (cur + step <= closeMin) ? cur + step : closeMin;
-          extra.add('${formatMinutesToTime(cur)} - ${formatMinutesToTime(end)}');
-          cur += step;
-        }
-        slots = [...extra, ...slots];
-      }
 
       // Filter slots that fall within operating hours
       final inHours = slots.where((s) => isSlotWithinOperatingHours(date, s, detailerId: targetDetailerId)).toList();
-      if (inHours.isNotEmpty) {
+      final earliestSlotMin = inHours.isEmpty
+          ? -1
+          : inHours.map(timeStringToMinutes).reduce((a, b) => a < b ? a : b);
+
+      if (inHours.isNotEmpty && earliestSlotMin == openMin) {
         slots = inHours;
       } else {
-        // If none of the configured slots fit, auto-generate for the hours
+        // If configured slots don't cleanly align with this day's hours (e.g. Saturday 9am vs Monday 8am),
+        // cleanly auto-generate slots for this day using the configured slotDurationHours!
         slots = generateSlotsForHours(
           openTime: dayHours.openTime,
           closeTime: dayHours.closeTime,
@@ -1352,6 +1351,7 @@ class JobRepository extends ChangeNotifier {
     required String openTime,
     required String closeTime,
     int slotDurationHours = 3,
+    bool allowPartialTrailingSlot = false,
     DateTime? specificDate,
     String? detailerId,
   }) {
@@ -1360,6 +1360,7 @@ class JobRepository extends ChangeNotifier {
       openTime: openTime,
       closeTime: closeTime,
       slotDurationHours: slotDurationHours,
+      allowPartialTrailingSlot: allowPartialTrailingSlot,
     );
     if (generated.isEmpty) return;
 
@@ -1397,6 +1398,19 @@ class JobRepository extends ChangeNotifier {
         slotDurationHours: slotDurationHours,
       );
       updateCalendarPreferences(updated, detailerId: targetDetailerId);
+
+      // When auto-generating across all operating days, clear date overrides
+      // so all calendar dates adopt the new duration and slot template immediately!
+      for (int i = 0; i < _availabilityBlocks.length; i++) {
+        final b = _availabilityBlocks[i];
+        if (b.detailerId == targetDetailerId) {
+          _availabilityBlocks[i] = b.copyWith(
+            customSlots: [],
+            hasCustomSlotsOverride: false,
+          );
+        }
+      }
+      LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
     }
     notifyListeners();
   }
