@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_profile.dart';
 import '../models/user_vehicle.dart';
 import '../models/team_member.dart';
+import '../models/shift_request.dart';
 import '../models/detail_job.dart';
 import '../models/booking_models.dart';
 import '../models/calendar_availability_block.dart';
@@ -303,6 +304,49 @@ class SupabaseDbService {
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error deleting team member: $e');
     }
+  }
+
+  /// Upsert a shift request to Supabase
+  static Future<void> saveShiftRequest(ShiftRequest req) async {
+    final client = _client;
+    if (client == null) return;
+
+    try {
+      await client.from('shift_requests').upsert(req.toJson());
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error saving shift request: $e');
+    }
+  }
+
+  /// Update shift request status
+  static Future<void> updateShiftRequestStatus(String reqId, String status, {DateTime? reviewedAt, String? reviewerNotes}) async {
+    final client = _client;
+    if (client == null) return;
+
+    try {
+      final payload = <String, dynamic>{
+        'status': status,
+      };
+      if (reviewedAt != null) payload['reviewed_at'] = reviewedAt.toIso8601String();
+      if (reviewerNotes != null) payload['reviewer_notes'] = reviewerNotes;
+      await client.from('shift_requests').update(payload).eq('id', reqId);
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error updating shift request: $e');
+    }
+  }
+
+  /// Fetch shift requests for a studio
+  static Future<List<ShiftRequest>> fetchShiftRequests(String studioId) async {
+    final client = _client;
+    if (client == null) return [];
+
+    try {
+      final res = await client.from('shift_requests').select().eq('detailer_id', studioId);
+      return (res as List<dynamic>).map((r) => ShiftRequest.fromJson(Map<String, dynamic>.from(r as Map))).toList();
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error fetching shift requests: $e');
+    }
+    return [];
   }
 
   /// Upsert a transformation job record to Supabase

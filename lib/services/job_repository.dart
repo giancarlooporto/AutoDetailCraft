@@ -16,6 +16,7 @@ import 'supabase_db_service.dart';
 import 'supabase_service.dart';
 import 'r2_storage_service.dart';
 import '../models/calendar_availability_block.dart';
+import '../models/shift_request.dart';
 
 class JobRepository extends ChangeNotifier {
   List<DetailJob> _jobs = MockDataService.getInitialJobs();
@@ -27,6 +28,8 @@ class JobRepository extends ChangeNotifier {
   List<CalendarAvailabilityBlock> _availabilityBlocks = [];
   DetailerCalendarPreferences _calendarPreferences = DetailerCalendarPreferences.defaults();
   final Map<String, DetailerCalendarPreferences> _detailerPreferencesMap = {};
+  List<ShiftRequest> _shiftRequests = [];
+  String? _activeTeamMemberId; // null or 'founder' = shop owner (Founder)
 
   String _selectedServiceType = 'All Services';
   String _selectedLocationCity = 'All Locations';
@@ -67,6 +70,15 @@ class JobRepository extends ChangeNotifier {
     notifyListeners();
   }
   String get workbenchMode => _currentUser.role == UserRole.detailer ? 'studio' : 'garage';
+
+  List<ShiftRequest> get shiftRequests => List.unmodifiable(_shiftRequests);
+  List<ShiftRequest> get pendingShiftRequests =>
+      _shiftRequests.where((r) => r.isPending && (r.detailerId.isEmpty || r.detailerId == _currentUser.id)).toList();
+
+  String? get activeTeamMemberId => _activeTeamMemberId;
+  bool get isViewingAsTeamMember => _activeTeamMemberId != null && _activeTeamMemberId != 'founder';
+  TeamMember? get activeTeamMember =>
+      isViewingAsTeamMember ? _currentUser.teamMembers.where((m) => m.id == _activeTeamMemberId).firstOrNull : null;
 
   Future<void> init() async {
     if (_isInitialized) return;
@@ -261,6 +273,10 @@ class JobRepository extends ChangeNotifier {
           return job;
         }).toList();
       }
+
+      // 2j. Hydrate dedicated shift requests and active team member session
+      _shiftRequests = await LocalStorageService.loadShiftRequests();
+      _activeTeamMemberId = await LocalStorageService.loadActiveTeamMemberId();
 
       // 4. Load custom recipe presets from local cache
       _customPresets = await LocalStorageService.loadCustomPresets();
@@ -2437,6 +2453,68 @@ class JobRepository extends ChangeNotifier {
       }
     }
     notifyListeners();
+  }
+
+  void setActiveTeamMember(String? memberId) {
+    _activeTeamMemberId = (memberId == null || memberId.isEmpty || memberId == 'founder') ? null : memberId;
+    LocalStorageService.saveActiveTeamMemberId(_activeTeamMemberId);
+    notifyListeners();
+  }
+
+  Future<void> submitShiftRequest(ShiftRequest req) async {
+    _shiftRequests.removeWhere((r) => r.teamMemberId == req.teamMemberId && r.isPending);
+    _shiftRequests.insert(0, req);
+    await LocalStorageService.saveShiftRequests(_shiftRequests);
+    if (_isLoggedIn) {
+      SupabaseDbService.saveShiftRequest(req);
+    }
+    notifyListeners();
+  }
+
+  Future<void> approveShiftRequest(String requestId, {String? reviewerNotes}) async {
+    final idx = _shiftRequests.indexWhere((r) => r.id == requestId);
+    if (idx != -1) {
+      final req = _shiftRequests[idx];
+      final updatedReq = req.copyWith(
+        status: ShiftRequestStatus.approved,
+        reviewedAt: DateTime.now(),
+        reviewerNotes: reviewerNotes,
+      );
+      _shiftRequests[idx] = updatedReq;
+      await LocalStorageService.saveShiftRequests(_shiftRequests);
+      if (_isLoggedIn) {
+        SupabaseDbService.updateShiftRequestStatus(
+          requestId,
+          'approved',
+          reviewedAt: updatedReq.reviewedAt,
+          reviewerNotes: reviewerNotes,
+        );
+      }
+      updateTeamMemberWeeklySchedule(req.teamMemberId, req.requestedSchedule);
+    }
+  }
+
+  Future<void> rejectShiftRequest(String requestId, {String? notes}) async {
+    final idx = _shiftRequests.indexWhere((r) => r.id == requestId);
+    if (idx != -1) {
+      final req = _shiftRequests[idx];
+      final updatedReq = req.copyWith(
+        status: ShiftRequestStatus.rejected,
+        reviewedAt: DateTime.now(),
+        reviewerNotes: notes,
+      );
+      _shiftRequests[idx] = updatedReq;
+      await LocalStorageService.saveShiftRequests(_shiftRequests);
+      if (_isLoggedIn) {
+        SupabaseDbService.updateShiftRequestStatus(
+          requestId,
+          'rejected',
+          reviewedAt: updatedReq.reviewedAt,
+          reviewerNotes: notes,
+        );
+      }
+      notifyListeners();
+    }
   }
 
   bool isSlotWithinOperatingHours(DateTime date, String slot, {String? detailerId}) {

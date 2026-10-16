@@ -16,6 +16,7 @@ import 'edit_profile_dialog.dart';
 import 'public_studio_screen.dart';
 import 'calendar_preferences_dialog.dart';
 import '../models/calendar_availability_block.dart';
+import '../models/shift_request.dart';
 import '../services/local_storage_service.dart';
 
 enum StudioHubSection {
@@ -726,6 +727,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     ),
                   ],
                 ),
+                _buildActiveIdentityBanner(context),
               ],
             ),
           ),
@@ -856,20 +858,43 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-          trailing: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-            decoration: BoxDecoration(
-              color: isSelected ? AppTheme.primary : AppTheme.surfaceLight,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              '$count',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                color: isSelected ? Colors.black : AppTheme.textMuted,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (section == StudioHubSection.teams && widget.repository.pendingShiftRequests.isNotEmpty) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.amber,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${widget.repository.pendingShiftRequests.length} req',
+                    style: const TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+              ],
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isSelected ? AppTheme.primary : AppTheme.surfaceLight,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: isSelected ? Colors.black : AppTheme.textMuted,
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
           onTap: () => _selectHub(section, isMobile: isMobile),
         ),
@@ -1264,6 +1289,25 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         ),
                       ),
                     ),
+                    if (widget.repository.pendingShiftRequests.any((r) => r.teamMemberId == member.id)) ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withAlpha(30),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.amber.withAlpha(120)),
+                        ),
+                        child: const Text(
+                          'REQ',
+                          style: TextStyle(
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.amber,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 subtitle: Column(
@@ -2987,7 +3031,9 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           ],
         ),
         const SizedBox(height: 16),
-        Row(
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
@@ -3016,9 +3062,33 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
               icon: const Icon(Icons.edit_calendar_rounded, size: 16),
-              label: const Text('Shift Schedule', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              label: Text(widget.repository.isViewingAsTeamMember ? 'Request Shift Change' : 'Edit Shift Schedule', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               onPressed: () => _showEditTeamMemberScheduleDialog(context, member),
             ),
+            if (!member.isFounder) ...[
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: widget.repository.activeTeamMemberId == member.id ? Colors.amber : AppTheme.textSecondary,
+                  side: BorderSide(color: widget.repository.activeTeamMemberId == member.id ? Colors.amber : AppTheme.border),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: Icon(widget.repository.activeTeamMemberId == member.id ? Icons.check_circle_rounded : Icons.badge_outlined, size: 14),
+                label: Text(
+                  widget.repository.activeTeamMemberId == member.id ? 'Active (Staff View)' : 'Log in as ${member.name.split(" ").first}',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                ),
+                onPressed: () {
+                  if (widget.repository.activeTeamMemberId == member.id) {
+                    widget.repository.setActiveTeamMember(null);
+                  } else {
+                    widget.repository.setActiveTeamMember(member.id);
+                  }
+                  setState(() {});
+                },
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 20),
@@ -3030,6 +3100,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           icon: Icons.work_outline_rounded,
         ),
         const SizedBox(height: 14),
+        _buildShiftRequestsCard(context, forMemberId: member.id),
         _buildTeamMemberScheduleCard(context, member),
       ],
     );
@@ -3062,17 +3133,21 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.calendar_today_rounded, size: 16, color: AppTheme.primary),
-                  SizedBox(width: 6),
-                  Text('WEEKLY WORKING SHIFTS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.white)),
-                ],
+              const Expanded(
+                child: Row(
+                  children: [
+                    Icon(Icons.calendar_today_rounded, size: 16, color: AppTheme.primary),
+                    SizedBox(width: 6),
+                    Flexible(
+                      child: Text('WEEKLY WORKING SHIFTS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.white), overflow: TextOverflow.ellipsis),
+                    ),
+                  ],
+                ),
               ),
               TextButton(
                 style: TextButton.styleFrom(visualDensity: VisualDensity.compact, padding: EdgeInsets.zero),
                 onPressed: () => _showEditTeamMemberScheduleDialog(context, member),
-                child: const Text('Edit Shifts', style: TextStyle(fontSize: 11, color: AppTheme.primary)),
+                child: Text(widget.repository.isViewingAsTeamMember ? 'Request Shift' : 'Edit Shifts', style: const TextStyle(fontSize: 11, color: AppTheme.primary)),
               ),
             ],
           ),
@@ -3132,9 +3207,24 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     final user = widget.repository.currentUser;
     final studioPrefs = widget.repository.getCalendarPreferences(detailerId: user.id);
 
+    final isViewingAsStaff = widget.repository.isViewingAsTeamMember;
+    final activeMemberId = widget.repository.activeTeamMemberId;
+
+    if (isViewingAsStaff && member.id != activeMemberId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Staff members can only view or request shift changes for their own schedule.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     final currentSchedule = member.customWeeklySchedule != null && member.customWeeklySchedule!.isNotEmpty
         ? List<DayBusinessHours>.from(member.customWeeklySchedule!)
         : List<DayBusinessHours>.from(studioPrefs.weeklySchedule);
+
+    final reasonController = TextEditingController();
 
     showDialog(
       context: context,
@@ -3143,13 +3233,33 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           return AlertDialog(
             backgroundColor: AppTheme.surface,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: AppTheme.border)),
-            title: Text('Edit Shifts for ${member.name}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            title: Row(
+              children: [
+                Icon(
+                  isViewingAsStaff ? Icons.schedule_send_rounded : Icons.edit_calendar_rounded,
+                  size: 20,
+                  color: AppTheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isViewingAsStaff ? 'Request Shift for ${member.name}' : 'Edit Shifts for ${member.name}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ),
+              ],
+            ),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Configure regular weekly working days and days off for this technician:', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                  Text(
+                    isViewingAsStaff
+                        ? 'Select your desired weekly working days and days off. Your request will be sent to the shop owner for review:'
+                        : 'Configure regular weekly working days and days off for this technician:',
+                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                  ),
                   const SizedBox(height: 14),
                   ...[1, 2, 3, 4, 5, 6, 7].map((weekday) {
                     final idx = currentSchedule.indexWhere((h) => h.weekday == weekday);
@@ -3164,33 +3274,53 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: dayHours.isOpen ? Colors.greenAccent.withAlpha(80) : AppTheme.border),
                       ),
-                      child: SwitchListTile(
-                        dense: true,
-                        title: Text(dayHours.weekdayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                        subtitle: Text(
-                          dayHours.isOpen ? 'Working (${dayHours.openTime} - ${dayHours.closeTime})' : 'Recurring Day Off',
-                          style: TextStyle(fontSize: 11, color: dayHours.isOpen ? Colors.greenAccent : AppTheme.textMuted),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: SwitchListTile(
+                          dense: true,
+                          title: Text(dayHours.weekdayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          subtitle: Text(
+                            dayHours.isOpen ? 'Working (${dayHours.openTime} - ${dayHours.closeTime})' : 'Recurring Day Off',
+                            style: TextStyle(fontSize: 11, color: dayHours.isOpen ? Colors.greenAccent : AppTheme.textMuted),
+                          ),
+                          value: dayHours.isOpen,
+                          activeThumbColor: Colors.greenAccent,
+                          onChanged: (val) {
+                            setDialogState(() {
+                              final updated = DayBusinessHours(
+                                weekday: weekday,
+                                isOpen: val,
+                                openTime: dayHours.openTime,
+                                closeTime: dayHours.closeTime,
+                              );
+                              if (idx != -1) {
+                                currentSchedule[idx] = updated;
+                              } else {
+                                currentSchedule.add(updated);
+                              }
+                            });
+                          },
                         ),
-                        value: dayHours.isOpen,
-                        activeThumbColor: Colors.greenAccent,
-                        onChanged: (val) {
-                          setDialogState(() {
-                            final updated = DayBusinessHours(
-                              weekday: weekday,
-                              isOpen: val,
-                              openTime: dayHours.openTime,
-                              closeTime: dayHours.closeTime,
-                            );
-                            if (idx != -1) {
-                              currentSchedule[idx] = updated;
-                            } else {
-                              currentSchedule.add(updated);
-                            }
-                          });
-                        },
                       ),
                     );
                   }),
+                  if (isViewingAsStaff) ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: reasonController,
+                      decoration: InputDecoration(
+                        labelText: 'Reason for Shift Request (optional)',
+                        hintText: 'e.g. Schedule adjustment, family event, appointment...',
+                        labelStyle: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                        hintStyle: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                        filled: true,
+                        fillColor: AppTheme.surfaceLight,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.border)),
+                      ),
+                      style: const TextStyle(fontSize: 12, color: Colors.white),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -3204,22 +3334,369 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   backgroundColor: AppTheme.primary,
                   foregroundColor: Colors.black,
                 ),
-                onPressed: () {
-                  widget.repository.updateTeamMemberWeeklySchedule(member.id, currentSchedule);
-                  Navigator.pop(ctx);
-                  setState(() {});
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Updated weekly schedule for ${member.name}'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
+                onPressed: () async {
+                  if (isViewingAsStaff) {
+                    final req = ShiftRequest(
+                      id: 'sr_${DateTime.now().millisecondsSinceEpoch}',
+                      detailerId: user.id,
+                      teamMemberId: member.id,
+                      teamMemberName: member.name,
+                      teamMemberRole: member.roleTitle,
+                      requestedSchedule: currentSchedule,
+                      reason: reasonController.text.trim(),
+                      createdAt: DateTime.now(),
+                    );
+                    await widget.repository.submitShiftRequest(req);
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    setState(() {});
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Shift request submitted for ${member.name}. Awaiting shop owner approval.'),
+                          behavior: SnackBarBehavior.floating,
+                          backgroundColor: Colors.blueAccent,
+                        ),
+                      );
+                    }
+                  } else {
+                    widget.repository.updateTeamMemberWeeklySchedule(member.id, currentSchedule);
+                    Navigator.pop(ctx);
+                    setState(() {});
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Updated weekly schedule for ${member.name}'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
                 },
-                child: const Text('Save Shifts', style: TextStyle(fontWeight: FontWeight.bold)),
+                child: Text(
+                  isViewingAsStaff ? 'Request Shift' : 'Save Shifts',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
               ),
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildShiftRequestsCard(BuildContext context, {String? forMemberId}) {
+    final allPending = widget.repository.pendingShiftRequests;
+    final pending = forMemberId != null
+        ? allPending.where((r) => r.teamMemberId == forMemberId).toList()
+        : allPending;
+
+    if (pending.isEmpty) return const SizedBox.shrink();
+
+    final isOwner = !widget.repository.isViewingAsTeamMember;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.amber.withAlpha(120), width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withAlpha(30),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.notifications_active_rounded, size: 16, color: Colors.amber),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Row(
+                  children: [
+                    const Text(
+                      'INCOMING SHIFT REQUESTS',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white, letterSpacing: 0.5),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.amber,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${pending.length} Pending',
+                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Divider(color: AppTheme.border, height: 1),
+          const SizedBox(height: 10),
+          ...pending.map((req) {
+            final offDays = req.requestedSchedule.where((h) => !h.isOpen).map((h) => h.weekdayShort).toList();
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceLight.withAlpha(60),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.person_rounded, size: 16, color: AppTheme.primary),
+                          const SizedBox(width: 6),
+                          Text(
+                            req.teamMemberName,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                          ),
+                          if (req.teamMemberRole != null && req.teamMemberRole!.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            Text('(${req.teamMemberRole})', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                          ],
+                        ],
+                      ),
+                      Text(
+                        DateFormat('MMM d, h:mm a').format(req.createdAt),
+                        style: const TextStyle(fontSize: 10, color: AppTheme.textMuted),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  if (req.reason.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black26,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'Reason: "${req.reason}"',
+                        style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.amberAccent),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                  ],
+                  Row(
+                    children: [
+                      const Text('Requested Days Off: ', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                      Text(
+                        offDays.isNotEmpty ? offDays.join(', ') : 'None (Full Working Week)',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: offDays.isNotEmpty ? Colors.redAccent : Colors.greenAccent,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  if (isOwner)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.greenAccent.shade700,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            icon: const Icon(Icons.check_circle_outline_rounded, size: 14),
+                            label: const Text('Approve Request', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                            onPressed: () async {
+                              await widget.repository.approveShiftRequest(req.id);
+                              setState(() {});
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Approved shift change for ${req.teamMemberName}. Schedule updated.'),
+                                    backgroundColor: Colors.greenAccent.shade700,
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.redAccent,
+                              side: const BorderSide(color: Colors.redAccent),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            icon: const Icon(Icons.cancel_outlined, size: 14),
+                            label: const Text('Decline', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                            onPressed: () async {
+                              await widget.repository.rejectShiftRequest(req.id);
+                              setState(() {});
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Declined shift request from ${req.teamMemberName}.'),
+                                    backgroundColor: Colors.redAccent,
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    const Row(
+                      children: [
+                        Icon(Icons.hourglass_top_rounded, size: 14, color: Colors.amber),
+                        SizedBox(width: 4),
+                        Text('Awaiting approval by shop owner.', style: TextStyle(fontSize: 11, color: Colors.amber, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveIdentityBanner(BuildContext context) {
+    final user = widget.repository.currentUser;
+    final isViewingStaff = widget.repository.isViewingAsTeamMember;
+    final activeMember = widget.repository.activeTeamMember;
+
+    if (isViewingStaff && activeMember != null) {
+      return Container(
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.amber.withAlpha(20),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.amber.withAlpha(100)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.badge_rounded, size: 14, color: Colors.amber),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Staff View: ${activeMember.name}',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    activeMember.roleTitle,
+                    style: const TextStyle(fontSize: 9.5, color: Colors.white70),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                InkWell(
+                  borderRadius: BorderRadius.circular(4),
+                  onTap: () {
+                    widget.repository.setActiveTeamMember(null);
+                    setState(() {});
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceLight,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: const Text('Back to Owner', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (user.teamMembers.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceLight.withAlpha(50),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.shield_rounded, size: 13, color: AppTheme.primary),
+          const SizedBox(width: 4),
+          const Expanded(
+            child: Text(
+              'Owner Mode',
+              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Switch to Team Member View',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Switch', style: TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.bold)),
+                Icon(Icons.arrow_drop_down, size: 14, color: AppTheme.primary),
+              ],
+            ),
+            onSelected: (val) {
+              widget.repository.setActiveTeamMember(val == 'founder' ? null : val);
+              setState(() {});
+            },
+            itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: 'founder',
+                child: Text('Shop Owner (Founder)', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+              const PopupMenuDivider(),
+              ...user.teamMembers.map((m) => PopupMenuItem(
+                value: m.id,
+                child: Text('View as ${m.name} (${m.roleTitle})'),
+              )),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -3842,6 +4319,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _buildShiftRequestsCard(context),
         // Team Selector Filter Bar
         _buildCalendarTeamFilterBar(keyPrefix: 'pane3'),
 

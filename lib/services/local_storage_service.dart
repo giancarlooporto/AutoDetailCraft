@@ -9,6 +9,7 @@ import '../models/inventory_item.dart';
 import '../models/calendar_availability_block.dart';
 import '../models/user_vehicle.dart';
 import '../models/team_member.dart';
+import '../models/shift_request.dart';
 import '../core/constants/detailing_presets.dart';
 
 class LocalStorageService {
@@ -17,6 +18,8 @@ class LocalStorageService {
   static const String _servicePackagesKey = 'adc_service_packages_v1';
   static const String _garageVehiclesKey = 'adc_garage_vehicles_v1';
   static const String _teamMembersKey = 'adc_team_members_v1';
+  static const String _shiftRequestsKey = 'adc_shift_requests_v1';
+  static const String _activeTeamMemberIdKey = 'adc_active_team_member_id_v1';
   static const String _inventoryKey = 'adc_inventory_items_v1';
   static const String _calendarBlocksKey = 'adc_calendar_blocks_v1';
   static const String _calendarPrefsKey = 'adc_calendar_prefs_v1';
@@ -585,6 +588,59 @@ class LocalStorageService {
       }
     }
     return [];
+  }
+
+  // Shift Requests (adc_shift_requests_v1)
+  static Future<void> saveShiftRequests(List<ShiftRequest> requests) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = jsonEncode(requests.map((r) => r.toJson()).toList());
+      await prefs.setString(_shiftRequestsKey, encoded);
+      if (kDebugMode) {
+        print('[LocalStorageService] Successfully saved ${requests.length} shift requests.');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[LocalStorageService] Error saving shift requests: $e');
+      }
+    }
+  }
+
+  static Future<List<ShiftRequest>> loadShiftRequests() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_shiftRequestsKey);
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(jsonStr);
+        return list.map((item) => ShiftRequest.fromJson(Map<String, dynamic>.from(item as Map))).toList();
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[LocalStorageService] Error loading shift requests: $e');
+      }
+    }
+    return [];
+  }
+
+  // Active Team Member Session Switcher (adc_active_team_member_id_v1)
+  static Future<void> saveActiveTeamMemberId(String? id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (id == null || id.isEmpty || id == 'founder') {
+        await prefs.remove(_activeTeamMemberIdKey);
+      } else {
+        await prefs.setString(_activeTeamMemberIdKey, id);
+      }
+    } catch (_) {}
+  }
+
+  static Future<String?> loadActiveTeamMemberId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_activeTeamMemberIdKey);
+    } catch (_) {
+      return null;
+    }
   }
 
   // Save Job Comments Override with dual-key synchronization (adc_job_comments_v1 and adc_mock_job_overrides_v1)

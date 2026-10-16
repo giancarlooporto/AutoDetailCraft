@@ -25,6 +25,8 @@ import 'package:detail_craft/screens/calendar_preferences_dialog.dart';
 import 'package:detail_craft/screens/booking_flow_screen.dart';
 import 'package:detail_craft/models/inventory_item.dart';
 import 'package:detail_craft/models/team_member.dart';
+import 'package:detail_craft/models/shift_request.dart';
+import 'package:detail_craft/models/calendar_availability_block.dart';
 
 import 'dart:async';
 import 'dart:io';
@@ -3986,6 +3988,167 @@ void main() {
 
     // VERIFY: Still on CHEMICALS after refresh! Did NOT revert to HARDWARE!
     expect(find.text('CHEMICALS INVENTORY'), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('JobRepository shift request workflow: submit, approve, and schedule update', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final repo = JobRepository();
+    await repo.init();
+
+    final testMember = TeamMember(
+      id: 'tm_marcus',
+      name: 'Marcus Vance',
+      roleTitle: 'PPF Lead',
+      avatarUrl: '',
+    );
+    repo.addTeamMember(testMember);
+
+    // Switch to Marcus
+    repo.setActiveTeamMember('tm_marcus');
+    expect(repo.isViewingAsTeamMember, isTrue);
+    expect(repo.activeTeamMember?.name, equals('Marcus Vance'));
+
+    // Create a schedule where Friday (5) is day off
+    final requestedSchedule = [
+      DayBusinessHours(weekday: 1, isOpen: true),
+      DayBusinessHours(weekday: 2, isOpen: true),
+      DayBusinessHours(weekday: 3, isOpen: true),
+      DayBusinessHours(weekday: 4, isOpen: true),
+      DayBusinessHours(weekday: 5, isOpen: false), // Friday OFF
+      DayBusinessHours(weekday: 6, isOpen: false),
+      DayBusinessHours(weekday: 7, isOpen: false),
+    ];
+
+    final request = ShiftRequest(
+      id: 'sr_1001',
+      detailerId: repo.currentUser.id,
+      teamMemberId: 'tm_marcus',
+      teamMemberName: 'Marcus Vance',
+      requestedSchedule: requestedSchedule,
+      reason: 'Need Fridays off for childcare',
+      createdAt: DateTime.now(),
+    );
+
+    await repo.submitShiftRequest(request);
+
+    // Verify request is pending
+    expect(repo.pendingShiftRequests.length, equals(1));
+    expect(repo.pendingShiftRequests.first.reason, equals('Need Fridays off for childcare'));
+
+    // Switch back to Owner
+    repo.setActiveTeamMember(null);
+    expect(repo.isViewingAsTeamMember, isFalse);
+
+    // Owner approves the shift request
+    await repo.approveShiftRequest('sr_1001');
+
+    // Verify request is no longer pending
+    expect(repo.pendingShiftRequests.isEmpty, isTrue);
+
+    // Verify Marcus's schedule is updated and Friday is now a recurring day off!
+    final fridayDate = DateTime(2026, 10, 23); // Friday
+    expect(repo.isMemberRecurringDayOff('tm_marcus', fridayDate), isTrue);
+  });
+
+  testWidgets('DetailerWorkbenchView displays Request Shift for staff and Save Shifts for owner, and owner can approve', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repo = JobRepository();
+    await repo.init();
+    await LocalStorageService.saveWorkbenchMode('studio');
+    await LocalStorageService.saveStudioHubSection('teams');
+
+    final testMember = TeamMember(
+      id: 'tm_elena',
+      name: 'Elena Rostova',
+      roleTitle: 'Interior Specialist',
+      avatarUrl: '',
+    );
+    repo.addTeamMember(testMember);
+
+    // 1. Initial view as Owner
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(body: DetailerWorkbenchView(repository: repo)),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Tap on Elena in Pane 2
+    expect(find.text('Elena Rostova'), findsWidgets);
+    await tester.tap(find.text('Elena Rostova').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Tap "Shift Schedule" / "Edit Shifts" button as Owner
+    expect(find.text('Edit Shift Schedule'), findsOneWidget);
+    await tester.tap(find.text('Edit Shift Schedule'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // VERIFY: Owner sees "Save Shifts"!
+    expect(find.widgetWithText(ElevatedButton, 'Save Shifts'), findsOneWidget);
+    expect(find.widgetWithText(ElevatedButton, 'Request Shift'), findsNothing);
+
+    // Close dialog
+    await tester.tap(find.text('Cancel'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 2. Switch identity to Elena (Staff View)
+    await tester.tap(find.text('Log in as Elena'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // VERIFY: Staff View banner is visible in Pane 1!
+    expect(find.text('Staff View: Elena Rostova'), findsOneWidget);
+
+    // Tap "Request Shift Change"
+    expect(find.text('Request Shift Change'), findsOneWidget);
+    await tester.tap(find.text('Request Shift Change'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // VERIFY: Staff sees "Request Shift" instead of "Save Shifts"!
+    expect(find.widgetWithText(ElevatedButton, 'Request Shift'), findsOneWidget);
+    expect(find.widgetWithText(ElevatedButton, 'Save Shifts'), findsNothing);
+
+    // Submit the shift request
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Request Shift'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify request submitted to repo
+    expect(repo.pendingShiftRequests.length, equals(1));
+
+    // 3. Switch back to Owner
+    await tester.tap(find.text('Back to Owner'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // VERIFY: Owner sees "INCOMING SHIFT REQUESTS" with Elena's request!
+    expect(find.text('INCOMING SHIFT REQUESTS'), findsWidgets);
+    expect(find.text('Approve Request'), findsWidgets);
+    expect(find.text('Decline'), findsWidgets);
+
+    // Owner taps "Approve Request"
+    await tester.tap(find.text('Approve Request').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // VERIFY: Request is approved!
+    expect(repo.pendingShiftRequests.isEmpty, isTrue);
 
     debugNetworkImageHttpClientProvider = null;
   });
