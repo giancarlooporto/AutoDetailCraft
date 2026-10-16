@@ -95,14 +95,24 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
   Future<void> _loadSavedHubSection() async {
     final savedName = await LocalStorageService.loadStudioHubSection();
-    if (mounted && savedName != null && widget.initialCalendarDate == null) {
-      final match = StudioHubSection.values.where((s) => s.name == savedName);
-      if (match.isNotEmpty) {
-        setState(() {
-          _selectedHub = match.first;
-          _ensureSelection();
-        });
-      }
+    final savedCategory = await LocalStorageService.loadInventoryCategoryFilter();
+    final savedInvId = await LocalStorageService.loadSelectedInventoryId();
+    if (mounted) {
+      setState(() {
+        if (savedName != null && widget.initialCalendarDate == null) {
+          final match = StudioHubSection.values.where((s) => s.name == savedName);
+          if (match.isNotEmpty) {
+            _selectedHub = match.first;
+          }
+        }
+        if (savedCategory != null && (savedCategory == 'HARDWARE' || savedCategory == 'CHEMICALS' || savedCategory == 'RECIPE')) {
+          _inventoryCategoryFilter = savedCategory;
+        }
+        if (savedInvId != null && savedInvId.isNotEmpty) {
+          _selectedInventoryId = savedInvId;
+        }
+        _ensureSelection();
+      });
     }
   }
 
@@ -225,6 +235,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               _selectedInventoryId = newItem.id;
               if (isMobile) _mobileStep = 2;
             });
+            LocalStorageService.saveSelectedInventoryId(newItem.id);
           },
         );
         break;
@@ -1027,10 +1038,15 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
           onTap: () {
+            LocalStorageService.saveInventoryCategoryFilter(category);
             setState(() {
               _inventoryCategoryFilter = category;
               if (isMobile) {
                 _mobileStep = 2;
+              }
+              _ensureSelection();
+              if (_selectedInventoryId != null) {
+                LocalStorageService.saveSelectedInventoryId(_selectedInventoryId!);
               }
             });
           },
@@ -3690,6 +3706,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         onPressed: () {
                           Navigator.of(ctx).pop();
                           LocalStorageService.saveStudioHubSection(StudioHubSection.inventory.name);
+                          LocalStorageService.saveInventoryCategoryFilter('RECIPE');
+                          if (recipe.id.isNotEmpty) {
+                            LocalStorageService.saveSelectedInventoryId(recipe.id);
+                          }
                           setState(() {
                             _selectedHub = StudioHubSection.inventory;
                             _inventoryCategoryFilter = 'RECIPE';

@@ -37,6 +37,8 @@ class LocalStorageService {
   static const String _messagesKeyPrefix = 'adc_messages_v1_';
   static const String _workbenchModeKey = 'adc_workbench_mode_v1';
   static const String _studioHubSectionKey = 'adc_studio_hub_section_v1';
+  static const String _inventoryCategoryFilterKey = 'adc_inventory_category_filter_v1';
+  static const String _selectedInventoryIdKey = 'adc_selected_inventory_id_v1';
 
   // Site Access Gate
   static Future<bool> isSiteUnlocked() async {
@@ -447,6 +449,40 @@ class LocalStorageService {
     try {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getString(_studioHubSectionKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Active Inventory Category Filter ('HARDWARE', 'CHEMICALS', 'RECIPE')
+  static Future<void> saveInventoryCategoryFilter(String category) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_inventoryCategoryFilterKey, category);
+    } catch (_) {}
+  }
+
+  static Future<String?> loadInventoryCategoryFilter() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_inventoryCategoryFilterKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Active Selected Inventory Item ID
+  static Future<void> saveSelectedInventoryId(String itemId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_selectedInventoryIdKey, itemId);
+    } catch (_) {}
+  }
+
+  static Future<String?> loadSelectedInventoryId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_selectedInventoryIdKey);
     } catch (_) {
       return null;
     }

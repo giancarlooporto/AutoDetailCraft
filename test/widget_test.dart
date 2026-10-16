@@ -3940,6 +3940,56 @@ void main() {
 
     debugNetworkImageHttpClientProvider = null;
   });
+
+  testWidgets('Detailer Workbench persists inventory category filter (CHEMICALS) across refresh', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+
+    final repo1 = JobRepository();
+    await repo1.init();
+    await LocalStorageService.saveWorkbenchMode('studio');
+    await LocalStorageService.saveStudioHubSection('inventory');
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(body: DetailerWorkbenchView(repository: repo1)),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Initially defaults to HARDWARE
+    expect(find.text('HARDWARE'), findsWidgets);
+    expect(find.text('CHEMICALS'), findsWidgets);
+
+    // Tap "CHEMICALS" category row in Pane 2
+    await tester.tap(find.text('CHEMICALS').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify persisted in LocalStorageService
+    final savedCategory = await LocalStorageService.loadInventoryCategoryFilter();
+    expect(savedCategory, equals('CHEMICALS'));
+
+    // Verify Pane 3 header reflects CHEMICALS
+    expect(find.text('CHEMICALS INVENTORY'), findsOneWidget);
+
+    // Simulate page refresh
+    final repo2 = JobRepository();
+    await repo2.init();
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(body: DetailerWorkbenchView(repository: repo2)),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // VERIFY: Still on CHEMICALS after refresh! Did NOT revert to HARDWARE!
+    expect(find.text('CHEMICALS INVENTORY'), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
 }
+
 
 
