@@ -16,6 +16,7 @@ import 'edit_profile_dialog.dart';
 import 'public_studio_screen.dart';
 import 'calendar_preferences_dialog.dart';
 import '../models/calendar_availability_block.dart';
+import '../services/local_storage_service.dart';
 
 enum StudioHubSection {
   portfolio('Portfolio', 'PORTFOLIO', 'Showcase builds & media', Icons.photo_library_rounded),
@@ -85,9 +86,24 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       _selectedHub = StudioHubSection.calendar;
       _selectedCalendarDate = widget.initialCalendarDate!;
       _calendarDisplayMonth = DateTime(_selectedCalendarDate.year, _selectedCalendarDate.month, 1);
+    } else {
+      _loadSavedHubSection();
     }
     widget.repository.addListener(_onRepoChanged);
     _ensureSelection();
+  }
+
+  Future<void> _loadSavedHubSection() async {
+    final savedName = await LocalStorageService.loadStudioHubSection();
+    if (mounted && savedName != null && widget.initialCalendarDate == null) {
+      final match = StudioHubSection.values.where((s) => s.name == savedName);
+      if (match.isNotEmpty) {
+        setState(() {
+          _selectedHub = match.first;
+          _ensureSelection();
+        });
+      }
+    }
   }
 
   @override
@@ -140,6 +156,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   }
 
   void _selectHub(StudioHubSection section, {bool isMobile = false}) {
+    LocalStorageService.saveStudioHubSection(section.name);
     setState(() {
       _selectedHub = section;
       if (section != StudioHubSection.inventory) {
@@ -2257,6 +2274,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     visualDensity: VisualDensity.compact,
                   ),
                   onPressed: () {
+                    LocalStorageService.saveStudioHubSection(StudioHubSection.services.name);
                     setState(() {
                       _selectedHub = StudioHubSection.services;
                       _selectedServicePackageId = _returnToServicePackageId;
@@ -2777,6 +2795,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 icon: const Icon(Icons.calendar_month_rounded, size: 16),
                 label: const Text('View Calendar & Shifts', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                 onPressed: () {
+                  LocalStorageService.saveStudioHubSection(StudioHubSection.calendar.name);
                   setState(() {
                     _selectedHub = StudioHubSection.calendar;
                     _selectedCalendarTeamMemberId = 'founder';
@@ -2849,6 +2868,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               icon: const Icon(Icons.calendar_month_rounded, size: 16),
               label: Text('View ${member.name.split(" ").first}\'s Calendar', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
               onPressed: () {
+                LocalStorageService.saveStudioHubSection(StudioHubSection.calendar.name);
                 setState(() {
                   _selectedHub = StudioHubSection.calendar;
                   _selectedCalendarTeamMemberId = member.id;
@@ -3487,6 +3507,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         label: const Text('Open in Workbench', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                         onPressed: () {
                           Navigator.of(ctx).pop();
+                          LocalStorageService.saveStudioHubSection(StudioHubSection.inventory.name);
                           setState(() {
                             _selectedHub = StudioHubSection.inventory;
                             _inventoryCategoryFilter = 'RECIPE';

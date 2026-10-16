@@ -66,10 +66,15 @@ class JobRepository extends ChangeNotifier {
     // 2. Check auth state (Supabase or stored session)
     final isGuest = await LocalStorageService.loadIsGuest();
     final savedUser = await LocalStorageService.loadCurrentUser();
+    final savedWorkbenchMode = await LocalStorageService.loadWorkbenchMode();
 
     if (!isGuest && savedUser != null) {
       _currentUser = savedUser;
       _isLoggedIn = true;
+    } else if (savedUser != null) {
+      // Offline/guest session found with customized profile/garage
+      _currentUser = savedUser;
+      _isLoggedIn = false;
     } else if (SupabaseAuthService.isLoggedIn) {
       // Supabase persistent session found
       final authUser = SupabaseAuthService.currentAuthUser!;
@@ -86,6 +91,18 @@ class JobRepository extends ChangeNotifier {
       await LocalStorageService.saveIsGuest(false);
     } else {
       _isLoggedIn = false;
+    }
+
+    // Apply explicit workbench mode if persisted ('studio' vs 'garage')
+    if (savedWorkbenchMode == 'studio') {
+      _currentUser = _currentUser.copyWith(
+        role: UserRole.detailer,
+        isVerifiedHost: true,
+      );
+    } else if (savedWorkbenchMode == 'garage') {
+      _currentUser = _currentUser.copyWith(
+        role: UserRole.client,
+      );
     }
 
     // 3. Load persistent custom transformation jobs from local cache first
@@ -175,8 +192,20 @@ class JobRepository extends ChangeNotifier {
     try {
       final cloudProfile = await SupabaseDbService.fetchUserProfile(userId);
       if (cloudProfile != null) {
-        _currentUser = cloudProfile;
-        await LocalStorageService.saveCurrentUser(cloudProfile);
+        final mode = await LocalStorageService.loadWorkbenchMode();
+        if (mode == 'studio') {
+          _currentUser = cloudProfile.copyWith(
+            role: UserRole.detailer,
+            isVerifiedHost: true,
+          );
+        } else if (mode == 'garage') {
+          _currentUser = cloudProfile.copyWith(
+            role: UserRole.client,
+          );
+        } else {
+          _currentUser = cloudProfile;
+        }
+        await LocalStorageService.saveCurrentUser(_currentUser);
         notifyListeners();
       }
     } catch (_) {}
@@ -279,6 +308,7 @@ class JobRepository extends ChangeNotifier {
     _unsubscribeFromRealtime();
     await SupabaseAuthService.signOut();
     await LocalStorageService.logoutSession();
+    await LocalStorageService.saveWorkbenchMode('garage');
     _isLoggedIn = false;
     _currentUser = MockDataService.youUser;
     notifyListeners();
@@ -289,6 +319,7 @@ class JobRepository extends ChangeNotifier {
     final userId = _currentUser.id;
     await SupabaseAuthService.signOut();
     await LocalStorageService.deleteAccountData(userId);
+    await LocalStorageService.saveWorkbenchMode('garage');
     _isLoggedIn = false;
     _currentUser = MockDataService.youUser;
     notifyListeners();
@@ -303,9 +334,9 @@ class JobRepository extends ChangeNotifier {
   }
 
   void _persistUser() {
+    // 1. Always save to local storage for fast offline cache and refresh persistence
+    LocalStorageService.saveCurrentUser(_currentUser);
     if (_isLoggedIn) {
-      // 1. Save to local storage for fast offline cache
-      LocalStorageService.saveCurrentUser(_currentUser);
       // 2. Sync to Supabase Database
       SupabaseDbService.saveUserProfile(_currentUser);
     }
@@ -684,6 +715,7 @@ class JobRepository extends ChangeNotifier {
       role: newRole,
       isVerifiedHost: isNowHost,
     );
+    LocalStorageService.saveWorkbenchMode(isNowHost ? 'studio' : 'garage');
     _persistUser();
     notifyListeners();
   }

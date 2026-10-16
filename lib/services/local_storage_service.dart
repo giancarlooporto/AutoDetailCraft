@@ -25,6 +25,8 @@ class LocalStorageService {
   static const String _siteAccessUnlockedKey = 'adc_site_access_unlocked_v1';
   static const String _conversationsKey = 'adc_conversations_v1';
   static const String _messagesKeyPrefix = 'adc_messages_v1_';
+  static const String _workbenchModeKey = 'adc_workbench_mode_v1';
+  static const String _studioHubSectionKey = 'adc_studio_hub_section_v1';
 
   // Site Access Gate
   static Future<bool> isSiteUnlocked() async {
@@ -363,5 +365,39 @@ class LocalStorageService {
       }
     } catch (_) {}
     return null;
+  }
+
+  // Active Workbench Mode ('studio' vs 'garage')
+  static Future<void> saveWorkbenchMode(String mode) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_workbenchModeKey, mode);
+    } catch (_) {}
+  }
+
+  static Future<String?> loadWorkbenchMode() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_workbenchModeKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Active Studio Hub Section (e.g. 'portfolio', 'calendar', 'services', etc.)
+  static Future<void> saveStudioHubSection(String sectionName) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_studioHubSectionKey, sectionName);
+    } catch (_) {}
+  }
+
+  static Future<String?> loadStudioHubSection() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_studioHubSectionKey);
+    } catch (_) {
+      return null;
+    }
   }
 }

@@ -12,6 +12,7 @@ import 'package:detail_craft/core/theme/app_theme.dart';
 import 'package:detail_craft/core/constants/detailing_presets.dart';
 import 'package:detail_craft/screens/main_navigation_screen.dart';
 import 'package:detail_craft/services/job_repository.dart';
+import 'package:detail_craft/services/local_storage_service.dart';
 import 'package:detail_craft/widgets/fullscreen_image_viewer.dart';
 import 'package:detail_craft/screens/create_job_screen.dart';
 import 'package:detail_craft/models/paint_gauge_point.dart';
@@ -3826,6 +3827,118 @@ void main() {
     debugNetworkImageHttpClientProvider = null;
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
+  });
+
+  test('JobRepository and LocalStorageService persist My Studio and My Garage workbench modes across refresh', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    // 1. Initial fresh session: default role is client (My Garage)
+    final repo1 = JobRepository();
+    await repo1.init();
+    expect(repo1.currentUser.role, UserRole.client);
+
+    // 2. Switch to Detailer Mode ("Become a Detailer" / "My Studio")
+    repo1.toggleHostMode(targetRole: UserRole.detailer);
+    expect(repo1.currentUser.role, UserRole.detailer);
+    expect(await LocalStorageService.loadWorkbenchMode(), 'studio');
+
+    // 3. Simulate browser refresh / page reload: re-instantiate and re-initialize JobRepository
+    final repo2 = JobRepository();
+    await repo2.init();
+    expect(repo2.currentUser.role, UserRole.detailer, reason: 'Must stay in My Studio after browser refresh');
+
+    // 4. Switch back to Client Mode ("Switch to Client Mode" / "My Garage")
+    repo2.toggleHostMode(targetRole: UserRole.client);
+    expect(repo2.currentUser.role, UserRole.client);
+    expect(await LocalStorageService.loadWorkbenchMode(), 'garage');
+
+    // 5. Simulate browser refresh again: re-instantiate and re-initialize JobRepository
+    final repo3 = JobRepository();
+    await repo3.init();
+    expect(repo3.currentUser.role, UserRole.client, reason: 'Must stay in My Garage after browser refresh');
+  });
+
+  testWidgets('Browser refresh inside My Studio stays in My Studio and inside My Garage stays in My Garage', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+
+    // Step 1: Initialize first session on tab 3 (Profile / Garage) with logged in user
+    final repo1 = JobRepository();
+    await repo1.init();
+    repo1.isLoggedIn = true;
+    await LocalStorageService.saveIsGuest(false);
+    await LocalStorageService.saveCurrentUser(repo1.currentUser);
+    repo1.setActiveTab(3);
+
+    await tester.pumpWidget(MaterialApp(
+      home: MainNavigationScreen(repository: repo1),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify currently in My Garage
+    expect(find.byKey(const Key('become_a_detailer_btn')), findsOneWidget);
+    expect(find.text('Become a Detailer'), findsOneWidget);
+    expect(find.text('STUDIO WORKBENCH HUB'), findsNothing);
+
+    // Step 2: Click "Become a Detailer" -> enters "My Studio"
+    await tester.tap(find.byKey(const Key('become_a_detailer_btn')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify now inside My Studio
+    expect(find.text('STUDIO WORKBENCH HUB'), findsOneWidget);
+    expect(find.text('Switch to Client Mode'), findsOneWidget);
+
+    // Step 3: Simulate browser refresh while inside My Studio
+    final repo2 = JobRepository();
+    await repo2.init();
+
+    await tester.pumpWidget(MaterialApp(
+      home: MainNavigationScreen(repository: repo2),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // VERIFY: Still inside My Studio! Did NOT reset to My Garage!
+    expect(find.text('STUDIO WORKBENCH HUB'), findsOneWidget);
+    expect(find.text('Switch to Client Mode'), findsOneWidget);
+    expect(find.text('Become a Detailer'), findsNothing);
+
+    // Step 4: Click "Switch to Client Mode" -> enters "My Garage"
+    await tester.tap(find.text('Switch to Client Mode'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify returned to My Garage
+    expect(find.byKey(const Key('become_a_detailer_btn')), findsOneWidget);
+    expect(find.text('Become a Detailer'), findsOneWidget);
+    expect(find.text('STUDIO WORKBENCH HUB'), findsNothing);
+
+    // Step 5: Simulate browser refresh while inside My Garage
+    final repo3 = JobRepository();
+    await repo3.init();
+
+    await tester.pumpWidget(MaterialApp(
+      home: MainNavigationScreen(repository: repo3),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // VERIFY: Still inside My Garage! Did NOT jump to Studio!
+    expect(find.byKey(const Key('become_a_detailer_btn')), findsOneWidget);
+    expect(find.text('Become a Detailer'), findsOneWidget);
+    expect(find.text('STUDIO WORKBENCH HUB'), findsNothing);
+
+    debugNetworkImageHttpClientProvider = null;
   });
 }
 
