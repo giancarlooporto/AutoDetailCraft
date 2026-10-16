@@ -108,8 +108,14 @@ class SupabaseAuthService {
       // 1. Query SupabaseDbService.fetchUserProfile(user.id) FIRST on sign-in before falling back
       final cloudProfile = await SupabaseDbService.fetchUserProfile(user.id);
       if (cloudProfile != null) {
-        await LocalStorageService.saveCurrentUser(cloudProfile);
-        return (success: true, error: null, profile: cloudProfile);
+        final localPackages = await LocalStorageService.loadServicePackages();
+        final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
+        final mergedPackages = cloudProfile.servicePackages.isNotEmpty
+            ? cloudProfile.servicePackages
+            : (localPackages.isNotEmpty ? localPackages : (existingLocalProfile?.servicePackages ?? MockDataService.standardPackages));
+        final merged = cloudProfile.copyWith(servicePackages: mergedPackages);
+        await LocalStorageService.saveCurrentUser(merged);
+        return (success: true, error: null, profile: merged);
       }
 
       // 2. Check if we have the user's saved garage, team, bio, location, etc. in local storage

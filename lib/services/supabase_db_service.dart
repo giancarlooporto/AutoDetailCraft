@@ -120,6 +120,7 @@ class SupabaseDbService {
   static Future<void> saveUserProfile(UserProfile user) async {
     final client = _client;
     if (client == null) return;
+    if (user.id == 'usr_you') return; // Mock guest user is not persisted to cloud DB
 
     try {
       String roleStr = 'client';

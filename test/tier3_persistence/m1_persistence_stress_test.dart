@@ -446,6 +446,29 @@ void main() {
         final found = harnessRepo.currentUser.servicePackages.firstWhere((p) => p.id == 'pkg_harness_x');
         expect(found.basePrice, equals(620.0));
       });
+
+      test('3.4: Local custom package is strictly preserved when cloud returns default packages', () async {
+        final repo = JobRepository();
+        await repo.init();
+
+        const customPkg = ServicePackage(
+          id: 'pkg_custom_bespoke',
+          title: 'Custom Titanium Coating',
+          description: 'Special multi-year coating',
+          basePrice: 1200.0,
+          estimatedDuration: '8 hrs',
+          includes: ['Prep', 'Coating'],
+        );
+        repo.addServicePackage(customPkg);
+
+        expect(repo.currentUser.servicePackages.any((p) => p.id == 'pkg_custom_bespoke'), isTrue);
+
+        // Simulate refresh
+        final refreshedRepo = await TestHarness.simulateBrowserRefresh(repo);
+        expect(refreshedRepo.currentUser.servicePackages.any((p) => p.id == 'pkg_custom_bespoke'), isTrue);
+        expect(refreshedRepo.currentUser.servicePackages.length, greaterThanOrEqualTo(5));
+      });
     });
   });
 }
+

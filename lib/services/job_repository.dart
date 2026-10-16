@@ -329,11 +329,24 @@ class JobRepository extends ChangeNotifier {
     try {
       final cloudProfile = await SupabaseDbService.fetchUserProfile(userId);
       if (cloudProfile != null) {
-        // Non-destructive merge: if cloud has no packages, KEEP local custom packages.
-        // Do NOT overwrite local custom packages with empty or mock data.
-        final resolvedPackages = cloudProfile.servicePackages.isNotEmpty
-            ? cloudProfile.servicePackages
-            : _currentUser.servicePackages;
+        // Non-destructive union merge for service packages: union by ID, preserving local custom packages and additions
+        List<ServicePackage> resolvedPackages;
+        if (cloudProfile.servicePackages.isNotEmpty) {
+          final packageMap = <String, ServicePackage>{
+            for (final p in _currentUser.servicePackages) p.id: p,
+          };
+          for (final cp in cloudProfile.servicePackages) {
+            final local = packageMap[cp.id];
+            if (local == null) {
+              packageMap[cp.id] = cp;
+            }
+          }
+          resolvedPackages = packageMap.values.toList();
+        } else {
+          resolvedPackages = _currentUser.servicePackages.isNotEmpty
+              ? _currentUser.servicePackages
+              : await LocalStorageService.loadServicePackages();
+        }
 
         // Non-destructive union merge for garage vehicles: union by ID, preserving local custom vehicles and data
         List<UserVehicle> resolvedGarage;
@@ -413,6 +426,9 @@ class JobRepository extends ChangeNotifier {
         }
         if (resolvedTeam.isNotEmpty) {
           await LocalStorageService.saveTeamMembers(resolvedTeam);
+        }
+        if (resolvedPackages.length > cloudProfile.servicePackages.length && userId != 'usr_you') {
+          SupabaseDbService.saveUserProfile(merged);
         }
 
         // Non-destructive union merge for inventory items: union by ID, preserving local custom items and fill levels
