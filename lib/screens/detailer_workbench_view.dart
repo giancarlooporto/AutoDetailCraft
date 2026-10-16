@@ -575,7 +575,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         ),
                         icon: const Icon(Icons.directions_car_rounded, size: 14),
                         label: const Text('Switch to Client Mode', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                        onPressed: () => widget.repository.toggleHostMode(),
+                        onPressed: () => widget.repository.toggleHostMode(targetRole: UserRole.client),
                       ),
                     ),
                     const SizedBox(width: 6),

@@ -435,16 +435,40 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                       style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                                     ),
                                     const SizedBox(height: 4),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: AppTheme.primary.withAlpha(25),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: const Text(
-                                        'Vehicle Owner',
-                                        style: TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.bold),
-                                      ),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 4,
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.primary.withAlpha(25),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: const Text(
+                                            'Vehicle Owner',
+                                            style: TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                        ElevatedButton.icon(
+                                          key: const Key('become_a_detailer_btn'),
+                                          style: ElevatedButton.styleFrom(
+                                            foregroundColor: Colors.black,
+                                            backgroundColor: AppTheme.primary,
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                            visualDensity: VisualDensity.compact,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                            elevation: 0,
+                                          ),
+                                          onPressed: () => widget.repository.toggleHostMode(targetRole: UserRole.detailer),
+                                          icon: const Icon(Icons.storefront_rounded, size: 14, color: Colors.black),
+                                          label: const Text(
+                                            'Become a Detailer',
+                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
@@ -459,50 +483,24 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     ),
                   ),
                 ),
-                SliverToBoxAdapter(
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1280),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                        child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Mode Switch to Detailer Mode
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.black,
-                            backgroundColor: AppTheme.primary,
-                            side: const BorderSide(color: AppTheme.primary),
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          onPressed: () => widget.repository.toggleHostMode(),
-                          icon: const Icon(
-                            Icons.storefront_rounded,
-                            size: 16,
-                            color: Colors.black,
-                          ),
-                          label: const Text(
-                            'Become a Detailer',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black,
+                if (user.bio.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1280),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                            child: Text(
+                              user.bio,
+                              style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
                             ),
                           ),
                         ),
-                        const SizedBox(height: 12),
-
-                        // Bio
-                        Text(user.bio, style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4)),
-                        const SizedBox(height: 10),
-                      ],
-                    ),
                       ),
                     ),
                   ),
-                ),
 
                 // Client Mode Tabs (My Garage / Saved Recipes)
                 SliverPersistentHeader(

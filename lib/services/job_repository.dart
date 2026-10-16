@@ -677,10 +677,11 @@ class JobRepository extends ChangeNotifier {
   }
 
   // Detailer / Host Promotion / Mode Toggle
-  void toggleHostMode() {
-    final isNowHost = _currentUser.role == UserRole.client;
+  void toggleHostMode({UserRole? targetRole}) {
+    final newRole = targetRole ?? (_currentUser.role == UserRole.detailer ? UserRole.client : UserRole.detailer);
+    final isNowHost = newRole == UserRole.detailer;
     _currentUser = _currentUser.copyWith(
-      role: isNowHost ? UserRole.detailer : UserRole.client,
+      role: newRole,
       isVerifiedHost: isNowHost,
     );
     _persistUser();

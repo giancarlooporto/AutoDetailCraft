@@ -6,6 +6,7 @@ import 'package:detail_craft/models/booking_models.dart';
 import 'package:detail_craft/models/user_profile.dart';
 import 'package:detail_craft/widgets/dilution_dialog.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:detail_craft/core/theme/app_theme.dart';
 import 'package:detail_craft/core/constants/detailing_presets.dart';
@@ -2831,14 +2832,17 @@ void main() {
     while (!repository.calendarPreferences.getHoursForWeekday(openDate.weekday).isOpen) {
       openDate = openDate.add(const Duration(days: 1));
     }
-    // Block a specific slot on this open date
-    repository.toggleBlockSlot(openDate, '8:00 AM - 11:00 AM');
+    // Block the first slot on this open date
+    final availableSlots = repository.getTimeSlotsForDate(openDate, detailerId: detailer.id);
+    final slotToBlock = availableSlots.isNotEmpty ? availableSlots.first : '9:00 AM - 12:00 PM';
+    repository.toggleBlockSlot(openDate, slotToBlock);
 
     await tester.pumpWidget(MaterialApp(
       theme: AppTheme.darkTheme,
       home: BookingFlowScreen(
         detailer: detailer,
         repository: repository,
+        initialDate: openDate,
       ),
     ));
     await tester.pumpAndSettle();
@@ -2850,8 +2854,9 @@ void main() {
     // Step 1: Vehicle & Schedule
     expect(find.text('Select Date & Time Window'), findsOneWidget);
 
-    // If initial date is tomorrow and it's Sunday (day off), CLOSED badge is visible
-    final hasClosedOrBlocked = find.text('CLOSED').evaluate().isNotEmpty || find.text('BLOCKED').evaluate().isNotEmpty;
+    // Verify BLOCKED badge is visible for the blocked slot
+    final hasClosedOrBlocked = find.text('CLOSED').evaluate().isNotEmpty ||
+        find.text('BLOCKED').evaluate().isNotEmpty;
     expect(hasClosedOrBlocked, isTrue);
   });
 
@@ -3673,5 +3678,73 @@ void main() {
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
   });
+
+  testWidgets('ProfileScreen Become a Detailer button is placed directly below profile name and switches mode on single click', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    SharedPreferences.setMockInitialValues({});
+
+    final repository = JobRepository();
+    await repository.init();
+    repository.isLoggedIn = true;
+
+    // Test Case 1: Initial role is superAdmin (as with platform owner Gian Oporto)
+    repository.updateCurrentUser(repository.currentUser.copyWith(
+      role: UserRole.superAdmin,
+      displayName: 'Gian Oporto',
+      location: 'Austin, Texas',
+      bio: 'Car enthusiast & detailing craft connoisseur.',
+    ));
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: ProfileScreen(repository: repository),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify Profile header shows profile name and 'Vehicle Owner' badge
+    expect(find.text('Gian Oporto'), findsOneWidget);
+    expect(find.text('Vehicle Owner'), findsOneWidget);
+
+    // Verify 'Become a Detailer' button is present
+    final becomeDetailerFinder = find.widgetWithText(ElevatedButton, 'Become a Detailer');
+    expect(becomeDetailerFinder, findsOneWidget);
+
+    // SINGLE TAP must immediately activate detailer mode
+    await tester.tap(becomeDetailerFinder);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // DetailerWorkbenchView is rendered immediately on the first tap!
+    expect(repository.currentUser.role, UserRole.detailer);
+    expect(find.byType(DetailerWorkbenchView), findsOneWidget);
+
+    // Switch back to Client Mode
+    final switchBackFinder = find.text('Switch to Client Mode');
+    expect(switchBackFinder, findsOneWidget);
+    await tester.tap(switchBackFinder);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Back to Client Mode on single click
+    expect(repository.currentUser.role, UserRole.client);
+    expect(find.byType(DetailerWorkbenchView), findsNothing);
+    expect(find.text('Become a Detailer'), findsOneWidget);
+
+    // Test Case 2: From client role, single tap switches to detailer mode
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Become a Detailer'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(repository.currentUser.role, UserRole.detailer);
+    expect(find.byType(DetailerWorkbenchView), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
 }
+
 
