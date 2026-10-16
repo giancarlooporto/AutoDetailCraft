@@ -4152,7 +4152,83 @@ void main() {
 
     debugNetworkImageHttpClientProvider = null;
   });
+
+  testWidgets('Owner Permissions Matrix limits Pane 1 tabs and Pane 2/3 operational capabilities for staff', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final repo = JobRepository();
+    repo.setActiveTeamMember(null);
+
+    // Ensure staff member exists
+    final elena = TeamMember(
+      id: 'staff_elena_test',
+      name: 'Elena Rostova',
+      roleTitle: 'Ceramic Coating Specialist',
+      avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2',
+      isFounder: false,
+      allowedHubSections: ['portfolio', 'inventory', 'calendar', 'savedRecipes'], // Services and Teams NOT allowed
+      canEditInventory: false, // view-only inventory
+      canViewPricing: false, // hide prices
+      canManageTeam: false,
+      canViewAllTeamCalendar: false, // only view personal schedule
+    );
+    repo.addTeamMember(elena);
+
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: DetailerWorkbenchView(repository: repo),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 1. As OWNER, verify all Pane 1 sections are visible
+    expect(find.text('Services'), findsOneWidget);
+    expect(find.text('My Teams'), findsOneWidget);
+    expect(find.text('Inventory'), findsOneWidget);
+
+    // Switch identity to restricted Elena
+    repo.setActiveTeamMember(elena.id);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // VERIFY: In staff view, Services and My Teams are HIDDEN from Pane 1!
+    expect(find.text('Services'), findsNothing);
+    expect(find.text('My Teams'), findsNothing);
+
+    // VERIFY: Inventory and Portfolio are still allowed and visible
+    expect(find.text('Inventory'), findsOneWidget);
+    expect(find.text('Portfolio'), findsOneWidget);
+
+    // Switch to Inventory
+    await tester.tap(find.text('Inventory'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // VERIFY: Since canEditInventory is false, the [ + ADD ] button is NOT shown in Pane 3
+    expect(find.widgetWithText(ElevatedButton, '[ + ADD ]'), findsNothing);
+
+    // Switch back to owner
+    repo.setActiveTeamMember(null);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // VERIFY: Owner sees Services and My Teams again
+    expect(find.text('Services'), findsOneWidget);
+    expect(find.text('My Teams'), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
 }
+
 
 
 

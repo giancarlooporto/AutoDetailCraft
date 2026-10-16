@@ -59,6 +59,27 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     StudioHubSection.savedRecipes,
   ];
 
+  bool get _canEditInventory =>
+      widget.repository.activeTeamMember?.allowsInventoryEdit ?? true;
+
+  bool get _canViewPricing =>
+      widget.repository.activeTeamMember?.allowsPricingView ?? true;
+
+  bool get _canManageTeam =>
+      widget.repository.activeTeamMember?.allowsTeamManagement ?? true;
+
+  bool get _canViewAllCalendar =>
+      widget.repository.activeTeamMember?.allowsAllCalendarView ?? true;
+
+  List<StudioHubSection> get _visibleHubSections {
+    final activeMember = widget.repository.activeTeamMember;
+    if (activeMember == null) return _hardcodedHubSections;
+    final allowed = _hardcodedHubSections
+        .where((s) => activeMember.isSectionAllowed(s.name))
+        .toList();
+    return allowed.isNotEmpty ? allowed : [StudioHubSection.portfolio];
+  }
+
   StudioHubSection _selectedHub = StudioHubSection.portfolio;
   String _inventoryCategoryFilter = 'HARDWARE'; // HARDWARE, CHEMICALS, RECIPE
 
@@ -207,6 +228,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         CalendarPreferencesDialog.show(context, repository: widget.repository);
         break;
       case StudioHubSection.inventory:
+        if (!_canEditInventory) return;
         InventoryCategory cat = InventoryCategory.hardware;
         if (_inventoryCategoryFilter == 'CHEMICALS') cat = InventoryCategory.chemicals;
         if (_inventoryCategoryFilter == 'RECIPE') cat = InventoryCategory.recipe;
@@ -241,6 +263,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         );
         break;
       case StudioHubSection.teams:
+        if (!_canManageTeam) return;
         AddTeamMemberDialog.show(context, repository: widget.repository);
         break;
       case StudioHubSection.portfolio:
@@ -259,6 +282,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         );
         break;
       case StudioHubSection.services:
+        if (!_canViewPricing) return;
         ServicePackageEditorDialog.show(
           context,
           availableRecipes: widget.repository.recipeItems,
@@ -302,6 +326,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         CalendarPreferencesDialog.show(context, repository: widget.repository);
         break;
       case StudioHubSection.inventory:
+        if (!_canEditInventory) return;
         final inventory = widget.repository.inventoryItems;
         if (inventory.isEmpty) return;
         final item = inventory.firstWhere(
@@ -329,6 +354,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         );
         break;
       case StudioHubSection.services:
+        if (!_canViewPricing) return;
         final pkgs = user.servicePackages;
         if (pkgs.isEmpty) return;
         final pkg = pkgs.firstWhere(
@@ -390,6 +416,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         );
         break;
       case StudioHubSection.teams:
+        if (!_canManageTeam) return;
         if (_selectedTeamMemberId == 'founder' || _selectedTeamMemberId == null) {
           EditProfileDialog.show(context, repository: widget.repository);
           return;
@@ -430,6 +457,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       case StudioHubSection.calendar:
         return;
       case StudioHubSection.inventory:
+        if (!_canEditInventory) return;
         final inventory = widget.repository.inventoryItems;
         if (inventory.isEmpty) return;
         final item = inventory.firstWhere(
@@ -440,6 +468,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         deleteAction = () => widget.repository.removeInventoryItem(item.id);
         break;
       case StudioHubSection.services:
+        if (!_canViewPricing) return;
         final pkgs = user.servicePackages;
         if (pkgs.isEmpty) return;
         final pkg = pkgs.firstWhere(
@@ -450,6 +479,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         deleteAction = () => widget.repository.removeServicePackage(pkg.id);
         break;
       case StudioHubSection.teams:
+        if (!_canManageTeam) return;
         if (_selectedTeamMemberId == 'founder' || _selectedTeamMemberId == null) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Cannot remove shop founder.')),
@@ -749,7 +779,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     ),
                   ),
                 ),
-                for (final section in _hardcodedHubSections) ...[
+                for (final section in _visibleHubSections) ...[
                   _buildHubTile(
                     section: section,
                     isSelected: _selectedHub == section,
@@ -995,28 +1025,31 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
           // Bottom: [ + ADD ] button to add new team, portfolio, or service (Inventory add button transferred to Pane 3, Calendar has settings)
           if (_selectedHub != StudioHubSection.savedRecipes && _selectedHub != StudioHubSection.inventory && _selectedHub != StudioHubSection.calendar) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: const BoxDecoration(
-                color: AppTheme.surface,
-                border: Border(top: BorderSide(color: AppTheme.border)),
-              ),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    visualDensity: VisualDensity.compact,
+            if ((_selectedHub != StudioHubSection.teams || _canManageTeam) &&
+                (_selectedHub != StudioHubSection.services || _canViewPricing)) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: const BoxDecoration(
+                  color: AppTheme.surface,
+                  border: Border(top: BorderSide(color: AppTheme.border)),
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: const Icon(Icons.add_rounded, size: 16),
+                    label: const Text('[ + ADD ]', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
+                    onPressed: () => _openAdd(isMobile: isMobile),
                   ),
-                  icon: const Icon(Icons.add_rounded, size: 16),
-                  label: const Text('[ + ADD ]', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
-                  onPressed: () => _openAdd(isMobile: isMobile),
                 ),
               ),
-            ),
+            ],
           ],
         ],
       ),
@@ -1502,7 +1535,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     ),
                   ),
                   Text(
-                    '\$${pkg.basePrice.toStringAsFixed(0)}',
+                    _canViewPricing ? '\$${pkg.basePrice.toStringAsFixed(0)}' : '••••',
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.primary),
                   ),
                 ],
@@ -1662,6 +1695,45 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     final user = widget.repository.currentUser;
     final staff = widget.repository.getStudioStaff(detailerId: user.id);
     if (staff.length <= 1) return const SizedBox.shrink();
+
+    final activeMember = widget.repository.activeTeamMember;
+    final isRestricted = !_canViewAllCalendar && activeMember != null;
+
+    if (isRestricted) {
+      if (_selectedCalendarTeamMemberId != activeMember.id) {
+        _selectedCalendarTeamMemberId = activeMember.id;
+      }
+      return Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppTheme.primary.withAlpha(120), width: 1.2),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.lock_clock_outlined, size: 16, color: AppTheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Personal Schedule (${activeMember.name})',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withAlpha(30),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text('LOCKED', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+            ),
+          ],
+        ),
+      );
+    }
 
     // Verify current selection is valid
     final isValidSelection = _selectedCalendarTeamMemberId == 'all' ||
@@ -2237,18 +2309,20 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
                 // Action controls for Inventory vs Calendar vs other hubs
                 if (_selectedHub == StudioHubSection.inventory) ...[
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      visualDensity: VisualDensity.compact,
+                  if (_canEditInventory) ...[
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.add_rounded, size: 16),
+                      label: const Text('[ + ADD ]', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
+                      onPressed: () => _openAdd(isMobile: isMobile),
                     ),
-                    icon: const Icon(Icons.add_rounded, size: 16),
-                    label: const Text('[ + ADD ]', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
-                    onPressed: () => _openAdd(isMobile: isMobile),
-                  ),
+                  ],
                 ] else if (_selectedHub == StudioHubSection.calendar) ...[
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
@@ -2263,28 +2337,31 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     onPressed: () => CalendarPreferencesDialog.show(context, repository: widget.repository),
                   ),
                 ] else if (_hasActiveItemToInspect() && _selectedHub != StudioHubSection.savedRecipes) ...[
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.surfaceLight,
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: AppTheme.border),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      visualDensity: VisualDensity.compact,
+                  if ((_selectedHub != StudioHubSection.teams || _canManageTeam) &&
+                      (_selectedHub != StudioHubSection.services || _canViewPricing)) ...[
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.surfaceLight,
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: AppTheme.border),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.edit_outlined, size: 14, color: AppTheme.primary),
+                      label: const Text('[EDIT]', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                      onPressed: _editActiveItem,
                     ),
-                    icon: const Icon(Icons.edit_outlined, size: 14, color: AppTheme.primary),
-                    label: const Text('[EDIT]', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                    onPressed: _editActiveItem,
-                  ),
-                  const SizedBox(width: 6),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
-                    tooltip: 'Delete Item',
-                    onPressed: _confirmDeleteActiveItem,
-                  ),
+                    const SizedBox(width: 6),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
+                      tooltip: 'Delete Item',
+                      onPressed: _confirmDeleteActiveItem,
+                    ),
+                  ],
                 ],
               ],
             ),
@@ -2360,16 +2437,18 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
               ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
-                  foregroundColor: Colors.black,
+              if (_canEditInventory) ...[
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.black,
+                  ),
+                  icon: const Icon(Icons.add_rounded, size: 16),
+                  label: const Text('[ + ADD ]', style: TextStyle(fontWeight: FontWeight.bold)),
+                  onPressed: () => _openAdd(isMobile: isMobile),
                 ),
-                icon: const Icon(Icons.add_rounded, size: 16),
-                label: const Text('[ + ADD ]', style: TextStyle(fontWeight: FontWeight.bold)),
-                onPressed: () => _openAdd(isMobile: isMobile),
-              ),
+              ],
             ],
           ),
         ),
@@ -2605,31 +2684,36 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (item.category != InventoryCategory.recipe) ...[
-                _buildStatusDropdown(item),
-                const SizedBox(width: 8),
+                if (_canEditInventory)
+                  _buildStatusDropdown(item)
+                else
+                  _buildStatusBadge(item),
+                if (_canEditInventory) const SizedBox(width: 8),
               ],
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.surfaceLight,
-                  foregroundColor: Colors.white,
-                  side: const BorderSide(color: AppTheme.border),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                  visualDensity: VisualDensity.compact,
+              if (_canEditInventory) ...[
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.surfaceLight,
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: AppTheme.border),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: const Icon(Icons.edit_outlined, size: 13, color: AppTheme.primary),
+                  label: const Text('[EDIT]', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                  onPressed: () => _openEditInventoryItem(item),
                 ),
-                icon: const Icon(Icons.edit_outlined, size: 13, color: AppTheme.primary),
-                label: const Text('[EDIT]', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                onPressed: () => _openEditInventoryItem(item),
-              ),
-              const SizedBox(width: 6),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
-                tooltip: 'Delete Item',
-                onPressed: () => _confirmDeleteInventoryItem(item),
-              ),
+                const SizedBox(width: 6),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
+                  tooltip: 'Delete Item',
+                  onPressed: () => _confirmDeleteInventoryItem(item),
+                ),
+              ],
             ],
           );
 
@@ -2645,36 +2729,39 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     if (item.category != InventoryCategory.recipe)
-                      _buildStatusDropdown(item)
+                      _canEditInventory ? _buildStatusDropdown(item) : _buildStatusBadge(item)
                     else
                       const SizedBox.shrink(),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.surfaceLight,
-                            foregroundColor: Colors.white,
-                            side: const BorderSide(color: AppTheme.border),
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                            visualDensity: VisualDensity.compact,
+                    if (_canEditInventory)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.surfaceLight,
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: AppTheme.border),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            icon: const Icon(Icons.edit_outlined, size: 13, color: AppTheme.primary),
+                            label: const Text('[EDIT]', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                            onPressed: () => _openEditInventoryItem(item),
                           ),
-                          icon: const Icon(Icons.edit_outlined, size: 13, color: AppTheme.primary),
-                          label: const Text('[EDIT]', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                          onPressed: () => _openEditInventoryItem(item),
-                        ),
-                        const SizedBox(width: 6),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
-                          tooltip: 'Delete Item',
-                          onPressed: () => _confirmDeleteInventoryItem(item),
-                        ),
-                      ],
-                    ),
+                          const SizedBox(width: 6),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
+                            tooltip: 'Delete Item',
+                            onPressed: () => _confirmDeleteInventoryItem(item),
+                          ),
+                        ],
+                      )
+                    else
+                      const SizedBox.shrink(),
                   ],
                 ),
               ],
@@ -2831,7 +2918,47 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     );
   }
 
+  Widget _buildStatusBadge(InventoryItem item) {
+    if (item.category == InventoryCategory.recipe) {
+      return const SizedBox.shrink();
+    }
+
+    String currentStatus = 'In Service';
+    Color color = AppTheme.primary;
+
+    if (item.category == InventoryCategory.chemicals) {
+      currentStatus = const ['Full', 'Half', 'Empty'].contains(item.status) ? item.status : 'Full';
+      if (currentStatus == 'Full') color = Colors.greenAccent;
+      if (currentStatus == 'Half') color = Colors.orangeAccent;
+      if (currentStatus == 'Empty') color = Colors.redAccent;
+    } else {
+      currentStatus = const ['In Service', 'Repair', 'Optimal', 'Retired'].contains(item.status) ? item.status : 'In Service';
+      if (currentStatus == 'In Service') color = AppTheme.primary;
+      if (currentStatus == 'Repair') color = Colors.orangeAccent;
+      if (currentStatus == 'Optimal') color = Colors.greenAccent;
+      if (currentStatus == 'Retired') color = AppTheme.textMuted;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withAlpha(25),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withAlpha(120), width: 1),
+      ),
+      child: Text(
+        currentStatus,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.bold,
+          color: color,
+        ),
+      ),
+    );
+  }
+
   void _openEditInventoryItem(InventoryItem item) {
+    if (!_canEditInventory) return;
     final hardwareOptions = widget.repository.inventoryItems
         .where((i) => i.category == InventoryCategory.hardware)
         .map((i) => i.name)
@@ -2869,6 +2996,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   }
 
   void _confirmDeleteInventoryItem(InventoryItem item) {
+    if (!_canEditInventory) return;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -3084,6 +3212,9 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     widget.repository.setActiveTeamMember(null);
                   } else {
                     widget.repository.setActiveTeamMember(member.id);
+                    if (!member.isSectionAllowed(_selectedHub.name)) {
+                      _selectedHub = _visibleHubSections.first;
+                    }
                   }
                   setState(() {});
                 },
@@ -3101,8 +3232,215 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         ),
         const SizedBox(height: 14),
         _buildShiftRequestsCard(context, forMemberId: member.id),
+        _buildTeamMemberPermissionsMatrixCard(context, member),
         _buildTeamMemberScheduleCard(context, member),
       ],
+    );
+  }
+
+  Widget _buildTeamMemberPermissionsMatrixCard(BuildContext context, TeamMember member) {
+    final isOwner = !widget.repository.isViewingAsTeamMember;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.primary.withAlpha(60)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withAlpha(25),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.security_rounded, size: 16, color: AppTheme.primary),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'WORKBENCH ACCESS & PERMISSIONS MATRIX',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primary,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+              if (!isOwner)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: const Text('Read-Only View', style: TextStyle(fontSize: 9.5, color: AppTheme.textMuted)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            isOwner
+                ? 'Configure which studio hubs and features ${member.name.split(" ").first} can access.'
+                : 'Granted permissions configured by your shop owner for the studio workbench.',
+            style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+          ),
+          const SizedBox(height: 12),
+
+          // Pane 1 Sections
+          const Text(
+            'ALLOWED HUB SECTIONS (PANE 1):',
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white70, letterSpacing: 0.5),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              ('portfolio', 'Portfolio', Icons.photo_library_rounded),
+              ('services', 'Services', Icons.design_services_rounded),
+              ('inventory', 'Inventory', Icons.inventory_2_rounded),
+              ('calendar', 'Calendar', Icons.calendar_month_rounded),
+              ('teams', 'My Teams', Icons.groups_rounded),
+              ('savedRecipes', 'Saved Recipes', Icons.bookmark_rounded),
+            ].map((sec) {
+              final isAllowed = member.isSectionAllowed(sec.$1);
+              return FilterChip(
+                avatar: Icon(sec.$3, size: 13, color: isAllowed ? Colors.black : AppTheme.textSecondary),
+                label: Text(
+                  sec.$2,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isAllowed ? Colors.black : Colors.white,
+                    fontWeight: isAllowed ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+                selected: isAllowed,
+                selectedColor: AppTheme.primary,
+                backgroundColor: AppTheme.surfaceLight,
+                side: BorderSide(color: isAllowed ? AppTheme.primary : AppTheme.border),
+                showCheckmark: false,
+                onSelected: isOwner
+                    ? (selected) {
+                        final current = List<String>.from(member.allowedHubSections ?? TeamMember.allHubSections);
+                        if (selected) {
+                          if (!current.contains(sec.$1)) current.add(sec.$1);
+                        } else {
+                          if (current.length > 1) {
+                            current.remove(sec.$1);
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('A team member must have at least one allowed hub section.'),
+                                behavior: SnackBarBehavior.floating,
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                            return;
+                          }
+                        }
+                        final updated = member.copyWith(allowedHubSections: current);
+                        widget.repository.updateTeamMember(updated);
+                        setState(() {});
+                      }
+                    : null,
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 14),
+
+          // Granular Capabilities (Panes 2 & 3)
+          const Text(
+            'OPERATIONAL CAPABILITIES (PANES 2 & 3):',
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white70, letterSpacing: 0.5),
+          ),
+          const SizedBox(height: 8),
+
+          _buildPermissionToggle(
+            title: 'Edit Inventory & Chemicals',
+            subtitle: 'Add, modify, delete, or change stock levels for hardware and chemicals.',
+            value: member.allowsInventoryEdit,
+            isOwner: isOwner,
+            onChanged: (val) {
+              final updated = member.copyWith(canEditInventory: val);
+              widget.repository.updateTeamMember(updated);
+              setState(() {});
+            },
+          ),
+          const SizedBox(height: 6),
+          _buildPermissionToggle(
+            title: 'View Financials & Pricing',
+            subtitle: 'View service package pricing and financial revenue rates.',
+            value: member.allowsPricingView,
+            isOwner: isOwner,
+            onChanged: (val) {
+              final updated = member.copyWith(canViewPricing: val);
+              widget.repository.updateTeamMember(updated);
+              setState(() {});
+            },
+          ),
+          const SizedBox(height: 6),
+          _buildPermissionToggle(
+            title: 'View All Team Calendar',
+            subtitle: 'View master studio schedule vs. only their assigned shifts.',
+            value: member.allowsAllCalendarView,
+            isOwner: isOwner,
+            onChanged: (val) {
+              final updated = member.copyWith(canViewAllTeamCalendar: val);
+              widget.repository.updateTeamMember(updated);
+              setState(() {});
+            },
+          ),
+          const SizedBox(height: 6),
+          _buildPermissionToggle(
+            title: 'Manage Team Roster',
+            subtitle: 'Hire, edit, or remove other team members from company.',
+            value: member.allowsTeamManagement,
+            isOwner: isOwner,
+            onChanged: (val) {
+              final updated = member.copyWith(canManageTeam: val);
+              widget.repository.updateTeamMember(updated);
+              setState(() {});
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPermissionToggle({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required bool isOwner,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceLight,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: SwitchListTile(
+          dense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+          title: Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+          subtitle: Text(subtitle, style: const TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+          value: value,
+          activeThumbColor: AppTheme.primary,
+          onChanged: isOwner ? onChanged : null,
+        ),
+      ),
     );
   }
 
@@ -3770,7 +4108,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             Expanded(
               child: Text(pkg.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
             ),
-            Text('\$${pkg.basePrice.toStringAsFixed(0)}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+            Text(_canViewPricing ? '\$${pkg.basePrice.toStringAsFixed(0)}' : '••••', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.primary)),
           ],
         ),
         const SizedBox(height: 6),
@@ -4343,13 +4681,15 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
                 ),
-                InkWell(
-                  onTap: () => setState(() => _selectedCalendarTeamMemberId = 'all'),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    child: Text('Back to All Team', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                if (_canViewAllCalendar) ...[
+                  InkWell(
+                    onTap: () => setState(() => _selectedCalendarTeamMemberId = 'all'),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      child: Text('Back to All Team', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -6545,6 +6885,11 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   // ==========================================
   @override
   Widget build(BuildContext context) {
+    final visibleHubs = _visibleHubSections;
+    if (!visibleHubs.contains(_selectedHub)) {
+      _selectedHub = visibleHubs.first;
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= 768;

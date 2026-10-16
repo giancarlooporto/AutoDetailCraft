@@ -53,6 +53,15 @@ class SupabaseDbService {
                 .toList();
           } catch (_) {}
         }
+
+        final sectionsRaw = t['allowed_hub_sections'] ?? t['allowedHubSections'];
+        List<String>? allowedSections;
+        if (sectionsRaw != null && sectionsRaw is List) {
+          try {
+            allowedSections = sectionsRaw.map((e) => e.toString()).toList();
+          } catch (_) {}
+        }
+
         return TeamMember(
           id: t['id'] as String,
           name: t['name'] as String,
@@ -63,8 +72,14 @@ class SupabaseDbService {
           isAvailable: (t['is_available'] ?? t['isAvailable']) as bool? ?? true,
           isFounder: (t['is_founder'] ?? t['isFounder']) as bool? ?? false,
           customWeeklySchedule: schedule,
+          allowedHubSections: allowedSections,
+          canEditInventory: (t['can_edit_inventory'] ?? t['canEditInventory']) as bool? ?? true,
+          canViewPricing: (t['can_view_pricing'] ?? t['canViewPricing']) as bool? ?? true,
+          canManageTeam: (t['can_manage_team'] ?? t['canManageTeam']) as bool? ?? false,
+          canViewAllTeamCalendar: (t['can_view_all_team_calendar'] ?? t['canViewAllTeamCalendar']) as bool? ?? true,
         );
       }).toList();
+
 
       // Fetch user's service packages if present; if empty/null, return empty list (do NOT substitute MockDataService.standardPackages)
       List<ServicePackage> packages = [];
@@ -283,7 +298,14 @@ class SupabaseDbService {
         'completed_jobs_count': m.completedJobsCount,
         'is_available': m.isAvailable,
         'is_founder': m.isFounder,
+        'can_edit_inventory': m.canEditInventory,
+        'can_view_pricing': m.canViewPricing,
+        'can_manage_team': m.canManageTeam,
+        'can_view_all_team_calendar': m.canViewAllTeamCalendar,
       };
+      if (m.allowedHubSections != null) {
+        payload['allowed_hub_sections'] = m.allowedHubSections;
+      }
       if (m.customWeeklySchedule != null) {
         payload['custom_weekly_schedule'] =
             m.customWeeklySchedule!.map((h) => h.toJson()).toList();

@@ -44,6 +44,13 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
   Uint8List? _uploadedAvatarBytes;
   bool _isUploadingPhoto = false;
 
+  // Permissions State
+  final Set<String> _allowedSections = Set<String>.from(TeamMember.defaultStaffHubSections);
+  bool _canEditInventory = true;
+  bool _canViewPricing = true;
+  bool _canManageTeam = false;
+  bool _canViewAllTeamCalendar = true;
+
   @override
   void dispose() {
     _nameCtrl.dispose();
@@ -136,6 +143,11 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
       completedJobsCount: 0,
       rating: 5.0,
       isFounder: false,
+      allowedHubSections: _allowedSections.toList(),
+      canEditInventory: _canEditInventory,
+      canViewPricing: _canViewPricing,
+      canManageTeam: _canManageTeam,
+      canViewAllTeamCalendar: _canViewAllTeamCalendar,
     );
 
     widget.repository.addTeamMember(newMember);
@@ -327,6 +339,111 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
                   prefixIcon: Icon(Icons.link_rounded, size: 18),
                 ),
               ),
+              const SizedBox(height: 16),
+              const Divider(color: AppTheme.border, height: 1),
+              const SizedBox(height: 14),
+
+              // Permissions Header
+              const Row(
+                children: [
+                  Icon(Icons.security_rounded, size: 16, color: AppTheme.primary),
+                  SizedBox(width: 8),
+                  Text(
+                    'WORKBENCH ACCESS & PRIVILEGES',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Configure which sections and actions this team member can access in the Studio Workbench.',
+                style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+              ),
+              const SizedBox(height: 12),
+
+              // Allowed Hub Sections
+              const Text(
+                'Visible Hub Sections (Pane 1):',
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.white),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  ('portfolio', 'Portfolio', Icons.photo_library_rounded),
+                  ('services', 'Services', Icons.design_services_rounded),
+                  ('inventory', 'Inventory', Icons.inventory_2_rounded),
+                  ('calendar', 'Calendar', Icons.calendar_month_rounded),
+                  ('teams', 'My Teams', Icons.groups_rounded),
+                  ('savedRecipes', 'Saved Recipes', Icons.bookmark_rounded),
+                ].map((sec) {
+                  final isAllowed = _allowedSections.contains(sec.$1);
+                  return FilterChip(
+                    avatar: Icon(sec.$3, size: 14, color: isAllowed ? Colors.black : AppTheme.textSecondary),
+                    label: Text(
+                      sec.$2,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isAllowed ? Colors.black : Colors.white,
+                        fontWeight: isAllowed ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                    selected: isAllowed,
+                    selectedColor: AppTheme.primary,
+                    backgroundColor: AppTheme.surfaceLight,
+                    side: BorderSide(color: isAllowed ? AppTheme.primary : AppTheme.border),
+                    showCheckmark: false,
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _allowedSections.add(sec.$1);
+                        } else {
+                          if (_allowedSections.length > 1) {
+                            _allowedSections.remove(sec.$1);
+                          }
+                        }
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+
+              // Granular Capability Switches
+              const Text(
+                'Operational Privileges (Panes 2 & 3):',
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.white),
+              ),
+              const SizedBox(height: 8),
+
+              _buildSwitchTile(
+                title: 'Can Edit Inventory & Stock',
+                subtitle: 'Add, edit, or adjust stock levels for hardware and chemicals.',
+                value: _canEditInventory,
+                onChanged: (val) => setState(() => _canEditInventory = val),
+              ),
+              const SizedBox(height: 6),
+              _buildSwitchTile(
+                title: 'Can View Financial Pricing',
+                subtitle: 'View service package prices & financial revenue rates.',
+                value: _canViewPricing,
+                onChanged: (val) => setState(() => _canViewPricing = val),
+              ),
+              const SizedBox(height: 6),
+              _buildSwitchTile(
+                title: 'Can View All Team Calendar',
+                subtitle: 'View master studio calendar vs. only their assigned shifts.',
+                value: _canViewAllTeamCalendar,
+                onChanged: (val) => setState(() => _canViewAllTeamCalendar = val),
+              ),
+              const SizedBox(height: 6),
+              _buildSwitchTile(
+                title: 'Can Manage Team Roster',
+                subtitle: 'Hire, edit, or remove other team members from company.',
+                value: _canManageTeam,
+                onChanged: (val) => setState(() => _canManageTeam = val),
+              ),
               const SizedBox(height: 12),
             ],
           ),
@@ -370,4 +487,32 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
   ),
 );
   }
+
+  Widget _buildSwitchTile({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceLight,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: SwitchListTile(
+          dense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+          title: Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+          subtitle: Text(subtitle, style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted)),
+          value: value,
+          activeThumbColor: AppTheme.primary,
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
 }
+
