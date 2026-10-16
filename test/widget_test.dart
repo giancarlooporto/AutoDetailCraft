@@ -3745,6 +3745,88 @@ void main() {
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
   });
+
+  testWidgets('Detailer Workbench Calendar renders team member dropdown in Pane 2 & 3 and switches schedule view', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    SharedPreferences.setMockInitialValues({});
+
+    final repository = JobRepository();
+    await repository.init();
+    repository.isLoggedIn = true;
+    repository.toggleHostMode(targetRole: UserRole.detailer);
+
+    // Add team member so staff.length > 1
+    const tech = TeamMember(
+      id: 'tm_tyler',
+      name: 'Tyler Reed',
+      roleTitle: 'Lead Paint Correction Specialist',
+      avatarUrl: 'https://example.com/tyler.jpg',
+      rating: 4.9,
+      completedJobsCount: 42,
+    );
+    repository.addTeamMember(tech);
+
+    final testDate = DateTime(2026, 10, 20); // Tuesday
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: DetailerWorkbenchView(
+          repository: repository,
+          initialCalendarDate: testDate,
+        ),
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 1. Navigate to Calendar in Pane 1
+    await tester.tap(find.text('Calendar'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 2. Verify Team Dropdown is present in Pane 2 and Pane 3
+    final dropdownPane2 = find.byKey(const Key('calendar_team_dropdown_pane2'));
+    final dropdownPane3 = find.byKey(const Key('calendar_team_dropdown_pane3'));
+    expect(dropdownPane2, findsOneWidget);
+    expect(dropdownPane3, findsOneWidget);
+
+    // Verify initially selected value is 'all' (All Team)
+    expect(find.text('All Team (Entire Studio)'), findsWidgets);
+
+    // 3. Tap Dropdown in Pane 2 to switch to Tyler Reed
+    await tester.tap(dropdownPane2);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Tap Tyler Reed option in the opened dropdown menu
+    final tylerOption = find.text('Tyler Reed').last;
+    await tester.tap(tylerOption);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 4. Verify both Panes updated to Tyler Reed's personal schedule
+    expect(find.textContaining('Viewing Personal Schedule: Tyler Reed'), findsOneWidget);
+
+    // 5. Switch back to All Team from Pane 3 dropdown
+    await tester.tap(dropdownPane3);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final allTeamOption = find.text('All Team (Entire Studio)').last;
+    await tester.tap(allTeamOption);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify master calendar restored
+    expect(find.text('DAILY STAFF ROSTER'), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
 }
 
 

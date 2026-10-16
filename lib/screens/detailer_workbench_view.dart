@@ -1489,92 +1489,201 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     );
   }
 
-  // --- CALENDAR TEAM FILTER BAR ---
-  Widget _buildCalendarTeamFilterBar() {
+  // --- CALENDAR TEAM FILTER BAR (DROPDOWN) ---
+  Widget _buildCalendarTeamFilterBar({String? keyPrefix}) {
     final user = widget.repository.currentUser;
     final staff = widget.repository.getStudioStaff(detailerId: user.id);
     if (staff.length <= 1) return const SizedBox.shrink();
 
+    // Verify current selection is valid
+    final isValidSelection = _selectedCalendarTeamMemberId == 'all' ||
+        staff.any((m) => m.id == _selectedCalendarTeamMemberId);
+    final currentId = isValidSelection ? _selectedCalendarTeamMemberId : 'all';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _buildTeamFilterChip(
-              id: 'all',
-              label: 'All Team (Studio)',
-              icon: Icons.groups_rounded,
-              isSelected: _selectedCalendarTeamMemberId == 'all',
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: currentId == 'all' ? AppTheme.border : AppTheme.primary.withAlpha(160),
+          width: currentId == 'all' ? 1.0 : 1.5,
+        ),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          key: Key(keyPrefix != null ? 'calendar_team_dropdown_$keyPrefix' : 'calendar_team_dropdown'),
+          value: currentId,
+          isExpanded: true,
+          dropdownColor: AppTheme.surface,
+          borderRadius: BorderRadius.circular(10),
+          menuMaxHeight: 380,
+          icon: const Icon(Icons.arrow_drop_down_rounded, size: 22, color: AppTheme.primary),
+          selectedItemBuilder: (context) {
+            return [
+              _buildDropdownSelectedRow(
+                id: 'all',
+                label: 'All Team (Entire Studio)',
+                icon: Icons.groups_rounded,
+              ),
+              ...staff.map((m) => _buildDropdownSelectedRow(
+                id: m.id,
+                label: m.isFounder ? 'Founder (You)' : m.name,
+                avatarUrl: m.avatarUrl,
+              )),
+            ];
+          },
+          items: [
+            DropdownMenuItem<String>(
+              value: 'all',
+              child: _buildDropdownItemRow(
+                id: 'all',
+                label: 'All Team (Entire Studio)',
+                icon: Icons.groups_rounded,
+                subtitle: 'Master studio availability & all appointments',
+                badgeText: '${staff.length} Staff',
+                isSelected: currentId == 'all',
+              ),
             ),
-            const SizedBox(width: 6),
             ...staff.map((m) {
-              return Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: _buildTeamFilterChip(
+              return DropdownMenuItem<String>(
+                value: m.id,
+                child: _buildDropdownItemRow(
                   id: m.id,
                   label: m.isFounder ? 'Founder (You)' : m.name,
                   avatarUrl: m.avatarUrl,
-                  isFounder: m.isFounder,
-                  isSelected: _selectedCalendarTeamMemberId == m.id,
+                  subtitle: m.roleTitle,
+                  badgeText: m.isFounder ? 'Shop Owner' : null,
+                  isSelected: currentId == m.id,
                 ),
               );
             }),
           ],
+          onChanged: (newId) {
+            if (newId != null) {
+              setState(() {
+                _selectedCalendarTeamMemberId = newId;
+              });
+            }
+          },
         ),
       ),
     );
   }
 
-  Widget _buildTeamFilterChip({
+  Widget _buildDropdownSelectedRow({
     required String id,
     required String label,
     IconData? icon,
     String? avatarUrl,
-    bool isFounder = false,
-    required bool isSelected,
   }) {
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _selectedCalendarTeamMemberId = id;
-        });
-      },
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? AppTheme.primary.withAlpha(35) : AppTheme.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? AppTheme.primary : AppTheme.border,
-            width: isSelected ? 1.5 : 1.0,
+    return Row(
+      children: [
+        if (avatarUrl != null && avatarUrl.isNotEmpty) ...[
+          CircleAvatar(
+            radius: 9,
+            backgroundImage: NetworkImage(avatarUrl),
+          ),
+          const SizedBox(width: 8),
+        ] else if (icon != null) ...[
+          Icon(icon, size: 15, color: id == 'all' ? AppTheme.primary : Colors.white),
+          const SizedBox(width: 8),
+        ],
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: id == 'all' ? Colors.white : AppTheme.primary,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (avatarUrl != null && avatarUrl.isNotEmpty) ...[
-              CircleAvatar(
-                radius: 9,
-                backgroundImage: NetworkImage(avatarUrl),
+      ],
+    );
+  }
+
+  Widget _buildDropdownItemRow({
+    required String id,
+    required String label,
+    IconData? icon,
+    String? avatarUrl,
+    String? subtitle,
+    String? badgeText,
+    required bool isSelected,
+  }) {
+    return Row(
+      children: [
+        if (avatarUrl != null && avatarUrl.isNotEmpty) ...[
+          CircleAvatar(
+            radius: 12,
+            backgroundImage: NetworkImage(avatarUrl),
+          ),
+          const SizedBox(width: 10),
+        ] else if (icon != null) ...[
+          Container(
+            padding: const EdgeInsets.all(5),
+            decoration: BoxDecoration(
+              color: isSelected ? AppTheme.primary.withAlpha(30) : AppTheme.surfaceLight,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 14, color: isSelected ? AppTheme.primary : AppTheme.textSecondary),
+          ),
+          const SizedBox(width: 10),
+        ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                  color: isSelected ? AppTheme.primary : Colors.white,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(width: 6),
-            ] else if (icon != null) ...[
-              Icon(icon, size: 14, color: isSelected ? AppTheme.primary : AppTheme.textMuted),
-              const SizedBox(width: 6),
+              if (subtitle != null) ...[
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    color: AppTheme.textMuted,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ],
-            Text(
-              label,
+          ),
+        ),
+        if (badgeText != null) ...[
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+            decoration: BoxDecoration(
+              color: isSelected ? AppTheme.primary.withAlpha(25) : Colors.white.withAlpha(10),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              badgeText,
               style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? AppTheme.primary : Colors.white,
+                fontSize: 9.5,
+                fontWeight: FontWeight.bold,
+                color: isSelected ? AppTheme.primary : AppTheme.textSecondary,
               ),
             ),
-          ],
-        ),
-      ),
+          ),
+        ],
+        if (isSelected) ...[
+          const SizedBox(width: 6),
+          const Icon(Icons.check_rounded, size: 16, color: AppTheme.primary),
+        ],
+      ],
     );
   }
 
@@ -1594,7 +1703,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       padding: const EdgeInsets.all(12),
       children: [
         // Team Filter Bar
-        _buildCalendarTeamFilterBar(),
+        _buildCalendarTeamFilterBar(keyPrefix: 'pane2'),
 
         // Month Selector Header
         Container(
@@ -3511,7 +3620,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Team Selector Filter Bar
-        _buildCalendarTeamFilterBar(),
+        _buildCalendarTeamFilterBar(keyPrefix: 'pane3'),
 
         // If viewing individual technician personal schedule, show banner
         if (!isViewingAll) ...[
