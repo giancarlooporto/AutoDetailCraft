@@ -286,8 +286,11 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
             const SizedBox(height: 16),
 
             // Footer Actions
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 OutlinedButton(
                   onPressed: () => Navigator.of(context).pop(),
@@ -299,17 +302,19 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
                   ),
                   child: const Text('Cancel'),
                 ),
-                const SizedBox(width: 10),
                 ElevatedButton.icon(
                   onPressed: _save,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primary,
                     foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                   icon: const Icon(Icons.check_rounded, size: 16),
-                  label: const Text('Save Schedule Preferences', style: TextStyle(fontWeight: FontWeight.bold)),
+                  label: Text(
+                    MediaQuery.sizeOf(context).width < 450 ? 'Save Preferences' : 'Save Schedule Preferences',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ),
               ],
             ),
@@ -322,6 +327,8 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
   Widget _buildDayScheduleRow(int index) {
     final day = _schedule[index];
 
+    final isCompact = MediaQuery.sizeOf(context).width < 500;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -331,51 +338,50 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
           color: day.isOpen ? AppTheme.border : Colors.redAccent.withAlpha(60),
         ),
       ),
-      child: Row(
-        children: [
-          // Day Name
-          SizedBox(
-            width: 85,
-            child: Text(
-              day.weekdayName,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-                color: day.isOpen ? Colors.white : AppTheme.textMuted,
-              ),
-            ),
-          ),
-
-          // Open / Closed Switch
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Switch(
-                value: day.isOpen,
-                activeThumbColor: AppTheme.primary,
-                onChanged: (val) {
-                  setState(() {
-                    _schedule[index] = day.copyWith(isOpen: val);
-                  });
-                },
-              ),
-              const SizedBox(width: 4),
-              Text(
-                day.isOpen ? 'Open' : 'Closed',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: day.isOpen ? AppTheme.primary : Colors.redAccent,
+      child: isCompact
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      day.weekdayName,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: day.isOpen ? Colors.white : AppTheme.textMuted,
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Switch(
+                          value: day.isOpen,
+                          activeThumbColor: AppTheme.primary,
+                          onChanged: (val) {
+                            setState(() {
+                              _schedule[index] = day.copyWith(isOpen: val);
+                            });
+                          },
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          day.isOpen ? 'Open' : 'Closed',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: day.isOpen ? AppTheme.primary : Colors.redAccent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 12),
-
-          // Operating Hours Selectors or Closed label
-          Expanded(
-            child: day.isOpen
-                ? Row(
+                if (day.isOpen) ...[
+                  const SizedBox(height: 8),
+                  Row(
                     children: [
                       // Open Time Dropdown
                       Expanded(
@@ -406,7 +412,7 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
                         ),
                       ),
                       const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 6),
+                        padding: EdgeInsets.symmetric(horizontal: 8),
                         child: Text('to', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
                       ),
                       // Close Time Dropdown
@@ -435,9 +441,11 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
                         ),
                       ),
                     ],
-                  )
-                : Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.redAccent.withAlpha(20),
                       borderRadius: BorderRadius.circular(8),
@@ -448,9 +456,129 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
                       style: TextStyle(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.w600),
                     ),
                   ),
-          ),
-        ],
-      ),
+                ],
+              ],
+            )
+          : Row(
+              children: [
+                // Day Name
+                SizedBox(
+                  width: 85,
+                  child: Text(
+                    day.weekdayName,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: day.isOpen ? Colors.white : AppTheme.textMuted,
+                    ),
+                  ),
+                ),
+
+                // Open / Closed Switch
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Switch(
+                      value: day.isOpen,
+                      activeThumbColor: AppTheme.primary,
+                      onChanged: (val) {
+                        setState(() {
+                          _schedule[index] = day.copyWith(isOpen: val);
+                        });
+                      },
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      day.isOpen ? 'Open' : 'Closed',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: day.isOpen ? AppTheme.primary : Colors.redAccent,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 12),
+
+                // Operating Hours Selectors or Closed label
+                Expanded(
+                  child: day.isOpen
+                      ? Row(
+                          children: [
+                            // Open Time Dropdown
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.surface,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: AppTheme.border),
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<String>(
+                                    value: _timeOptions.contains(day.openTime) ? day.openTime : _timeOptions.first,
+                                    isExpanded: true,
+                                    dropdownColor: AppTheme.surface,
+                                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                                    items: _timeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        setState(() {
+                                          _schedule[index] = day.copyWith(openTime: val);
+                                          _checkAndSyncSlotsForNewOpenTime(val);
+                                        });
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 6),
+                              child: Text('to', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                            ),
+                            // Close Time Dropdown
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.surface,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: AppTheme.border),
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<String>(
+                                    value: _timeOptions.contains(day.closeTime) ? day.closeTime : _timeOptions.last,
+                                    isExpanded: true,
+                                    dropdownColor: AppTheme.surface,
+                                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                                    items: _timeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        setState(() => _schedule[index] = day.copyWith(closeTime: val));
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent.withAlpha(20),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.redAccent.withAlpha(60)),
+                          ),
+                          child: const Text(
+                            'Recurring Day Off (Closed every week)',
+                            style: TextStyle(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                ),
+              ],
+            ),
     );
   }
 
@@ -676,7 +804,27 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
 
   void _autoGenerateSlotsFromSchedule() {
     final openDays = _schedule.where((d) => d.isOpen).toList();
-    if (openDays.isEmpty) return;
+    if (openDays.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: AppTheme.border),
+          ),
+          content: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 20),
+              SizedBox(width: 8),
+              Text('No open days enabled. Please toggle at least one business day open.'),
+            ],
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
 
     String minOpen = openDays.first.openTime;
     String maxClose = openDays.first.closeTime;
@@ -807,13 +955,57 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary, foregroundColor: Colors.black),
                   onPressed: () {
-                    final newSlot = '$startTime - $endTime';
-                    if (!_slots.contains(newSlot)) {
-                      setState(() {
-                        _slots.add(newSlot);
-                        _slots.sort((a, b) => JobRepository.timeStringToMinutes(a).compareTo(JobRepository.timeStringToMinutes(b)));
-                      });
+                    final sMin = JobRepository.timeStringToMinutes(startTime);
+                    final eMin = JobRepository.timeStringToMinutes(endTime);
+                    if (sMin >= eMin) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          behavior: SnackBarBehavior.floating,
+                          backgroundColor: AppTheme.surface,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: const BorderSide(color: AppTheme.border),
+                          ),
+                          content: const Row(
+                            children: [
+                              Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 20),
+                              SizedBox(width: 8),
+                              Text('Slot start time must be before end time.'),
+                            ],
+                          ),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                      return;
                     }
+
+                    final newSlot = '$startTime - $endTime';
+                    if (_slots.contains(newSlot)) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          behavior: SnackBarBehavior.floating,
+                          backgroundColor: AppTheme.surface,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: const BorderSide(color: AppTheme.border),
+                          ),
+                          content: const Row(
+                            children: [
+                              Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 20),
+                              SizedBox(width: 8),
+                              Text('This time slot window is already configured.'),
+                            ],
+                          ),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                      return;
+                    }
+
+                    setState(() {
+                      _slots.add(newSlot);
+                      _slots.sort((a, b) => JobRepository.timeStringToMinutes(a).compareTo(JobRepository.timeStringToMinutes(b)));
+                    });
                     Navigator.of(ctx).pop();
                   },
                   child: const Text('Add Slot', style: TextStyle(fontWeight: FontWeight.bold)),

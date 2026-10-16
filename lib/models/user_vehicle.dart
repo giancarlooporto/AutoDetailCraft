@@ -61,4 +61,30 @@ class UserVehicle {
           : null,
     );
   }
+
+  UserVehicle copyWith({
+    String? id,
+    int? year,
+    String? make,
+    String? model,
+    String? colorName,
+    String? paintCode,
+    String? imageUrl,
+    Uint8List? localImageBytes,
+    String? lastDetailService,
+    DateTime? lastDetailDate,
+  }) {
+    return UserVehicle(
+      id: id ?? this.id,
+      year: year ?? this.year,
+      make: make ?? this.make,
+      model: model ?? this.model,
+      colorName: colorName ?? this.colorName,
+      paintCode: paintCode ?? this.paintCode,
+      imageUrl: imageUrl ?? this.imageUrl,
+      localImageBytes: localImageBytes ?? this.localImageBytes,
+      lastDetailService: lastDetailService ?? this.lastDetailService,
+      lastDetailDate: lastDetailDate ?? this.lastDetailDate,
+    );
+  }
 }

@@ -8,13 +8,25 @@ import '../services/supabase_service.dart';
 
 class AddTeamMemberDialog extends StatefulWidget {
   final JobRepository repository;
+  final void Function(TeamMember member)? onMemberAdded;
 
-  const AddTeamMemberDialog({super.key, required this.repository});
+  const AddTeamMemberDialog({
+    super.key,
+    required this.repository,
+    this.onMemberAdded,
+  });
 
-  static Future<void> show(BuildContext context, {required JobRepository repository}) {
+  static Future<void> show(
+    BuildContext context, {
+    required JobRepository repository,
+    void Function(TeamMember member)? onMemberAdded,
+  }) {
     return showDialog(
       context: context,
-      builder: (ctx) => AddTeamMemberDialog(repository: repository),
+      builder: (ctx) => AddTeamMemberDialog(
+        repository: repository,
+        onMemberAdded: onMemberAdded,
+      ),
     );
   }
 
@@ -95,7 +107,22 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
 
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter full name'), backgroundColor: Colors.redAccent),
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: AppTheme.border),
+          ),
+          content: const Row(
+            children: [
+              Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 20),
+              SizedBox(width: 8),
+              Text('Please enter staff member full name.'),
+            ],
+          ),
+          duration: const Duration(seconds: 2),
+        ),
       );
       return;
     }
@@ -112,6 +139,7 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
     );
 
     widget.repository.addTeamMember(newMember);
+    widget.onMemberAdded?.call(newMember);
     Navigator.of(context).pop();
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -147,22 +175,27 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primary.withAlpha(30),
-                        borderRadius: BorderRadius.circular(10),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withAlpha(30),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.person_add_alt_1_rounded, color: AppTheme.primary, size: 20),
                       ),
-                      child: const Icon(Icons.person_add_alt_1_rounded, color: AppTheme.primary, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      'Add Hired Staff Member',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'Add Hired Staff Member',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 IconButton(
                   onPressed: () => Navigator.of(context).pop(),
@@ -192,7 +225,9 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
                         radius: 38,
                         backgroundImage: _uploadedAvatarBytes != null
                             ? MemoryImage(_uploadedAvatarBytes!) as ImageProvider
-                            : NetworkImage(_avatarUrlCtrl.text),
+                            : (_avatarUrlCtrl.text.trim().isNotEmpty
+                                ? NetworkImage(_avatarUrlCtrl.text.trim()) as ImageProvider
+                                : const NetworkImage('https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80')),
                       ),
                     ),
                     InkWell(
@@ -254,6 +289,32 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
                   prefixIcon: Icon(Icons.work_outline_rounded, size: 18),
                 ),
               ),
+              const SizedBox(height: 8),
+
+              // Preset Specialty Role Chips
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  'Lead Detailer',
+                  'Paint Correction Specialist',
+                  'Ceramic Coating Tech',
+                  'Interior Specialist',
+                  'Apprentice Detailer',
+                ].map((rolePreset) {
+                  final isSelected = _roleCtrl.text == rolePreset;
+                  return ActionChip(
+                    label: Text(rolePreset, style: const TextStyle(fontSize: 11)),
+                    backgroundColor: isSelected ? AppTheme.primary.withAlpha(40) : AppTheme.surfaceLight,
+                    side: BorderSide(color: isSelected ? AppTheme.primary : AppTheme.border),
+                    onPressed: () {
+                      setState(() {
+                        _roleCtrl.text = rolePreset;
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
               const SizedBox(height: 12),
 
               // Or Photo URL (Alternative)
@@ -276,9 +337,12 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
         const SizedBox(height: 16),
 
         // Bottom Action Bar (Universal UX)
-        Row(
+        Wrap(
+          alignment: WrapAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
           children: [
-            const Spacer(),
             OutlinedButton(
               onPressed: () => Navigator.of(context).pop(),
               style: OutlinedButton.styleFrom(
@@ -289,7 +353,6 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
               ),
               child: const Text('Cancel'),
             ),
-            const SizedBox(width: 10),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primary,

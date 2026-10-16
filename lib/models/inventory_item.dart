@@ -25,6 +25,7 @@ class InventoryItem {
   final String? safetyNotes;
   final List<RecipeStage> recipeStages;
   final String status;
+  String get fillStatus => status;
   final String location;
   final String? imageUrl;
   final String? notes;
@@ -64,6 +65,7 @@ class InventoryItem {
     'safetyNotes': safetyNotes,
     'recipeStages': recipeStages.map((s) => s.toJson()).toList(),
     'status': status,
+    'fillStatus': status,
     'location': location,
     'imageUrl': imageUrl,
     'notes': notes,
@@ -92,7 +94,7 @@ class InventoryItem {
             ?.map((s) => RecipeStage.fromJson(s as Map<String, dynamic>))
             .toList() ??
         [],
-    status: json['status'] as String? ?? 'In Service',
+    status: (json['fillStatus'] ?? json['status']) as String? ?? 'In Service',
     location: json['location'] as String? ?? '',
     imageUrl: json['imageUrl'] as String?,
     notes: json['notes'] as String?,
@@ -113,6 +115,7 @@ class InventoryItem {
     String? safetyNotes,
     List<RecipeStage>? recipeStages,
     String? status,
+    String? fillStatus,
     String? location,
     String? imageUrl,
     String? notes,
@@ -131,7 +134,7 @@ class InventoryItem {
       cureTimeOrFlashTime: cureTimeOrFlashTime ?? this.cureTimeOrFlashTime,
       safetyNotes: safetyNotes ?? this.safetyNotes,
       recipeStages: recipeStages ?? this.recipeStages,
-      status: status ?? this.status,
+      status: fillStatus ?? status ?? this.status,
       location: location ?? this.location,
       imageUrl: imageUrl ?? this.imageUrl,
       notes: notes ?? this.notes,

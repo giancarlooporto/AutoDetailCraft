@@ -132,8 +132,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     if (_selectedSavedJobId == null || !savedJobs.any((j) => j.id == _selectedSavedJobId)) {
       _selectedSavedJobId = savedJobs.isNotEmpty ? savedJobs.first.id : null;
     }
-    if (_selectedServicePackageId == null || !user.servicePackages.any((p) => p.id == _selectedServicePackageId)) {
-      _selectedServicePackageId = user.servicePackages.isNotEmpty ? user.servicePackages.first.id : null;
+    if (_selectedServicePackageId != null && !user.servicePackages.any((p) => p.id == _selectedServicePackageId)) {
+      _selectedServicePackageId = null;
     }
 
     List<InventoryItem> filteredInventory = inventory;
@@ -182,7 +182,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       case StudioHubSection.portfolio:
         return widget.repository.getJobsByDetailer(user.id).isNotEmpty;
       case StudioHubSection.services:
-        return user.servicePackages.isNotEmpty;
+        return _selectedServicePackageId != null && user.servicePackages.any((p) => p.id == _selectedServicePackageId);
       case StudioHubSection.savedRecipes:
         return widget.repository.savedJobs.isNotEmpty;
     }
@@ -214,6 +214,13 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           chemicalOptions: chemicalOptions,
           onSave: (newItem) {
             widget.repository.addInventoryItem(newItem);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Added "${newItem.name}" to inventory'),
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 2),
+              ),
+            );
             setState(() {
               _selectedInventoryId = newItem.id;
               if (isMobile) _mobileStep = 2;
@@ -249,6 +256,24 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               _selectedServicePackageId = pkg.id;
               if (isMobile) _mobileStep = 2;
             });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                behavior: SnackBarBehavior.floating,
+                backgroundColor: AppTheme.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: const BorderSide(color: AppTheme.border),
+                ),
+                content: Row(
+                  children: [
+                    const Icon(Icons.check_circle_rounded, color: AppTheme.primary, size: 18),
+                    const SizedBox(width: 8),
+                    Text('Service package "${pkg.title}" created successfully!'),
+                  ],
+                ),
+                duration: const Duration(seconds: 2),
+              ),
+            );
           },
         );
         break;
@@ -302,10 +327,53 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           context,
           package: pkg,
           availableRecipes: widget.repository.recipeItems,
-          onSave: (up) => widget.repository.updateServicePackage(up),
+          onSave: (up) {
+            widget.repository.updateServicePackage(up);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                behavior: SnackBarBehavior.floating,
+                backgroundColor: AppTheme.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: const BorderSide(color: AppTheme.border),
+                ),
+                content: Row(
+                  children: [
+                    const Icon(Icons.check_circle_rounded, color: AppTheme.primary, size: 18),
+                    const SizedBox(width: 8),
+                    Text('Service package "${up.title}" updated successfully!'),
+                  ],
+                ),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          },
           onDelete: () {
             widget.repository.removeServicePackage(pkg.id);
-            if (_mobileStep == 2) setState(() => _mobileStep = 1);
+            setState(() {
+              if (_selectedServicePackageId == pkg.id) {
+                _selectedServicePackageId = null;
+              }
+              if (_mobileStep == 2) _mobileStep = 1;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                behavior: SnackBarBehavior.floating,
+                backgroundColor: AppTheme.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: const BorderSide(color: AppTheme.border),
+                ),
+                content: Row(
+                  children: [
+                    const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
+                    const SizedBox(width: 8),
+                    Text('Service package "${pkg.title}" removed.'),
+                  ],
+                ),
+                duration: const Duration(seconds: 2),
+              ),
+            );
           },
         );
         break;
@@ -433,9 +501,32 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             onPressed: () {
               Navigator.of(ctx).pop();
               deleteAction?.call();
-              if (_mobileStep == 2) {
-                setState(() => _mobileStep = 1);
-              }
+              setState(() {
+                if (_selectedHub == StudioHubSection.services) {
+                  _selectedServicePackageId = null;
+                }
+                if (_mobileStep == 2) {
+                  _mobileStep = 1;
+                }
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  behavior: SnackBarBehavior.floating,
+                  backgroundColor: AppTheme.surface,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: const BorderSide(color: AppTheme.border),
+                  ),
+                  content: Row(
+                    children: [
+                      const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
+                      const SizedBox(width: 8),
+                      Text('"$itemTitle" removed successfully.'),
+                    ],
+                  ),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
             },
             child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
@@ -1376,8 +1467,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               ),
               onTap: () {
                 setState(() {
-                  _selectedServicePackageId = pkg.id;
-                  if (isMobile) _mobileStep = 2;
+                  _selectedServicePackageId = isSelected ? null : pkg.id;
+                  if (isMobile && !isSelected) _mobileStep = 2;
                 });
               },
             ),
@@ -2588,8 +2679,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             ),
             onChanged: (newStatus) {
               if (newStatus != null && newStatus != item.status) {
-                final updated = item.copyWith(status: newStatus);
-                widget.repository.updateInventoryItem(updated);
+                widget.repository.updateChemicalFillStatus(item.id, newStatus);
                 setState(() {});
               }
             },
@@ -2695,8 +2785,26 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       itemToEdit: item,
       hardwareOptions: hardwareOptions,
       chemicalOptions: chemicalOptions,
-      onSave: (updated) => widget.repository.updateInventoryItem(updated),
-      onDelete: () => widget.repository.removeInventoryItem(item.id),
+      onSave: (updated) {
+        widget.repository.updateInventoryItem(updated);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Updated "${updated.name}"'),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+      onDelete: () {
+        widget.repository.removeInventoryItem(item.id);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Removed "${item.name}" from inventory'),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
     );
   }
 
@@ -2735,6 +2843,13 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             onPressed: () {
               Navigator.of(ctx).pop();
               widget.repository.removeInventoryItem(item.id);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Removed "${item.name}" from inventory'),
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
             },
             child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
@@ -3145,14 +3260,13 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   Widget _buildServiceInspector(BuildContext context, {bool isMobile = false}) {
     final user = widget.repository.currentUser;
     final pkgs = user.servicePackages;
-    if (pkgs.isEmpty) {
-      return const Center(child: Text('No service packages defined yet.'));
+    final selectedPkg = pkgs.where((p) => p.id == _selectedServicePackageId).firstOrNull;
+
+    if (selectedPkg == null) {
+      return _buildServiceInspectorEmptyState(isMobile: isMobile);
     }
 
-    final pkg = pkgs.firstWhere(
-      (p) => p.id == _selectedServicePackageId,
-      orElse: () => pkgs.first,
-    );
+    final pkg = selectedPkg;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3246,6 +3360,74 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           ),
         ],
       ],
+    );
+  }
+
+  Widget _buildServiceInspectorEmptyState({bool isMobile = false}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withAlpha(25),
+              shape: BoxShape.circle,
+              border: Border.all(color: AppTheme.primary.withAlpha(80), width: 1.5),
+            ),
+            child: const Icon(
+              Icons.miscellaneous_services_outlined,
+              size: 40,
+              color: AppTheme.primary,
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'Select or Create a Service Package',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+              letterSpacing: 0.3,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Choose a service package from your studio menu on the left to inspect pricing, durations, linked recipes, and included treatments — or create a brand new service tier.',
+            style: TextStyle(
+              fontSize: 12.5,
+              color: AppTheme.textSecondary,
+              height: 1.5,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 0,
+            ),
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text(
+              'Create New Package',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            onPressed: () => _openAdd(isMobile: isMobile),
+          ),
+        ],
+      ),
     );
   }
 
@@ -3798,11 +3980,25 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                           if (isExplicitlyBlocked) {
                             widget.repository.toggleBlockDay(date, detailerId: user.id);
                             setState(() {});
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Unblocked full day: ${DateFormat("EEE, MMM d").format(date)}'),
+                                behavior: SnackBarBehavior.floating,
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
                           } else if (staff.length > 1) {
                             _showBlockDayScopeDialog(context, date, user.id);
                           } else {
                             widget.repository.toggleBlockDay(date, detailerId: user.id);
                             setState(() {});
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Blocked full day: ${DateFormat("EEE, MMM d").format(date)}'),
+                                behavior: SnackBarBehavior.floating,
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
                           }
                         } else {
                           widget.repository.toggleBlockDay(
@@ -3811,6 +4007,13 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                             detailerId: user.id,
                           );
                           setState(() {});
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Updated schedule for ${currentMember.name.split(" ").first} on ${DateFormat("MMM d").format(date)}'),
+                              behavior: SnackBarBehavior.floating,
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
                         }
                       },
                     ),
@@ -4709,6 +4912,13 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         widget.repository.toggleBlockDay(date, detailerId: detailerId);
                         Navigator.pop(ctx);
                         setState(() {});
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(isStudioBlocked ? 'Reopened studio for all bookings on $dateStr' : 'Closed studio for all bookings on $dateStr'),
+                            behavior: SnackBarBehavior.floating,
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
                       },
                       child: Text(isStudioBlocked ? 'Reopen' : 'Close Studio'),
                     ),
@@ -4748,6 +4958,13 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                             widget.repository.toggleBlockDay(date, teamMemberId: m.id, detailerId: detailerId);
                             setDialogState(() {});
                             setState(() {});
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(isOnDuty ? 'Gave ${m.name.split(" ").first} the day off on $dateStr' : 'Set ${m.name.split(" ").first} as working on $dateStr'),
+                                behavior: SnackBarBehavior.floating,
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
                           },
                           child: Text(isOnDuty ? 'Give Day Off' : 'Set Working', style: const TextStyle(fontSize: 10.5)),
                         ),

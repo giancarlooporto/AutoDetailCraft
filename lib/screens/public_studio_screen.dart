@@ -225,15 +225,26 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                                   style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                                 ),
                                 const SizedBox(height: 4),
-                                Row(
+                                Wrap(
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  spacing: 6,
+                                  runSpacing: 4,
                                   children: [
-                                    const Icon(Icons.star_rounded, size: 15, color: Colors.amber),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      '${detailer.averageRating} (${detailer.reviewCount} reviews)',
-                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.star_rounded, size: 15, color: Colors.amber),
+                                        const SizedBox(width: 3),
+                                        Flexible(
+                                          child: Text(
+                                            '${detailer.averageRating} (${detailer.reviewCount} reviews)',
+                                            overflow: TextOverflow.ellipsis,
+                                            maxLines: 1,
+                                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(width: 8),
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
@@ -351,7 +362,7 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
             // TAB 1: Transformations
             studioJobs.isEmpty
                 ? Center(
-                    child: Padding(
+                    child: SingleChildScrollView(
                       padding: const EdgeInsets.all(32),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -542,52 +553,123 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                 ],
               ),
               child: SafeArea(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isNarrow = constraints.maxWidth < 480;
+
+                    if (isNarrow) {
+                      return Column(
                         mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const Text('Next Available Slot', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-                          const Text('This Week', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                          Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: const [
+                              Icon(Icons.calendar_today_rounded, size: 13, color: AppTheme.primary),
+                              SizedBox(width: 6),
+                              Text('Next Available Slot: ', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                              Text('This Week', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.surfaceLight,
+                                    foregroundColor: AppTheme.textPrimary,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      side: const BorderSide(color: AppTheme.border),
+                                    ),
+                                  ),
+                                  onPressed: _openChatWithDetailer,
+                                  icon: const Icon(Icons.chat_rounded, size: 15),
+                                  label: const Text(
+                                    'Message',
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                flex: 3,
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.primary,
+                                    foregroundColor: Colors.black,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  onPressed: _openBookingFlow,
+                                  icon: const Icon(Icons.calendar_today_rounded, size: 15),
+                                  label: const Text(
+                                    'Book Studio Service',
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.surfaceLight,
-                        foregroundColor: AppTheme.textPrimary,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: const BorderSide(color: AppTheme.border),
+                      );
+                    }
+
+                    return Row(
+                      children: [
+                        const Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Next Available Slot', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                              Text('This Week', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                            ],
+                          ),
                         ),
-                      ),
-                      onPressed: _openChatWithDetailer,
-                      icon: const Icon(Icons.chat_rounded, size: 16),
-                      label: const Text(
-                        'Message',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primary,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      onPressed: _openBookingFlow,
-                      icon: const Icon(Icons.calendar_today_rounded, size: 16),
-                      label: const Text(
-                        'Book Studio Service',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                      ),
-                    ),
-                  ],
+                        const SizedBox(width: 16),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.surfaceLight,
+                            foregroundColor: AppTheme.textPrimary,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: const BorderSide(color: AppTheme.border),
+                            ),
+                          ),
+                          onPressed: _openChatWithDetailer,
+                          icon: const Icon(Icons.chat_rounded, size: 16),
+                          label: const Text(
+                            'Message',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onPressed: _openBookingFlow,
+                          icon: const Icon(Icons.calendar_today_rounded, size: 16),
+                          label: const Text(
+                            'Book Studio Service',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -615,6 +697,7 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Column(
@@ -632,18 +715,29 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                   ],
                 ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '\$${pkg.basePrice.toStringAsFixed(0)}',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                  ),
-                  Text(
-                    pkg.estimatedDuration,
-                    style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                  ),
-                ],
+              const SizedBox(width: 8),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width < 450 ? 110 : 160),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '\$${pkg.basePrice.toStringAsFixed(0)}',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                      ),
+                    ),
+                    Text(
+                      pkg.estimatedDuration,
+                      style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -706,8 +800,8 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
           children: [
             Icon(icon, size: 16, color: AppTheme.primary),
             const SizedBox(height: 4),
-            Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            Text(label, style: const TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+            Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(label, style: const TextStyle(fontSize: 10, color: AppTheme.textMuted), maxLines: 1, overflow: TextOverflow.ellipsis),
           ],
         ),
       ),
@@ -733,7 +827,13 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
             children: [
               Icon(icon, size: 18, color: AppTheme.primary),
               const SizedBox(width: 8),
-              Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),

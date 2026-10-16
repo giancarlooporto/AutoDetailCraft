@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/detail_job.dart';
@@ -33,6 +34,8 @@ class JobRepository extends ChangeNotifier {
   int _activeTabIndex = 0;
   bool _isLoggedIn = false;
   bool _isInitialized = false;
+  bool _isInitializing = false;
+  Completer<void>? _initCompleter;
 
   // Messaging state
   List<Conversation> _conversations = [];
@@ -41,11 +44,10 @@ class JobRepository extends ChangeNotifier {
   RealtimeChannel? _bookingsChannel;
   RealtimeChannel? _interactionsChannel;
 
-  JobRepository() {
-    init();
-  }
+  JobRepository();
 
   bool get isInitialized => _isInitialized;
+  bool get isInitializing => _isInitializing;
   // ignore: unnecessary_getters_setters
   bool get isLoggedIn => _isLoggedIn;
   // ignore: unnecessary_getters_setters
@@ -53,159 +55,390 @@ class JobRepository extends ChangeNotifier {
   bool get isGuestMode => !_isLoggedIn;
   int get activeTabIndex => _activeTabIndex;
 
+  bool get isDetailerWorkbenchMode => _currentUser.role == UserRole.detailer;
+  set isDetailerWorkbenchMode(bool value) {
+    if (value) {
+      _currentUser = _currentUser.copyWith(role: UserRole.detailer, isVerifiedHost: true);
+      LocalStorageService.saveWorkbenchMode('studio');
+    } else {
+      _currentUser = _currentUser.copyWith(role: UserRole.client);
+      LocalStorageService.saveWorkbenchMode('garage');
+    }
+    notifyListeners();
+  }
+  String get workbenchMode => _currentUser.role == UserRole.detailer ? 'studio' : 'garage';
+
   Future<void> init() async {
     if (_isInitialized) return;
-
-    _jobs = MockDataService.getInitialJobs();
-    _bookings = MockDataService.getInitialBookings();
-    _publicDetailers = List.from(MockDataService.publicDetailers);
-
-    // 1. Load active tab index
-    _activeTabIndex = await LocalStorageService.loadActiveTab();
-
-    // 2. Check auth state (Supabase or stored session)
-    final isGuest = await LocalStorageService.loadIsGuest();
-    final savedUser = await LocalStorageService.loadCurrentUser();
-    final savedWorkbenchMode = await LocalStorageService.loadWorkbenchMode();
-
-    if (!isGuest && savedUser != null) {
-      _currentUser = savedUser;
-      _isLoggedIn = true;
-    } else if (savedUser != null) {
-      // Offline/guest session found with customized profile/garage
-      _currentUser = savedUser;
-      _isLoggedIn = false;
-    } else if (SupabaseAuthService.isLoggedIn) {
-      // Supabase persistent session found
-      final authUser = SupabaseAuthService.currentAuthUser!;
-      _currentUser = savedUser ?? UserProfile(
-        id: authUser.id,
-        username: authUser.email?.split('@').first ?? 'user',
-        displayName: (authUser.userMetadata?['display_name'] as String?) ?? 'Vehicle Owner',
-        businessName: 'My Detailing Studio',
-        avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80',
-        location: 'Austin, Texas',
-        bio: 'Car enthusiast & detailing craft connoisseur.',
-      );
-      _isLoggedIn = true;
-      await LocalStorageService.saveIsGuest(false);
-    } else {
-      _isLoggedIn = false;
-    }
-
-    // Apply explicit workbench mode if persisted ('studio' vs 'garage')
-    if (savedWorkbenchMode == 'studio') {
-      _currentUser = _currentUser.copyWith(
-        role: UserRole.detailer,
-        isVerifiedHost: true,
-      );
-    } else if (savedWorkbenchMode == 'garage') {
-      _currentUser = _currentUser.copyWith(
-        role: UserRole.client,
-      );
-    }
-
-    // 3. Load persistent custom transformation jobs from local cache first
-    final customJobs = await LocalStorageService.loadCustomJobs();
-    if (customJobs.isNotEmpty) {
-      final existingIds = customJobs.map((j) => j.id).toSet();
-      _jobs = [
-        ...customJobs,
-        ...MockDataService.getInitialJobs().where((j) => !existingIds.contains(j.id)),
-      ];
-    } else {
-      _jobs = MockDataService.getInitialJobs();
-    }
-
-    // 4. Load persistent bookings from local cache
-    final savedBookings = await LocalStorageService.loadBookings();
-    if (savedBookings != null) {
-      _bookings = savedBookings;
-    }
-
-    // 4b. Load custom recipe presets from local cache
-    _customPresets = await LocalStorageService.loadCustomPresets();
-
-    // 4c. Load inventory items from local cache
-    final savedInventory = await LocalStorageService.loadInventoryItems();
-    if (savedInventory != null) {
-      _inventoryItems = savedInventory;
-    } else {
-      _inventoryItems = MockDataService.getInitialInventory();
-    }
-
-    // 4d. Load calendar availability blocks and preferences
-    final savedBlocks = await LocalStorageService.loadAvailabilityBlocks();
-    if (savedBlocks != null) {
-      _availabilityBlocks = savedBlocks;
-    }
-    final savedPrefs = await LocalStorageService.loadCalendarPreferences();
-    if (savedPrefs != null) {
-      _calendarPreferences = savedPrefs;
-    }
-
-    // 5. Load persistent likes & bookmarks from local cache
-    final interaction = await LocalStorageService.loadInteractionState();
-    if (interaction.likedJobIds.isNotEmpty || interaction.savedJobIds.isNotEmpty) {
-      _jobs = _jobs.map((job) {
-        final isLiked = interaction.likedJobIds.contains(job.id);
-        final isSaved = interaction.savedJobIds.contains(job.id);
-        return job.copyWith(
-          isLiked: isLiked,
-          isSaved: isSaved,
-        );
-      }).toList();
-    }
-
-    // 6. Synchronous hydration from Supabase Cloud:
-    // Await cloud hydration before marking initialization complete so a secondary device
-    // immediately displays all synced profile info, custom published jobs, bookings, and likes/saves.
-    if (_isLoggedIn) {
-      try {
-        await Future.wait([
-          _refreshProfileFromCloud(_currentUser.id),
-          _refreshJobsFromCloud(),
-          _refreshBookingsFromCloud(_currentUser.id),
-          _refreshInteractionsFromCloud(_currentUser.id),
-        ]).timeout(const Duration(seconds: 4));
-      } catch (_) {
-        // Fallback to local cache if offline or slow network
+    if (_isInitializing) {
+      if (_initCompleter != null) {
+        await _initCompleter!.future;
       }
-    } else {
-      // For guest visitors, refresh community jobs in the background
-      _refreshJobsFromCloud();
+      return;
     }
 
-    // 7. Load persistent messages & conversations
-    loadConversations();
+    _isInitializing = true;
+    _initCompleter = Completer<void>();
 
-    // 8. Subscribe to realtime channels if logged in
-    if (_isLoggedIn) {
-      _subscribeToRealtime();
+    try {
+      _jobs = MockDataService.getInitialJobs();
+      _bookings = MockDataService.getInitialBookings();
+      _publicDetailers = List.from(MockDataService.publicDetailers);
+
+      // 1. Load active tab index
+      _activeTabIndex = await LocalStorageService.loadActiveTab();
+
+      // 2. Check auth state (Supabase or stored session)
+      final isGuest = await LocalStorageService.loadIsGuest();
+      final savedUser = await LocalStorageService.loadCurrentUser();
+      final savedWorkbenchMode = await LocalStorageService.loadWorkbenchMode();
+
+      if (!isGuest && savedUser != null) {
+        _currentUser = savedUser;
+        _isLoggedIn = true;
+      } else if (savedUser != null) {
+        // Offline/guest session found with customized profile/garage
+        _currentUser = savedUser;
+        // If user has configured studio workbench mode or has configured studio/garage packages/vehicles,
+        // keep the user session accessible so they are not locked out on browser refresh.
+        if (savedWorkbenchMode == 'studio' ||
+            savedUser.servicePackages.isNotEmpty ||
+            savedUser.myGarage.isNotEmpty) {
+          _isLoggedIn = true;
+        } else {
+          _isLoggedIn = false;
+        }
+      } else if (savedWorkbenchMode == 'studio') {
+        // Explicit studio workbench mode configured
+        _isLoggedIn = true;
+      } else if (SupabaseAuthService.isLoggedIn) {
+        // Supabase persistent session found
+        final authUser = SupabaseAuthService.currentAuthUser!;
+        _currentUser = savedUser ?? UserProfile(
+          id: authUser.id,
+          username: authUser.email?.split('@').first ?? 'user',
+          displayName: (authUser.userMetadata?['display_name'] as String?) ?? 'Vehicle Owner',
+          businessName: 'My Detailing Studio',
+          avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80',
+          location: 'Austin, Texas',
+          bio: 'Car enthusiast & detailing craft connoisseur.',
+        );
+        _isLoggedIn = true;
+        await LocalStorageService.saveIsGuest(false);
+      } else {
+        _isLoggedIn = false;
+      }
+
+      // Apply explicit workbench mode if persisted ('studio' vs 'garage')
+      if (savedWorkbenchMode == 'studio') {
+        _currentUser = _currentUser.copyWith(
+          role: UserRole.detailer,
+          isVerifiedHost: true,
+        );
+      } else if (savedWorkbenchMode == 'garage') {
+        _currentUser = _currentUser.copyWith(
+          role: UserRole.client,
+        );
+      }
+
+      // 2b. Hydrate dedicated service packages from local storage first
+      final dedicatedPackages = await LocalStorageService.loadServicePackages();
+      List<ServicePackage> initialPackages;
+      if (dedicatedPackages.isNotEmpty) {
+        initialPackages = dedicatedPackages;
+      } else if (_currentUser.servicePackages.isNotEmpty &&
+                 _currentUser.servicePackages != MockDataService.standardPackages) {
+        initialPackages = _currentUser.servicePackages;
+        await LocalStorageService.saveServicePackages(initialPackages);
+      } else {
+        // Default to standard packages and persist immediately to dedicated storage
+        initialPackages = List.from(MockDataService.standardPackages);
+        await LocalStorageService.saveServicePackages(initialPackages);
+      }
+      _currentUser = _currentUser.copyWith(servicePackages: initialPackages);
+
+      // 2c. Hydrate dedicated garage vehicles from local storage first
+      final dedicatedGarage = await LocalStorageService.loadGarageVehicles();
+      List<UserVehicle> initialGarage;
+      if (dedicatedGarage.isNotEmpty) {
+        initialGarage = dedicatedGarage;
+      } else if (_currentUser.myGarage.isNotEmpty) {
+        initialGarage = _currentUser.myGarage;
+        await LocalStorageService.saveGarageVehicles(initialGarage);
+      } else {
+        initialGarage = [];
+      }
+      _currentUser = _currentUser.copyWith(myGarage: initialGarage);
+      if (initialGarage.isNotEmpty) {
+        _isLoggedIn = true;
+      }
+
+      // 2d. Hydrate dedicated team members from local storage first
+      final dedicatedTeam = await LocalStorageService.loadTeamMembers();
+      List<TeamMember> initialTeam;
+      if (dedicatedTeam.isNotEmpty) {
+        initialTeam = dedicatedTeam;
+      } else if (_currentUser.teamMembers.isNotEmpty) {
+        initialTeam = _currentUser.teamMembers;
+        await LocalStorageService.saveTeamMembers(initialTeam);
+      } else {
+        initialTeam = [];
+        await LocalStorageService.saveTeamMembers(initialTeam);
+      }
+      _currentUser = _currentUser.copyWith(teamMembers: initialTeam);
+      if (initialTeam.isNotEmpty) {
+        _isLoggedIn = true;
+      }
+
+      // 2e. Hydrate dedicated inventory items from local storage first
+      final dedicatedInventory = await LocalStorageService.loadInventoryItems();
+      if (dedicatedInventory != null) {
+        _inventoryItems = dedicatedInventory;
+      } else {
+        _inventoryItems = MockDataService.getInitialInventory();
+        await LocalStorageService.saveInventoryItems(_inventoryItems);
+      }
+
+      // 2f. Hydrate dedicated calendar blocks and preferences from local storage first
+      final dedicatedBlocks = await LocalStorageService.loadCalendarBlocks();
+      if (dedicatedBlocks.isNotEmpty) {
+        _availabilityBlocks = List.from(dedicatedBlocks);
+      } else {
+        final legacyBlocks = await LocalStorageService.loadAvailabilityBlocks();
+        if (legacyBlocks != null && legacyBlocks.isNotEmpty) {
+          _availabilityBlocks = List.from(legacyBlocks);
+          await LocalStorageService.saveCalendarBlocks(_availabilityBlocks);
+        }
+      }
+
+      final dedicatedPrefs = await LocalStorageService.loadDetailerCalendarPreferences(detailerId: _currentUser.id);
+      if (dedicatedPrefs != null) {
+        _calendarPreferences = dedicatedPrefs;
+        _detailerPreferencesMap[_currentUser.id] = dedicatedPrefs;
+      } else {
+        final legacyPrefs = await LocalStorageService.loadCalendarPreferences();
+        if (legacyPrefs != null) {
+          _calendarPreferences = legacyPrefs;
+          _detailerPreferencesMap[_currentUser.id] = legacyPrefs;
+          await LocalStorageService.saveDetailerCalendarPreferences(legacyPrefs, detailerId: _currentUser.id);
+        } else {
+          _calendarPreferences = DetailerCalendarPreferences.defaults();
+          _detailerPreferencesMap[_currentUser.id] = _calendarPreferences;
+          await LocalStorageService.saveDetailerCalendarPreferences(_calendarPreferences, detailerId: _currentUser.id);
+          await LocalStorageService.saveCalendarPreferences(_calendarPreferences);
+        }
+      }
+
+      // 2g. Hydrate dedicated booking appointments from local storage first
+      final dedicatedBookings = await LocalStorageService.loadBookings();
+      if (dedicatedBookings != null) {
+        _bookings = dedicatedBookings;
+      } else {
+        _bookings = MockDataService.getInitialBookings();
+        await LocalStorageService.saveBookings(_bookings);
+      }
+
+      // 2h. Hydrate dedicated custom transformation jobs from local storage first
+      final customJobs = await LocalStorageService.loadCustomJobs();
+      if (customJobs.isNotEmpty) {
+        final existingIds = customJobs.map((j) => j.id).toSet();
+        _jobs = [
+          ...customJobs,
+          ...MockDataService.getInitialJobs().where((j) => !existingIds.contains(j.id)),
+        ];
+      } else {
+        _jobs = MockDataService.getInitialJobs();
+      }
+
+      // 2i. Hydrate dedicated comment overrides across all jobs (both mock and custom)
+      final commentOverrides = await LocalStorageService.loadJobCommentsOverrides();
+      if (commentOverrides.isNotEmpty) {
+        _jobs = _jobs.map((job) {
+          final overrides = commentOverrides[job.id];
+          if (overrides != null && overrides.isNotEmpty) {
+            return job.copyWith(comments: overrides);
+          }
+          return job;
+        }).toList();
+      }
+
+      // 4. Load custom recipe presets from local cache
+      _customPresets = await LocalStorageService.loadCustomPresets();
+
+      // 5. Load persistent likes, bookmarks & exact like counts from local cache
+      final interaction = await LocalStorageService.loadInteractionState();
+      final likeCounts = await LocalStorageService.loadJobLikeCounts();
+      if (interaction.likedJobIds.isNotEmpty || interaction.savedJobIds.isNotEmpty || likeCounts.isNotEmpty) {
+        _jobs = _jobs.map((job) {
+          final isLiked = interaction.likedJobIds.contains(job.id);
+          final isSaved = interaction.savedJobIds.contains(job.id);
+          int likes = job.likesCount;
+          if (likeCounts.containsKey(job.id)) {
+            likes = likeCounts[job.id]!;
+          } else if (isLiked && !job.isLiked) {
+            likes = job.likesCount + 1;
+          }
+          return job.copyWith(
+            isLiked: isLiked,
+            isSaved: isSaved,
+            likesCount: likes,
+          );
+        }).toList();
+      }
+
+      // 6. Synchronous hydration from Supabase Cloud:
+      // Await cloud hydration before marking initialization complete so a secondary device
+      // immediately displays all synced profile info, custom published jobs, bookings, and likes/saves.
+      if (_isLoggedIn) {
+        try {
+          await Future.wait([
+            _refreshProfileFromCloud(_currentUser.id),
+            _refreshJobsFromCloud(),
+            _refreshBookingsFromCloud(_currentUser.id),
+            _refreshInteractionsFromCloud(_currentUser.id),
+          ]).timeout(const Duration(seconds: 4));
+        } catch (_) {
+          // Fallback to local cache if offline or slow network
+        }
+      } else {
+        // For guest visitors, refresh community jobs in the background
+        _refreshJobsFromCloud();
+      }
+
+      // 7. Load persistent messages & conversations
+      loadConversations();
+
+      // 8. Subscribe to realtime channels if logged in
+      if (_isLoggedIn) {
+        _subscribeToRealtime();
+      }
+
+      _isInitialized = true;
+      notifyListeners();
+      _initCompleter?.complete();
+    } catch (e) {
+      _initCompleter?.completeError(e);
+      rethrow;
+    } finally {
+      _isInitializing = false;
+      _initCompleter = null;
     }
-
-    _isInitialized = true;
-    notifyListeners();
   }
 
   Future<void> _refreshProfileFromCloud(String userId) async {
     try {
       final cloudProfile = await SupabaseDbService.fetchUserProfile(userId);
       if (cloudProfile != null) {
+        // Non-destructive merge: if cloud has no packages, KEEP local custom packages.
+        // Do NOT overwrite local custom packages with empty or mock data.
+        final resolvedPackages = cloudProfile.servicePackages.isNotEmpty
+            ? cloudProfile.servicePackages
+            : _currentUser.servicePackages;
+
+        // Non-destructive union merge for garage vehicles: union by ID, preserving local custom vehicles and data
+        List<UserVehicle> resolvedGarage;
+        if (cloudProfile.myGarage.isNotEmpty) {
+          final vehicleMap = <String, UserVehicle>{
+            for (final v in _currentUser.myGarage) v.id: v,
+          };
+          for (final cv in cloudProfile.myGarage) {
+            final local = vehicleMap[cv.id];
+            if (local != null) {
+              vehicleMap[cv.id] = cv.copyWith(
+                localImageBytes: cv.localImageBytes ?? local.localImageBytes,
+                lastDetailService: cv.lastDetailService ?? local.lastDetailService,
+                lastDetailDate: cv.lastDetailDate ?? local.lastDetailDate,
+              );
+            } else {
+              vehicleMap[cv.id] = cv;
+            }
+          }
+          resolvedGarage = vehicleMap.values.toList();
+        } else {
+          resolvedGarage = _currentUser.myGarage.isNotEmpty
+              ? _currentUser.myGarage
+              : await LocalStorageService.loadGarageVehicles();
+        }
+
+        // Non-destructive union merge for team members: union by ID, preserving local custom staff and schedules
+        List<TeamMember> resolvedTeam;
+        if (cloudProfile.teamMembers.isNotEmpty) {
+          final teamMap = <String, TeamMember>{
+            for (final m in _currentUser.teamMembers) m.id: m,
+          };
+          for (final cm in cloudProfile.teamMembers) {
+            final local = teamMap[cm.id];
+            if (local != null) {
+              teamMap[cm.id] = cm.copyWith(
+                customWeeklySchedule: cm.customWeeklySchedule ?? local.customWeeklySchedule,
+                localAvatarBytes: cm.localAvatarBytes ?? local.localAvatarBytes,
+                isFounder: cm.isFounder || local.isFounder,
+              );
+            } else {
+              teamMap[cm.id] = cm;
+            }
+          }
+          resolvedTeam = teamMap.values.toList();
+        } else {
+          resolvedTeam = _currentUser.teamMembers.isNotEmpty
+              ? _currentUser.teamMembers
+              : await LocalStorageService.loadTeamMembers();
+        }
+
         final mode = await LocalStorageService.loadWorkbenchMode();
+        var merged = cloudProfile.copyWith(
+          servicePackages: resolvedPackages,
+          myGarage: resolvedGarage,
+          teamMembers: resolvedTeam,
+        );
+
         if (mode == 'studio') {
-          _currentUser = cloudProfile.copyWith(
+          merged = merged.copyWith(
             role: UserRole.detailer,
             isVerifiedHost: true,
           );
         } else if (mode == 'garage') {
-          _currentUser = cloudProfile.copyWith(
+          merged = merged.copyWith(
             role: UserRole.client,
           );
-        } else {
-          _currentUser = cloudProfile;
         }
+
+        _currentUser = merged;
         await LocalStorageService.saveCurrentUser(_currentUser);
+        if (resolvedPackages.isNotEmpty) {
+          await LocalStorageService.saveServicePackages(resolvedPackages);
+        }
+        if (resolvedGarage.isNotEmpty) {
+          await LocalStorageService.saveGarageVehicles(resolvedGarage);
+        }
+        if (resolvedTeam.isNotEmpty) {
+          await LocalStorageService.saveTeamMembers(resolvedTeam);
+        }
+
+        // Non-destructive union merge for inventory items: union by ID, preserving local custom items and fill levels
+        try {
+          final cloudInventory = await SupabaseDbService.fetchInventoryItems(userId);
+          if (cloudInventory.isNotEmpty) {
+            final invMap = <String, InventoryItem>{
+              for (final item in _inventoryItems) item.id: item,
+            };
+            for (final ci in cloudInventory) {
+              final local = invMap[ci.id];
+              if (local != null) {
+                invMap[ci.id] = ci.copyWith(
+                  status: local.status,
+                  location: local.location.isNotEmpty ? local.location : ci.location,
+                  notes: local.notes ?? ci.notes,
+                );
+              } else {
+                invMap[ci.id] = ci;
+              }
+            }
+            _inventoryItems = invMap.values.toList();
+            await LocalStorageService.saveInventoryItems(_inventoryItems);
+          }
+        } catch (_) {}
+
         notifyListeners();
       }
     } catch (_) {}
@@ -220,14 +453,28 @@ class JobRepository extends ChangeNotifier {
         for (final job in _jobs) {
           jobMap[job.id] = job;
         }
-        // 2. Cloud jobs overwrite stale local copies
+        // 2. Cloud jobs non-destructively merge with local state
         for (final cJob in cloudJobs) {
           final existing = jobMap[cJob.id];
           if (existing != null) {
+            // Non-destructive comments merge: combine local and cloud comments without dropping either
+            final commentMap = <String, JobComment>{};
+            for (final c in cJob.comments) {
+              commentMap[c.id] = c;
+            }
+            for (final c in existing.comments) {
+              commentMap[c.id] = c;
+            }
+            final mergedComments = commentMap.values.toList()
+              ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
             jobMap[cJob.id] = cJob.copyWith(
               isLiked: existing.isLiked,
               isSaved: existing.isSaved,
+              likesCount: existing.likesCount > cJob.likesCount ? existing.likesCount : cJob.likesCount,
+              comments: mergedComments,
             );
+            LocalStorageService.saveJobCommentsOverride(cJob.id, mergedComments);
           } else {
             jobMap[cJob.id] = cJob;
           }
@@ -336,6 +583,10 @@ class JobRepository extends ChangeNotifier {
   void _persistUser() {
     // 1. Always save to local storage for fast offline cache and refresh persistence
     LocalStorageService.saveCurrentUser(_currentUser);
+    LocalStorageService.saveServicePackages(_currentUser.servicePackages);
+    LocalStorageService.saveGarageVehicles(_currentUser.myGarage);
+    LocalStorageService.saveTeamMembers(_currentUser.teamMembers);
+    LocalStorageService.saveInventoryItems(_inventoryItems);
     if (_isLoggedIn) {
       // 2. Sync to Supabase Database
       SupabaseDbService.saveUserProfile(_currentUser);
@@ -351,6 +602,11 @@ class JobRepository extends ChangeNotifier {
     final mockIds = MockDataService.getInitialJobs().map((j) => j.id).toSet();
     final customJobs = _jobs.where((j) => !mockIds.contains(j.id)).toList();
     LocalStorageService.saveCustomJobs(customJobs);
+  }
+
+  void _persistLikeCounts() {
+    final counts = {for (final j in _jobs) j.id: j.likesCount};
+    LocalStorageService.saveJobLikeCounts(counts);
   }
 
   void _persistInteractions() {
@@ -400,6 +656,10 @@ class JobRepository extends ChangeNotifier {
   void addInventoryItem(InventoryItem item) {
     _inventoryItems.insert(0, item);
     LocalStorageService.saveInventoryItems(_inventoryItems);
+    _persistUser();
+    if (_isLoggedIn) {
+      SupabaseDbService.saveInventoryItem(_currentUser.id, item);
+    }
     notifyListeners();
   }
 
@@ -408,6 +668,10 @@ class JobRepository extends ChangeNotifier {
     if (idx != -1) {
       _inventoryItems[idx] = updated;
       LocalStorageService.saveInventoryItems(_inventoryItems);
+      _persistUser();
+      if (_isLoggedIn) {
+        SupabaseDbService.saveInventoryItem(_currentUser.id, updated);
+      }
       notifyListeners();
     }
   }
@@ -415,11 +679,31 @@ class JobRepository extends ChangeNotifier {
   void removeInventoryItem(String itemId) {
     _inventoryItems.removeWhere((i) => i.id == itemId);
     LocalStorageService.saveInventoryItems(_inventoryItems);
+    _persistUser();
+    if (_isLoggedIn) {
+      SupabaseDbService.deleteInventoryItem(itemId);
+    }
     notifyListeners();
+  }
+
+  void updateChemicalFillStatus(String itemId, String newFillStatus) {
+    final idx = _inventoryItems.indexWhere((i) => i.id == itemId);
+    if (idx != -1) {
+      final current = _inventoryItems[idx];
+      final updated = current.copyWith(status: newFillStatus);
+      _inventoryItems[idx] = updated;
+      LocalStorageService.saveInventoryItems(_inventoryItems);
+      _persistUser();
+      if (_isLoggedIn) {
+        SupabaseDbService.saveInventoryItem(_currentUser.id, updated);
+      }
+      notifyListeners();
+    }
   }
 
   // Getters
   List<DetailJob> get jobs => _jobs;
+  List<DetailJob> get allJobs => _jobs;
   List<BookingAppointment> get bookings => _bookings;
   List<CalendarAvailabilityBlock> get availabilityBlocks => List.unmodifiable(_availabilityBlocks);
   DetailerCalendarPreferences get calendarPreferences => _calendarPreferences;
@@ -716,6 +1000,9 @@ class JobRepository extends ChangeNotifier {
       isVerifiedHost: isNowHost,
     );
     LocalStorageService.saveWorkbenchMode(isNowHost ? 'studio' : 'garage');
+    if (isNowHost) {
+      _isLoggedIn = true;
+    }
     _persistUser();
     notifyListeners();
   }
@@ -729,9 +1016,11 @@ class JobRepository extends ChangeNotifier {
 
   // Add / Edit / Remove vehicle in user's garage (Persisted)
   void addVehicleToGarage(UserVehicle vehicle) {
+    final updatedList = [..._currentUser.myGarage, vehicle];
     _currentUser = _currentUser.copyWith(
-      myGarage: [..._currentUser.myGarage, vehicle],
+      myGarage: updatedList,
     );
+    LocalStorageService.saveGarageVehicles(updatedList);
     _persistUser();
     if (_isLoggedIn) {
       SupabaseDbService.saveVehicle(_currentUser.id, vehicle);
@@ -745,6 +1034,7 @@ class JobRepository extends ChangeNotifier {
       final list = List<UserVehicle>.from(_currentUser.myGarage);
       list[idx] = updated;
       _currentUser = _currentUser.copyWith(myGarage: list);
+      LocalStorageService.saveGarageVehicles(list);
       _persistUser();
       if (_isLoggedIn) {
         SupabaseDbService.saveVehicle(_currentUser.id, updated);
@@ -754,9 +1044,11 @@ class JobRepository extends ChangeNotifier {
   }
 
   void removeVehicleFromGarage(String vehicleId) {
+    final updatedList = _currentUser.myGarage.where((v) => v.id != vehicleId).toList();
     _currentUser = _currentUser.copyWith(
-      myGarage: _currentUser.myGarage.where((v) => v.id != vehicleId).toList(),
+      myGarage: updatedList,
     );
+    LocalStorageService.saveGarageVehicles(updatedList);
     _persistUser();
     if (_isLoggedIn) {
       SupabaseDbService.deleteVehicle(vehicleId);
@@ -766,9 +1058,11 @@ class JobRepository extends ChangeNotifier {
 
   // Add a hired team member under your company profile (Detailer mode - Persisted)
   void addTeamMember(TeamMember member) {
+    final updatedMembers = [..._currentUser.teamMembers, member];
     _currentUser = _currentUser.copyWith(
-      teamMembers: [..._currentUser.teamMembers, member],
+      teamMembers: updatedMembers,
     );
+    LocalStorageService.saveTeamMembers(updatedMembers);
     _persistUser();
     if (_isLoggedIn) {
       SupabaseDbService.saveTeamMember(_currentUser.id, member);
@@ -777,9 +1071,11 @@ class JobRepository extends ChangeNotifier {
   }
 
   void removeTeamMember(String memberId) {
+    final updatedMembers = _currentUser.teamMembers.where((m) => m.id != memberId).toList();
     _currentUser = _currentUser.copyWith(
-      teamMembers: _currentUser.teamMembers.where((m) => m.id != memberId).toList(),
+      teamMembers: updatedMembers,
     );
+    LocalStorageService.saveTeamMembers(updatedMembers);
     _persistUser();
     if (_isLoggedIn) {
       SupabaseDbService.deleteTeamMember(memberId);
@@ -793,6 +1089,7 @@ class JobRepository extends ChangeNotifier {
       final list = List<TeamMember>.from(_currentUser.teamMembers);
       list[idx] = updated;
       _currentUser = _currentUser.copyWith(teamMembers: list);
+      LocalStorageService.saveTeamMembers(list);
       _persistUser();
       if (_isLoggedIn) {
         SupabaseDbService.saveTeamMember(_currentUser.id, updated);
@@ -801,11 +1098,13 @@ class JobRepository extends ChangeNotifier {
     }
   }
 
-  // Add / Edit / Remove Service Package (Persisted)
+  // Add / Edit / Remove Service Package (Persisted immediately to dedicated storage)
   void addServicePackage(ServicePackage package) {
+    final updatedList = [..._currentUser.servicePackages, package];
     _currentUser = _currentUser.copyWith(
-      servicePackages: [..._currentUser.servicePackages, package],
+      servicePackages: updatedList,
     );
+    LocalStorageService.saveServicePackages(updatedList);
     _persistUser();
     notifyListeners();
   }
@@ -816,28 +1115,41 @@ class JobRepository extends ChangeNotifier {
       final list = List<ServicePackage>.from(_currentUser.servicePackages);
       list[idx] = updated;
       _currentUser = _currentUser.copyWith(servicePackages: list);
+      LocalStorageService.saveServicePackages(list);
       _persistUser();
       notifyListeners();
     }
   }
 
   void removeServicePackage(String packageId) {
+    final updatedList = _currentUser.servicePackages.where((p) => p.id != packageId).toList();
     _currentUser = _currentUser.copyWith(
-      servicePackages: _currentUser.servicePackages.where((p) => p.id != packageId).toList(),
+      servicePackages: updatedList,
     );
+    LocalStorageService.saveServicePackages(updatedList);
     _persistUser();
     notifyListeners();
   }
+
+  /// Toggles like state and persists liked IDs + like counts across all jobs
+  void toggleJobLike(String jobId) => toggleLike(jobId);
 
   void toggleLike(String jobId) {
     final idx = _jobs.indexWhere((j) => j.id == jobId);
     if (idx != -1) {
       final job = _jobs[idx];
+      final newIsLiked = !job.isLiked;
+      final newLikesCount = newIsLiked
+          ? job.likesCount + 1
+          : (job.likesCount > 0 ? job.likesCount - 1 : 0);
+
       _jobs[idx] = job.copyWith(
-        isLiked: !job.isLiked,
-        likesCount: job.isLiked ? job.likesCount - 1 : job.likesCount + 1,
+        isLiked: newIsLiked,
+        likesCount: newLikesCount,
       );
       _persistInteractions();
+      _persistLikeCounts();
+      _persistCustomJobs();
       notifyListeners();
     }
   }
@@ -846,17 +1158,32 @@ class JobRepository extends ChangeNotifier {
     final idx = _jobs.indexWhere((j) => j.id == jobId);
     if (idx != -1) {
       final job = _jobs[idx];
+      final newIsSaved = !job.isSaved;
+      final newSavesCount = newIsSaved
+          ? job.savesCount + 1
+          : (job.savesCount > 0 ? job.savesCount - 1 : 0);
+
       _jobs[idx] = job.copyWith(
-        isSaved: !job.isSaved,
-        savesCount: job.isSaved ? job.savesCount - 1 : job.savesCount + 1,
+        isSaved: newIsSaved,
+        savesCount: newSavesCount,
       );
       _persistInteractions();
+      _persistCustomJobs();
       notifyListeners();
     }
   }
 
+  /// Aliases matching contract
+  void addCustomJob(DetailJob newJob) => addJob(newJob);
+  void uploadJob(DetailJob newJob) => addJob(newJob);
+
   void addJob(DetailJob newJob) {
-    _jobs.insert(0, newJob);
+    final existingIdx = _jobs.indexWhere((j) => j.id == newJob.id);
+    if (existingIdx != -1) {
+      _jobs[existingIdx] = newJob;
+    } else {
+      _jobs.insert(0, newJob);
+    }
     _persistCustomJobs();
     if (_isLoggedIn) {
       SupabaseDbService.saveJob(newJob);
@@ -875,6 +1202,7 @@ class JobRepository extends ChangeNotifier {
     if (idx != -1) {
       _jobs[idx] = updatedJob;
       _persistCustomJobs();
+      LocalStorageService.saveJobCommentsOverride(updatedJob.id, updatedJob.comments);
       if (_isLoggedIn) {
         SupabaseDbService.saveJob(updatedJob);
       }
@@ -882,14 +1210,38 @@ class JobRepository extends ChangeNotifier {
     }
   }
 
-  /// Appends a comment to a job and persists to Supabase.
-  void addComment(String jobId, JobComment comment) {
+  /// Retrieves comments for a job (from memory or overrides)
+  List<JobComment> getCommentsForJob(String jobId) {
+    final idx = _jobs.indexWhere((j) => j.id == jobId);
+    if (idx != -1) {
+      return _jobs[idx].comments;
+    }
+    return [];
+  }
+
+  /// Appends a comment to any job (custom OR mock) and persists to both local storage overrides and cloud.
+  Future<void> addComment(String jobId, JobComment comment) async {
     final idx = _jobs.indexWhere((j) => j.id == jobId);
     if (idx == -1) return;
+
+    final updatedComments = [..._jobs[idx].comments, comment];
     final updatedJob = _jobs[idx].copyWith(
-      comments: [..._jobs[idx].comments, comment],
+      comments: updatedComments,
     );
-    updateJob(updatedJob);
+    _jobs[idx] = updatedJob;
+
+    // 1. Immediately persist comment override so it survives reload even on mock jobs
+    await LocalStorageService.saveJobCommentsOverride(jobId, updatedComments);
+
+    // 2. Persist custom jobs if custom job
+    _persistCustomJobs();
+
+    // 3. Persist to Supabase if logged in
+    if (_isLoggedIn) {
+      SupabaseDbService.saveJobComment(jobId, comment, currentJob: updatedJob);
+    }
+
+    notifyListeners();
   }
 
   void deleteJob(String jobId) {
@@ -929,43 +1281,46 @@ class JobRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addBooking(BookingAppointment booking) {
+  bool addBooking(BookingAppointment booking, {bool allowOverbooking = false}) {
+    // 1. Guard against duplicate booking insertions (idempotency)
+    final existingIdx = _bookings.indexWhere((b) => b.id == booking.id);
+    if (existingIdx != -1) {
+      _bookings[existingIdx] = booking;
+      _persistBookings();
+      if (_isLoggedIn) {
+        SupabaseDbService.saveBooking(booking);
+      }
+      notifyListeners();
+      return true;
+    }
+
+    // 2. Race condition guard: verify slot capacity has not been exhausted
+    if (!allowOverbooking &&
+        isSlotConflictedByBooking(
+          booking.scheduledDate,
+          booking.scheduledTimeSlot,
+          detailerId: booking.detailerId,
+          teamMemberId: booking.assignedTeamMemberId,
+        )) {
+      if (kDebugMode) {
+        print('[JobRepository] addBooking rejected: Slot ${booking.scheduledTimeSlot} on ${booking.scheduledDate} is already conflicted or fully booked.');
+      }
+      return false;
+    }
+
     _bookings.insert(0, booking);
     _persistBookings();
     if (_isLoggedIn) {
       SupabaseDbService.saveBooking(booking);
     }
     notifyListeners();
+    return true;
   }
 
   void updateBookingStatus(String bookingId, BookingStatus newStatus) {
     final idx = _bookings.indexWhere((b) => b.id == bookingId);
     if (idx != -1) {
-      final b = _bookings[idx];
-      _bookings[idx] = BookingAppointment(
-        id: b.id,
-        clientId: b.clientId,
-        detailerId: b.detailerId,
-        detailerName: b.detailerName,
-        detailerBusinessName: b.detailerBusinessName,
-        detailerAvatar: b.detailerAvatar,
-        clientName: b.clientName,
-        clientPhone: b.clientPhone,
-        clientEmail: b.clientEmail,
-        vehicleYearMakeModel: b.vehicleYearMakeModel,
-        vehicleSize: b.vehicleSize,
-        package: b.package,
-        locationType: b.locationType,
-        clientAddress: b.clientAddress,
-        scheduledDate: b.scheduledDate,
-        scheduledTimeSlot: b.scheduledTimeSlot,
-        totalPrice: b.totalPrice,
-        depositAmount: b.depositAmount,
-        status: newStatus,
-        clientNotes: b.clientNotes,
-        preInspectionSummary: b.preInspectionSummary,
-        warrantyPassportId: b.warrantyPassportId,
-      );
+      _bookings[idx] = _bookings[idx].copyWith(status: newStatus);
       _persistBookings();
       if (_isLoggedIn) {
         SupabaseDbService.updateBookingStatus(bookingId, newStatus);
@@ -974,15 +1329,49 @@ class JobRepository extends ChangeNotifier {
     }
   }
 
+  void cancelBooking(String bookingId) {
+    updateBookingStatus(bookingId, BookingStatus.cancelled);
+  }
+
+  bool rescheduleBooking(String bookingId, DateTime newDate, String newSlot) {
+    final idx = _bookings.indexWhere((b) => b.id == bookingId);
+    if (idx != -1) {
+      _bookings[idx] = _bookings[idx].copyWith(
+        scheduledDate: newDate,
+        scheduledTimeSlot: newSlot,
+      );
+      _persistBookings();
+      if (_isLoggedIn) {
+        SupabaseDbService.saveBooking(_bookings[idx]);
+      }
+      notifyListeners();
+      return true;
+    }
+    return false;
+  }
+
   // ─── CALENDAR & AVAILABILITY ────────────────────────────────────────────────
+
+  Future<void> saveDetailerCalendarPreferences(DetailerCalendarPreferences preferences, {String? detailerId}) async {
+    updateCalendarPreferences(preferences, detailerId: detailerId);
+    final targetId = detailerId ?? _currentUser.id;
+    await LocalStorageService.saveDetailerCalendarPreferences(preferences, detailerId: targetId);
+    await LocalStorageService.saveCalendarPreferences(preferences);
+    if (_isLoggedIn) {
+      await SupabaseDbService.saveCalendarPreferences(targetId, preferences);
+    }
+  }
 
   void updateCalendarPreferences(DetailerCalendarPreferences preferences, {String? detailerId}) {
     _calendarPreferences = preferences;
-    if (detailerId != null) {
-      _detailerPreferencesMap[detailerId] = preferences;
-    }
+    final targetId = detailerId ?? _currentUser.id;
+    _detailerPreferencesMap[targetId] = preferences;
     _detailerPreferencesMap[_currentUser.id] = preferences;
     LocalStorageService.saveCalendarPreferences(preferences);
+    LocalStorageService.saveDetailerCalendarPreferences(preferences, detailerId: targetId);
+    if (_isLoggedIn) {
+      SupabaseDbService.saveCalendarPreferences(targetId, preferences);
+    }
     notifyListeners();
   }
 
@@ -999,16 +1388,23 @@ class JobRepository extends ChangeNotifier {
              (b.detailerId == block.detailerId &&
               b.date.year == block.date.year &&
               b.date.month == block.date.month &&
-              b.date.day == block.date.day),
+              b.date.day == block.date.day &&
+              b.teamMemberId == block.teamMemberId),
     );
     _availabilityBlocks.add(block);
-    LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+    LocalStorageService.saveCalendarBlocks(_availabilityBlocks);
+    if (_isLoggedIn) {
+      SupabaseDbService.saveAvailabilityBlock(block);
+    }
     notifyListeners();
   }
 
   void removeAvailabilityBlock(String blockId) {
     _availabilityBlocks.removeWhere((b) => b.id == blockId);
-    LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+    LocalStorageService.saveCalendarBlocks(_availabilityBlocks);
+    if (_isLoggedIn) {
+      SupabaseDbService.deleteAvailabilityBlock(blockId);
+    }
     notifyListeners();
   }
 
@@ -1048,7 +1444,7 @@ class JobRepository extends ChangeNotifier {
           );
         }
       }
-      LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+      LocalStorageService.saveCalendarBlocks(_availabilityBlocks);
       notifyListeners();
       return;
     }
@@ -1085,7 +1481,7 @@ class JobRepository extends ChangeNotifier {
         ),
       );
     }
-    LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+    LocalStorageService.saveCalendarBlocks(_availabilityBlocks);
     notifyListeners();
   }
 
@@ -2000,6 +2396,10 @@ class JobRepository extends ChangeNotifier {
         assignedTeamMemberId: memberId,
         assignedTeamMemberName: memberName,
       );
+      _persistBookings();
+      if (_isLoggedIn) {
+        SupabaseDbService.saveBooking(_bookings[idx]);
+      }
       notifyListeners();
     }
   }
@@ -2012,6 +2412,14 @@ class JobRepository extends ChangeNotifier {
       return m;
     }).toList();
     _currentUser = _currentUser.copyWith(teamMembers: updatedMembers);
+    LocalStorageService.saveTeamMembers(updatedMembers);
+    _persistUser();
+    if (_isLoggedIn) {
+      final updatedMember = updatedMembers.where((m) => m.id == memberId).firstOrNull;
+      if (updatedMember != null) {
+        SupabaseDbService.saveTeamMember(_currentUser.id, updatedMember);
+      }
+    }
     notifyListeners();
   }
 

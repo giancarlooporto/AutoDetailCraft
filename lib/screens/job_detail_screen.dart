@@ -301,7 +301,27 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   Future<void> _handleAddComment() async {
     final repo = widget.repository;
     final text = _commentController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: AppTheme.border),
+          ),
+          content: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 18),
+              SizedBox(width: 8),
+              Text('Please enter a comment before posting.'),
+            ],
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
 
     if (repo != null && repo.isGuestMode) {
       AuthModal.show(context, repository: repo, onSuccess: () {
@@ -340,8 +360,24 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(replyToName != null ? 'Reply posted to $replyToName!' : 'Comment posted to discussion thread!'),
-          backgroundColor: AppTheme.surfaceLight,
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: AppTheme.border),
+          ),
+          content: Row(
+            children: [
+              const Icon(Icons.chat_bubble_outline_rounded, color: AppTheme.primary, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  replyToName != null ? 'Reply posted to $replyToName!' : 'Comment posted to discussion thread!',
+                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -437,15 +473,22 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 4,
             children: [
-              const Icon(Icons.photo_library_outlined, size: 14, color: AppTheme.primary),
-              const SizedBox(width: 6),
-              const Text(
-                'Inspection Gallery',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+              const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.photo_library_outlined, size: 14, color: AppTheme.primary),
+                  SizedBox(width: 6),
+                  Text(
+                    'Inspection Gallery',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
               Text(
                 '•  Tap thumbnail for full HD zoom',
                 style: TextStyle(fontSize: 11, color: AppTheme.textMuted.withAlpha(200)),
@@ -645,12 +688,13 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
   Widget _buildGaugeMetric(String label, String value, IconData icon, Color color) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, color: color, size: 20),
+        Icon(icon, color: color, size: 18),
         const SizedBox(height: 4),
-        Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+        Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
         const SizedBox(height: 2),
-        Text(label, style: const TextStyle(fontSize: 10.5, color: AppTheme.textSecondary)),
+        Text(label, style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
       ],
     );
   }
@@ -1057,12 +1101,15 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                                 children: [
                                   Row(
                                     children: [
-                                      Text(
-                                        _currentJob.author.displayName,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 14.5,
-                                          color: AppTheme.textPrimary,
+                                      Flexible(
+                                        child: Text(
+                                          _currentJob.author.displayName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 14.5,
+                                            color: AppTheme.textPrimary,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
                                       if (_currentJob.author.isIdaCertified) ...[
@@ -1139,13 +1186,17 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                                 size: 16,
                                 color: _selectedTabIndex == 0 ? Colors.black : AppTheme.textSecondary,
                               ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Job Specs & Recipe',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: _selectedTabIndex == 0 ? Colors.black : AppTheme.textSecondary,
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  'Job Specs & Recipe',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: _selectedTabIndex == 0 ? Colors.black : AppTheme.textSecondary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
@@ -1174,13 +1225,17 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                                 size: 16,
                                 color: _selectedTabIndex == 1 ? Colors.black : AppTheme.textSecondary,
                               ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Discussion (${_currentJob.comments.length})',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: _selectedTabIndex == 1 ? Colors.black : AppTheme.textSecondary,
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  'Discussion (${_currentJob.comments.length})',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: _selectedTabIndex == 1 ? Colors.black : AppTheme.textSecondary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
@@ -1214,9 +1269,12 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                         children: [
                           Icon(Icons.science_outlined, color: AppTheme.primary, size: 20),
                           SizedBox(width: 8),
-                          Text(
-                            'Paint Inspection & Gauge Data',
-                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                          Expanded(
+                            child: Text(
+                              'Paint Inspection & Gauge Data',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ],
                       ),
@@ -1227,15 +1285,39 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text('Vehicle:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-                          Text(_currentJob.vehicleFullName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _currentJob.vehicleFullName,
+                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                              textAlign: TextAlign.end,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 8),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Paint Code & Color:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-                          Text('${_currentJob.paintColorName} (${_currentJob.paintCode})', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                          Flexible(
+                            flex: 2,
+                            child: const Text(
+                              'Paint Code & Color:',
+                              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 3,
+                            child: Text(
+                              '${_currentJob.paintColorName} (${_currentJob.paintCode})',
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                              textAlign: TextAlign.end,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -1243,23 +1325,58 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text('Paint Hardness:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-                          PaintHardnessBadge(hardness: _currentJob.paintHardness, isCompact: true),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: PaintHardnessBadge(hardness: _currentJob.paintHardness, isCompact: true),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 8),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Defect Stage:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-                          Text(_currentJob.defectStage.label, style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.hardnessSoft, fontSize: 13)),
+                          Flexible(
+                            flex: 2,
+                            child: const Text(
+                              'Defect Stage:',
+                              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 3,
+                            child: Text(
+                              _currentJob.defectStage.label,
+                              style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.hardnessSoft, fontSize: 13),
+                              textAlign: TextAlign.end,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 8),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Correction Achieved:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-                          Text('${_currentJob.correctionPercentage}% Correction', style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.primary, fontSize: 13)),
+                          Flexible(
+                            flex: 2,
+                            child: const Text(
+                              'Correction Achieved:',
+                              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 3,
+                            child: Text(
+                              '${_currentJob.correctionPercentage}% Correction',
+                              style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.primary, fontSize: 13),
+                              textAlign: TextAlign.end,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ],
                       ),
 
@@ -1271,21 +1388,23 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          _buildGaugeMetric('Initial Depth', '${_currentJob.initialPaintThicknessMicrons} µm', Icons.speed_rounded, AppTheme.textSecondary),
-                          _buildGaugeMetric('Final Depth', '${_currentJob.finalPaintThicknessMicrons} µm', Icons.check_circle_outline, AppTheme.primary),
-                          Builder(
-                            builder: (context) {
-                              final formatted = _currentJob.micronsRemoved.toStringAsFixed(1);
-                              final numVal = double.tryParse(formatted) ?? 0.0;
-                              return _buildGaugeMetric(
-                                'Clear Removed',
-                                numVal == 0.0 ? '0.0 µm' : '-$formatted µm',
-                                Icons.layers_clear_outlined,
-                                AppTheme.hardnessHard,
-                              );
-                            },
+                          Expanded(child: _buildGaugeMetric('Initial Depth', '${_currentJob.initialPaintThicknessMicrons} µm', Icons.speed_rounded, AppTheme.textSecondary)),
+                          Expanded(child: _buildGaugeMetric('Final Depth', '${_currentJob.finalPaintThicknessMicrons} µm', Icons.check_circle_outline, AppTheme.primary)),
+                          Expanded(
+                            child: Builder(
+                              builder: (context) {
+                                final formatted = _currentJob.micronsRemoved.toStringAsFixed(1);
+                                final numVal = double.tryParse(formatted) ?? 0.0;
+                                return _buildGaugeMetric(
+                                  'Clear Removed',
+                                  numVal == 0.0 ? '0.0 µm' : '-$formatted µm',
+                                  Icons.layers_clear_outlined,
+                                  AppTheme.hardnessHard,
+                                );
+                              },
+                            ),
                           ),
-                          _buildGaugeMetric('Total Time', '${_currentJob.durationHours} hrs', Icons.timer_outlined, Colors.amberAccent),
+                          Expanded(child: _buildGaugeMetric('Total Time', '${_currentJob.durationHours} hrs', Icons.timer_outlined, Colors.amberAccent)),
                         ],
                       ),
 
@@ -1298,9 +1417,12 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                         children: [
                           Icon(Icons.format_list_numbered_rounded, color: AppTheme.primary, size: 18),
                           SizedBox(width: 8),
-                          Text(
-                            'Step-by-Step Process Recipe',
-                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                          Expanded(
+                            child: Text(
+                              'Step-by-Step Process Recipe',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ],
                       ),
@@ -1467,12 +1589,16 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                                               color: AppTheme.textMuted,
                                             ),
                                             const SizedBox(width: 5),
-                                            const Text(
-                                              'Detailer Craft Specs',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w600,
-                                                color: AppTheme.textMuted,
+                                            const Flexible(
+                                              child: Text(
+                                                'Detailer Craft Specs',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppTheme.textMuted,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                                maxLines: 1,
                                               ),
                                             ),
                                             const SizedBox(width: 2),
@@ -1705,122 +1831,245 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 880),
-              child: Row(
-                children: [
-                  // Social interaction buttons (Like & Save)
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.all(4),
-                    constraints: const BoxConstraints(),
-                    icon: Icon(
-                      _currentJob.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                      color: _currentJob.isLiked ? Colors.redAccent : AppTheme.textSecondary,
-                      size: 19,
-                    ),
-                    onPressed: _toggleLike,
-                  ),
-                  const SizedBox(width: 3),
-                  Text('${_currentJob.likesCount}', style: const TextStyle(fontSize: 11.5, color: AppTheme.textSecondary)),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.all(4),
-                    constraints: const BoxConstraints(),
-                    icon: Icon(
-                      _currentJob.isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                      color: _currentJob.isSaved ? AppTheme.primary : AppTheme.textSecondary,
-                      size: 19,
-                    ),
-                    onPressed: _toggleSave,
-                  ),
-                  const SizedBox(width: 3),
-                  Text('${_currentJob.savesCount}', style: const TextStyle(fontSize: 11.5, color: AppTheme.textSecondary)),
-                  const SizedBox(width: 6),
-                  TextButton.icon(
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      minimumSize: const Size(0, 36),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    onPressed: _showExportSuccess,
-                    icon: const Icon(Icons.share_rounded, color: AppTheme.primary, size: 17),
-                    label: const Text('Share Report', style: TextStyle(color: AppTheme.primary, fontSize: 12)),
-                  ),
-                  const Spacer(),
-                  // Owner action button
-                  if (_isOwner) ...[
-                    ElevatedButton.icon(
-                      key: const Key('job_detail_owner_edit_button'),
-                      onPressed: _openEditRecipe,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.surfaceLight,
-                        foregroundColor: AppTheme.primary,
-                        side: const BorderSide(color: AppTheme.border),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        minimumSize: const Size(0, 36),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        elevation: 0,
-                      ),
-                      icon: const Icon(Icons.edit_outlined, size: 15, color: AppTheme.primary),
-                      label: const Text(
-                        'Edit',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppTheme.primary),
-                      ),
-                    ),
-                  ] else if (widget.repository != null &&
-                      widget.repository!.currentUser.id != _currentJob.author.id) ...[
-                    // Show Message and Book Service buttons for other detailers' recipes
-                    ElevatedButton(
-                      onPressed: _messagingLoading ? null : _messageDetailer,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.surfaceLight,
-                        foregroundColor: AppTheme.textPrimary,
-                        side: const BorderSide(color: AppTheme.border),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        minimumSize: const Size(0, 36),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        elevation: 0,
-                      ),
-                      child: _messagingLoading
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppTheme.primary,
-                              ),
-                            )
-                          : const Row(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final isNarrow = constraints.maxWidth < 480;
+                  final hasVisitorActions = !_isOwner &&
+                      widget.repository != null &&
+                      widget.repository!.currentUser.id != _currentJob.author.id;
+
+                  if (isNarrow && hasVisitorActions) {
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Wrap(
+                          alignment: WrapAlignment.spaceBetween,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          runSpacing: 4,
+                          children: [
+                            Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.chat_rounded, size: 15),
-                                SizedBox(width: 4),
-                                Text('Message', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.all(4),
+                                  constraints: const BoxConstraints(),
+                                  icon: Icon(
+                                    _currentJob.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                                    color: _currentJob.isLiked ? Colors.redAccent : AppTheme.textSecondary,
+                                    size: 19,
+                                  ),
+                                  onPressed: _toggleLike,
+                                ),
+                                const SizedBox(width: 3),
+                                Text('${_currentJob.likesCount}', style: const TextStyle(fontSize: 11.5, color: AppTheme.textSecondary)),
+                                const SizedBox(width: 12),
+                                IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.all(4),
+                                  constraints: const BoxConstraints(),
+                                  icon: Icon(
+                                    _currentJob.isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                                    color: _currentJob.isSaved ? AppTheme.primary : AppTheme.textSecondary,
+                                    size: 19,
+                                  ),
+                                  onPressed: _toggleSave,
+                                ),
+                                const SizedBox(width: 3),
+                                Text('${_currentJob.savesCount}', style: const TextStyle(fontSize: 11.5, color: AppTheme.textSecondary)),
                               ],
                             ),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton.icon(
-                      onPressed: _openBookingFlow,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primary,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        minimumSize: const Size(0, 36),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        elevation: 0,
+                            TextButton.icon(
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                minimumSize: const Size(0, 32),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onPressed: _showExportSuccess,
+                              icon: const Icon(Icons.share_rounded, color: AppTheme.primary, size: 16),
+                              label: const Text('Share Report', style: TextStyle(color: AppTheme.primary, fontSize: 12)),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: _messagingLoading ? null : _messageDetailer,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.surfaceLight,
+                                  foregroundColor: AppTheme.textPrimary,
+                                  side: const BorderSide(color: AppTheme.border),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                  minimumSize: const Size(0, 38),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  elevation: 0,
+                                ),
+                                child: _messagingLoading
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: AppTheme.primary,
+                                        ),
+                                      )
+                                    : const Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.chat_rounded, size: 15),
+                                          SizedBox(width: 6),
+                                          Text('Message', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                        ],
+                                      ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _openBookingFlow,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.primary,
+                                  foregroundColor: Colors.black,
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                  minimumSize: const Size(0, 38),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  elevation: 0,
+                                ),
+                                icon: const Icon(Icons.bolt_rounded, size: 16, color: Colors.black),
+                                label: const Text(
+                                  'Book Service',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  }
+
+                  // Default / Desktop single-row
+                  return Row(
+                    children: [
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints(),
+                        icon: Icon(
+                          _currentJob.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                          color: _currentJob.isLiked ? Colors.redAccent : AppTheme.textSecondary,
+                          size: 19,
+                        ),
+                        onPressed: _toggleLike,
                       ),
-                      icon: const Icon(Icons.bolt_rounded, size: 15, color: Colors.black),
-                      label: const Text(
-                        'Book Service',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black),
+                      const SizedBox(width: 3),
+                      Text('${_currentJob.likesCount}', style: const TextStyle(fontSize: 11.5, color: AppTheme.textSecondary)),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints(),
+                        icon: Icon(
+                          _currentJob.isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                          color: _currentJob.isSaved ? AppTheme.primary : AppTheme.textSecondary,
+                          size: 19,
+                        ),
+                        onPressed: _toggleSave,
                       ),
-                    ),
-                  ],
-                ],
+                      const SizedBox(width: 3),
+                      Text('${_currentJob.savesCount}', style: const TextStyle(fontSize: 11.5, color: AppTheme.textSecondary)),
+                      const SizedBox(width: 6),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: const Size(0, 36),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: _showExportSuccess,
+                        icon: const Icon(Icons.share_rounded, color: AppTheme.primary, size: 17),
+                        label: const Text('Share Report', style: TextStyle(color: AppTheme.primary, fontSize: 12)),
+                      ),
+                      const Spacer(),
+                      if (_isOwner) ...[
+                        ElevatedButton.icon(
+                          key: const Key('job_detail_owner_edit_button'),
+                          onPressed: _openEditRecipe,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.surfaceLight,
+                            foregroundColor: AppTheme.primary,
+                            side: const BorderSide(color: AppTheme.border),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            minimumSize: const Size(0, 36),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            elevation: 0,
+                          ),
+                          icon: const Icon(Icons.edit_outlined, size: 15, color: AppTheme.primary),
+                          label: const Text(
+                            'Edit',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppTheme.primary),
+                          ),
+                        ),
+                      ] else if (widget.repository != null &&
+                          widget.repository!.currentUser.id != _currentJob.author.id) ...[
+                        ElevatedButton(
+                          onPressed: _messagingLoading ? null : _messageDetailer,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.surfaceLight,
+                            foregroundColor: AppTheme.textPrimary,
+                            side: const BorderSide(color: AppTheme.border),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            minimumSize: const Size(0, 36),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            elevation: 0,
+                          ),
+                          child: _messagingLoading
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppTheme.primary,
+                                  ),
+                                )
+                              : const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.chat_rounded, size: 15),
+                                    SizedBox(width: 4),
+                                    Text('Message', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                  ],
+                                ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          onPressed: _openBookingFlow,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            minimumSize: const Size(0, 36),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            elevation: 0,
+                          ),
+                          icon: const Icon(Icons.bolt_rounded, size: 15, color: Colors.black),
+                          label: const Text(
+                            'Book Service',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black),
+                          ),
+                        ),
+                      ],
+                    ],
+                  );
+                },
               ),
             ),
           ),

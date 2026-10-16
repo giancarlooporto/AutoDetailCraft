@@ -32,6 +32,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
   bool _isLoadingModels = false;
   bool _isLoadingMakes = false;
   bool _isUploadingToCloud = false;
+  bool _hasAttemptedSave = false;
 
   late int _selectedYear;
   late String _selectedMake;
@@ -223,23 +224,48 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
   }
 
   Future<void> _saveVehicle() async {
+    setState(() => _hasAttemptedSave = true);
+
     final year = _isManualMake
         ? (int.tryParse(_customYearCtrl.text.trim()) ?? _selectedYear)
         : _selectedYear;
 
-    final make = _isManualMake && _customMakeCtrl.text.trim().isNotEmpty
+    final make = _isManualMake
         ? _customMakeCtrl.text.trim()
-        : _selectedMake;
+        : _selectedMake.trim();
 
-    final model = (_isManualMake || _isManualModel) && _customModelCtrl.text.trim().isNotEmpty
+    final model = (_isManualMake || _isManualModel)
         ? _customModelCtrl.text.trim()
-        : _selectedModel;
+        : _selectedModel.trim();
 
     final color = _isCustomColor && _customColorCtrl.text.trim().isNotEmpty
         ? _customColorCtrl.text.trim()
-        : _selectedColor;
+        : (_selectedColor.trim().isNotEmpty ? _selectedColor.trim() : 'Factory OEM');
 
-    if (make.isEmpty || model.isEmpty) return;
+    if (make.isEmpty || model.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline_rounded, color: Colors.redAccent),
+                const SizedBox(width: 8),
+                Text(
+                  make.isEmpty && model.isEmpty
+                      ? 'Please specify vehicle make and model.'
+                      : (make.isEmpty
+                          ? 'Please enter or select a vehicle make.'
+                          : 'Please enter or select a vehicle model.'),
+                ),
+              ],
+            ),
+            backgroundColor: AppTheme.surface,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
 
     setState(() => _isUploadingToCloud = true);
 
@@ -322,19 +348,24 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: AppTheme.primary.withAlpha(30), borderRadius: BorderRadius.circular(10)),
-                      child: const Icon(Icons.directions_car_filled_rounded, color: AppTheme.primary, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      widget.vehicleToEdit != null ? 'Edit Vehicle' : 'Add Vehicle to Garage',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
-                    ),
-                  ],
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(color: AppTheme.primary.withAlpha(30), borderRadius: BorderRadius.circular(10)),
+                        child: const Icon(Icons.directions_car_filled_rounded, color: AppTheme.primary, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          widget.vehicleToEdit != null ? 'Edit Vehicle' : 'Add Vehicle to Garage',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 IconButton(
                   onPressed: () => Navigator.of(context).pop(),
@@ -380,6 +411,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
               const SizedBox(height: 6),
               if (!_isManualMake)
                 DropdownButtonFormField<int>(
+                  isExpanded: true,
                   initialValue: VehicleDatabase.allStandardYears.contains(_selectedYear) ? _selectedYear : VehicleDatabase.allStandardYears.first,
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.calendar_today_rounded, size: 16),
@@ -404,10 +436,14 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
               const SizedBox(height: 14),
 
               // STEP 2: MAKE (Live from NHTSA + Alphabetized)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
                 children: [
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       const Text('2. Vehicle Make', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
                       if (_isLoadingMakes) ...[
@@ -438,6 +474,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
               const SizedBox(height: 6),
               if (!_isManualMake)
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: availableMakes.contains(_selectedMake) ? _selectedMake : (availableMakes.isNotEmpty ? availableMakes.first : VehicleDatabase.allMakes.first),
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.business_rounded, size: 16),
@@ -453,20 +490,27 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
               else
                 TextField(
                   controller: _customMakeCtrl,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Make (e.g. Lucid, Koenigsegg, Pagani, Lotus)',
-                    prefixIcon: Icon(Icons.business_rounded, size: 16),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    prefixIcon: const Icon(Icons.business_rounded, size: 16),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    errorText: _hasAttemptedSave && _isManualMake && _customMakeCtrl.text.trim().isEmpty
+                        ? 'Make is required'
+                        : null,
                   ),
                 ),
 
               const SizedBox(height: 14),
 
               // STEP 3: MODEL (Live Complete Models from NHTSA API)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
                 children: [
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       const Text('3. Model', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
                       if (_isLoadingModels) ...[
@@ -492,6 +536,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
               const SizedBox(height: 6),
               if (!_isManualMake && !_isManualModel && models.isNotEmpty)
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: models.contains(_selectedModel) ? _selectedModel : models.first,
                   decoration: InputDecoration(
                     prefixIcon: const Icon(Icons.directions_car_rounded, size: 16),
@@ -507,18 +552,24 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
               else
                 TextField(
                   controller: _customModelCtrl,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Model (e.g. Air Sapphire, Emira, Custom GT)',
-                    prefixIcon: Icon(Icons.directions_car_rounded, size: 16),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    prefixIcon: const Icon(Icons.directions_car_rounded, size: 16),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    errorText: _hasAttemptedSave && (_isManualMake || _isManualModel) && _customModelCtrl.text.trim().isEmpty
+                        ? 'Model is required'
+                        : null,
                   ),
                 ),
 
               const SizedBox(height: 14),
 
               // STEP 4: PAINT COLOR (Dynamically Populated by Selected Model & Year)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
                 children: [
                   const Text('4. Factory OEM Paint Color', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
                   GestureDetector(
@@ -533,6 +584,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
               const SizedBox(height: 6),
               if (!_isCustomColor && !_isManualMake)
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: colors.contains(_selectedColor) ? _selectedColor : (colors.isNotEmpty ? colors.first : 'Gloss Black'),
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.palette_outlined, size: 16),
@@ -557,8 +609,11 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
               const SizedBox(height: 16),
 
               // STEP 5: VEHICLE PHOTO PREVIEW & UPLOAD ORIGINAL PHOTO
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
                 children: [
                   const Text('5. Vehicle Photo', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
                   if (_uploadedImageBytes != null)
@@ -663,7 +718,11 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
         const SizedBox(height: 16),
 
         // Bottom Action Bar (Universal UX)
-        Row(
+        Wrap(
+          alignment: WrapAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
           children: [
             if (widget.vehicleToEdit != null && widget.onDelete != null)
               TextButton.icon(
@@ -675,7 +734,6 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
                   widget.onDelete!();
                 },
               ),
-            const Spacer(),
             OutlinedButton(
               onPressed: _isUploadingToCloud ? null : () => Navigator.of(context).pop(),
               style: OutlinedButton.styleFrom(
@@ -686,7 +744,6 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
               ),
               child: const Text('Cancel'),
             ),
-            const SizedBox(width: 10),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primary,

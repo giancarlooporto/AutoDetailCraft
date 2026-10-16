@@ -57,6 +57,7 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
   late TextEditingController _subCategoryController;
   String _status = 'In Service';
   late TextEditingController _locationController;
+  late TextEditingController _dilutionSpecsController;
   late List<RecipeStage> _recipeStages;
   late TextEditingController _notesController;
 
@@ -87,6 +88,7 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
     }
 
     _locationController = TextEditingController(text: item?.location ?? (_category == InventoryCategory.chemicals ? 'Chemical Shelf Bay 1' : 'Studio Bay 1'));
+    _dilutionSpecsController = TextEditingController(text: item?.dilutionSpecs ?? '');
     _recipeStages = List<RecipeStage>.from(item?.recipeStages ?? [
       const RecipeStage(
         stageName: 'Compounding Cut',
@@ -112,12 +114,37 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
     _brandController.dispose();
     _subCategoryController.dispose();
     _locationController.dispose();
+    _dilutionSpecsController.dispose();
     _notesController.dispose();
     super.dispose();
   }
 
   void _save() {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: AppTheme.border),
+          ),
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                _category == InventoryCategory.recipe
+                    ? 'Please enter a formula name.'
+                    : 'Please enter an item name.',
+              ),
+            ],
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
 
     final Map<String, String> specs = Map<String, String>.from(widget.itemToEdit?.specs ?? {});
 
@@ -130,7 +157,9 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
       specs: specs,
       maintenance: widget.itemToEdit?.maintenance ?? '',
       assignedPadOrChemical: widget.itemToEdit?.assignedPadOrChemical ?? '',
-      dilutionSpecs: widget.itemToEdit?.dilutionSpecs ?? '',
+      dilutionSpecs: _category == InventoryCategory.chemicals
+          ? _dilutionSpecsController.text.trim()
+          : (widget.itemToEdit?.dilutionSpecs ?? ''),
       dilutionRatio: widget.itemToEdit?.dilutionRatio,
       cureTimeOrFlashTime: widget.itemToEdit?.cureTimeOrFlashTime,
       safetyNotes: widget.itemToEdit?.safetyNotes,
@@ -249,6 +278,7 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
     final chemCtrl = TextEditingController(text: stage.chemical);
     final padCtrl = TextEditingController(text: stage.pad);
     final techCtrl = TextEditingController(text: stage.technique);
+    final dilutionCtrl = TextEditingController(text: stage.dilution ?? '');
     final notesCtrl = TextEditingController(text: stage.notes ?? '');
 
     showDialog(
@@ -423,6 +453,15 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
                     const SizedBox(height: 12),
 
                     TextField(
+                      controller: dilutionCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Dilution (e.g. 1:10, Neat)',
+                        hintText: 'e.g. 1:10 dilution, Neat, 1:4',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    TextField(
                       controller: notesCtrl,
                       decoration: const InputDecoration(
                         labelText: 'Step Notes / Wipe Off',
@@ -450,6 +489,7 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
                     chemical: chemCtrl.text.trim().isNotEmpty ? chemCtrl.text.trim() : 'Compound',
                     pad: padCtrl.text.trim(),
                     technique: techCtrl.text.trim(),
+                    dilution: dilutionCtrl.text.trim().isNotEmpty ? dilutionCtrl.text.trim() : null,
                     notes: notesCtrl.text.trim().isNotEmpty ? notesCtrl.text.trim() : null,
                   );
                   setState(() {
@@ -742,6 +782,7 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
                               Expanded(
                                 child: _category == InventoryCategory.chemicals
                                     ? DropdownButtonFormField<String>(
+                                        isExpanded: true,
                                         initialValue: const ['Full', 'Half', 'Empty'].contains(_status) ? _status : 'Full',
                                         decoration: const InputDecoration(labelText: 'Status'),
                                         dropdownColor: AppTheme.surface,
@@ -755,6 +796,7 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
                                         },
                                       )
                                     : DropdownButtonFormField<String>(
+                                        isExpanded: true,
                                         initialValue: const ['In Service', 'Repair', 'Optimal', 'Retired'].contains(_status) ? _status : 'In Service',
                                         decoration: const InputDecoration(labelText: 'Status'),
                                         dropdownColor: AppTheme.surface,
@@ -781,6 +823,16 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
                               ),
                             ],
                           ),
+                          if (_category == InventoryCategory.chemicals) ...[
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _dilutionSpecsController,
+                              decoration: const InputDecoration(
+                                labelText: 'Dilution Specs / Instructions',
+                                hintText: 'e.g. 1:10 for interior APC, 1:4 for heavy engine degreasing',
+                              ),
+                            ),
+                          ],
                         ],
 
                         const SizedBox(height: 16),
@@ -808,9 +860,13 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
                 const SizedBox(height: 12),
 
                 // Footer Actions
-                Row(
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    if (isEditing && widget.onDelete != null) ...[
+                    if (isEditing && widget.onDelete != null)
                       TextButton.icon(
                         style: TextButton.styleFrom(
                           foregroundColor: Colors.redAccent,
@@ -822,20 +878,15 @@ class _InventoryItemEditorDialogState extends State<InventoryItemEditorDialog> {
                           Navigator.of(context).pop();
                         },
                       ),
-                      const Spacer(),
-                    ] else ...[
-                      const Spacer(),
-                    ],
                     TextButton(
                       onPressed: () => Navigator.of(context).pop(),
                       child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
                     ),
-                    const SizedBox(width: 8),
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.primary,
                         foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                       icon: const Icon(Icons.check_circle_rounded, size: 18),

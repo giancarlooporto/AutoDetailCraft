@@ -6,6 +6,8 @@ import '../models/user_vehicle.dart';
 import '../models/team_member.dart';
 import '../models/detail_job.dart';
 import '../models/booking_models.dart';
+import '../models/calendar_availability_block.dart';
+import '../models/inventory_item.dart';
 import 'supabase_service.dart';
 import 'mock_data_service.dart';
 
@@ -24,33 +26,47 @@ class SupabaseDbService {
       // Fetch user's garage vehicles
       final vehiclesRes = await client.from('vehicles').select().eq('user_id', userId);
       final List<UserVehicle> garage = (vehiclesRes as List<dynamic>).map<UserVehicle>((v) {
+        final lastDateStr = (v['last_detail_date'] ?? v['lastDetailDate']) as String?;
         return UserVehicle(
           id: v['id'] as String,
           year: v['year'] as int,
           make: v['make'] as String,
           model: v['model'] as String,
-          colorName: v['paint_color'] as String? ?? '',
-          paintCode: v['paint_code'] as String?,
-          imageUrl: v['image_url'] as String? ?? '',
+          colorName: (v['paint_color'] ?? v['colorName']) as String? ?? '',
+          paintCode: (v['paint_code'] ?? v['paintCode']) as String?,
+          imageUrl: (v['image_url'] ?? v['imageUrl']) as String? ?? '',
+          lastDetailService: (v['last_detail_service'] ?? v['lastDetailService']) as String?,
+          lastDetailDate: lastDateStr != null ? DateTime.tryParse(lastDateStr) : null,
         );
       }).toList();
 
       // Fetch user's team members
       final teamRes = await client.from('team_members').select().eq('studio_id', userId);
       final List<TeamMember> team = (teamRes as List<dynamic>).map<TeamMember>((t) {
+        final schedRaw = t['custom_weekly_schedule'] ?? t['customWeeklySchedule'];
+        List<DayBusinessHours>? schedule;
+        if (schedRaw != null && schedRaw is List) {
+          try {
+            schedule = schedRaw
+                .map((item) => DayBusinessHours.fromJson(Map<String, dynamic>.from(item as Map)))
+                .toList();
+          } catch (_) {}
+        }
         return TeamMember(
           id: t['id'] as String,
           name: t['name'] as String,
-          roleTitle: t['role_title'] as String,
-          avatarUrl: t['avatar_url'] as String? ?? '',
+          roleTitle: (t['role_title'] ?? t['roleTitle']) as String? ?? 'Detail Specialist',
+          avatarUrl: (t['avatar_url'] ?? t['avatarUrl']) as String? ?? '',
           rating: (t['rating'] as num?)?.toDouble() ?? 5.0,
-          completedJobsCount: t['completed_jobs_count'] as int? ?? 0,
-          isAvailable: t['is_available'] as bool? ?? true,
+          completedJobsCount: (t['completed_jobs_count'] ?? t['completedJobsCount']) as int? ?? 0,
+          isAvailable: (t['is_available'] ?? t['isAvailable']) as bool? ?? true,
+          isFounder: (t['is_founder'] ?? t['isFounder']) as bool? ?? false,
+          customWeeklySchedule: schedule,
         );
       }).toList();
 
-      // Fetch user's service packages if present, otherwise default to standardPackages
-      List<ServicePackage> packages = MockDataService.standardPackages;
+      // Fetch user's service packages if present; if empty/null, return empty list (do NOT substitute MockDataService.standardPackages)
+      List<ServicePackage> packages = [];
       if (res['service_packages'] != null && res['service_packages'] is List) {
         try {
           final list = res['service_packages'] as List<dynamic>;
@@ -136,6 +152,17 @@ class SupabaseDbService {
         'service_packages': user.servicePackages.map((p) => p.toJson()).toList(),
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
+
+      if (user.myGarage.isNotEmpty) {
+        for (final v in user.myGarage) {
+          await saveVehicle(user.id, v);
+        }
+      }
+      if (user.teamMembers.isNotEmpty) {
+        for (final m in user.teamMembers) {
+          await saveTeamMember(user.id, m);
+        }
+      }
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error saving profile: $e');
     }
@@ -204,7 +231,7 @@ class SupabaseDbService {
     if (client == null) return;
 
     try {
-      await client.from('vehicles').upsert({
+      final payload = <String, dynamic>{
         'id': v.id,
         'user_id': userId,
         'year': v.year,
@@ -213,7 +240,14 @@ class SupabaseDbService {
         'paint_color': v.colorName,
         'paint_code': v.paintCode,
         'image_url': v.imageUrl,
-      });
+      };
+      if (v.lastDetailService != null) {
+        payload['last_detail_service'] = v.lastDetailService;
+      }
+      if (v.lastDetailDate != null) {
+        payload['last_detail_date'] = v.lastDetailDate!.toIso8601String();
+      }
+      await client.from('vehicles').upsert(payload);
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error saving vehicle: $e');
     }
@@ -237,7 +271,7 @@ class SupabaseDbService {
     if (client == null) return;
 
     try {
-      await client.from('team_members').upsert({
+      final payload = <String, dynamic>{
         'id': m.id,
         'studio_id': studioId,
         'name': m.name,
@@ -246,7 +280,13 @@ class SupabaseDbService {
         'rating': m.rating,
         'completed_jobs_count': m.completedJobsCount,
         'is_available': m.isAvailable,
-      });
+        'is_founder': m.isFounder,
+      };
+      if (m.customWeeklySchedule != null) {
+        payload['custom_weekly_schedule'] =
+            m.customWeeklySchedule!.map((h) => h.toJson()).toList();
+      }
+      await client.from('team_members').upsert(payload);
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error saving team member: $e');
     }
@@ -321,6 +361,77 @@ class SupabaseDbService {
       return jobs;
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error fetching jobs: $e');
+      return [];
+    }
+  }
+
+  /// Save a job comment in Supabase
+  static Future<void> saveJobComment(String jobId, JobComment comment, {DetailJob? currentJob}) async {
+    final client = _client;
+    if (client == null) return;
+
+    try {
+      if (currentJob != null) {
+        await saveJob(currentJob);
+        return;
+      }
+      final res = await client.from('jobs').select('raw_data').eq('id', jobId).maybeSingle();
+      if (res != null && res['raw_data'] != null) {
+        final raw = Map<String, dynamic>.from(res['raw_data'] as Map);
+        final comments = List<dynamic>.from((raw['comments'] as List<dynamic>?) ?? []);
+        comments.add(comment.toJson());
+        raw['comments'] = comments;
+        await client.from('jobs').update({
+          'raw_data': raw,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        }).eq('id', jobId);
+      }
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error saving job comment: $e');
+    }
+  }
+
+  /// Fetch comments for a specific job from Supabase
+  static Future<List<JobComment>> fetchJobComments(String jobId) async {
+    final client = _client;
+    if (client == null) return [];
+
+    try {
+      final res = await client.from('jobs').select('raw_data').eq('id', jobId).maybeSingle();
+      if (res != null && res['raw_data'] != null) {
+        final raw = res['raw_data'] as Map<String, dynamic>;
+        final list = (raw['comments'] as List<dynamic>?) ?? [];
+        return list.map((c) => JobComment.fromJson(c as Map<String, dynamic>)).toList();
+      }
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error fetching job comments: $e');
+    }
+    return [];
+  }
+
+  /// Contract alias for saveJob
+  static Future<void> saveCustomJob(DetailJob job) => saveJob(job);
+
+  /// Fetch custom jobs optionally filtered by author
+  static Future<List<DetailJob>> fetchCustomJobs({String? authorId}) async {
+    final client = _client;
+    if (client == null) return [];
+
+    try {
+      var query = client.from('jobs').select();
+      if (authorId != null) {
+        query = query.eq('author_id', authorId);
+      }
+      final res = await query.order('created_at', ascending: false);
+      final jobs = <DetailJob>[];
+      for (final item in (res as List<dynamic>)) {
+        if (item['raw_data'] != null) {
+          jobs.add(DetailJob.fromJson(item['raw_data'] as Map<String, dynamic>));
+        }
+      }
+      return jobs;
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error fetching custom jobs: $e');
       return [];
     }
   }
@@ -528,6 +639,10 @@ class SupabaseDbService {
         'client_notes': booking.clientNotes,
         'pre_inspection_summary': booking.preInspectionSummary,
         'warranty_passport_id': booking.warrantyPassportId,
+        if (booking.assignedTeamMemberId != null)
+          'assigned_team_member_id': booking.assignedTeamMemberId,
+        if (booking.assignedTeamMemberName != null)
+          'assigned_team_member_name': booking.assignedTeamMemberName,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
       if (kDebugMode) print('[SupabaseDbService] Booking saved to Supabase: ${booking.id}');
@@ -551,7 +666,14 @@ class SupabaseDbService {
       final List<dynamic> list = res as List<dynamic>;
       final bookings = <BookingAppointment>[];
       for (final item in list) {
-        bookings.add(BookingAppointment.fromJson(item as Map<String, dynamic>));
+        final map = Map<String, dynamic>.from(item as Map);
+        if (map['assignedTeamMemberId'] == null && map['assigned_team_member_id'] != null) {
+          map['assignedTeamMemberId'] = map['assigned_team_member_id'];
+        }
+        if (map['assignedTeamMemberName'] == null && map['assigned_team_member_name'] != null) {
+          map['assignedTeamMemberName'] = map['assigned_team_member_name'];
+        }
+        bookings.add(BookingAppointment.fromJson(map));
       }
       return bookings;
     } catch (e) {
@@ -618,6 +740,109 @@ class SupabaseDbService {
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error fetching user interactions: $e');
       return null;
+    }
+  }
+
+  // ─── INVENTORY ITEMS ──────────────────────────────────────────────────────
+
+  /// Fetch user's inventory items from Supabase
+  static Future<List<InventoryItem>> fetchInventoryItems(String studioId) async {
+    final client = _client;
+    if (client == null) return [];
+
+    try {
+      final res = await client.from('inventory_items').select().eq('studio_id', studioId);
+      final List<dynamic> list = res as List<dynamic>;
+      return list.map((item) {
+        final map = Map<String, dynamic>.from(item as Map);
+        if (map['raw_data'] != null && map['raw_data'] is Map) {
+          return InventoryItem.fromJson(Map<String, dynamic>.from(map['raw_data'] as Map));
+        }
+        return InventoryItem.fromJson(map);
+      }).toList();
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error fetching inventory items: $e');
+      return [];
+    }
+  }
+
+  /// Upsert an inventory item to Supabase
+  static Future<void> saveInventoryItem(String studioId, InventoryItem item) async {
+    final client = _client;
+    if (client == null) return;
+
+    try {
+      final payload = <String, dynamic>{
+        'id': item.id,
+        'studio_id': studioId,
+        'name': item.name,
+        'category': item.category.name,
+        'brand': item.brand,
+        'sub_category': item.subCategory,
+        'status': item.status,
+        'location': item.location,
+        'raw_data': item.toJson(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      };
+      await client.from('inventory_items').upsert(payload);
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error saving inventory item: $e');
+    }
+  }
+
+  /// Delete an inventory item from Supabase
+  static Future<void> deleteInventoryItem(String itemId) async {
+    final client = _client;
+    if (client == null) return;
+
+    try {
+      await client.from('inventory_items').delete().eq('id', itemId);
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error deleting inventory item: $e');
+    }
+  }
+
+  // ─── CALENDAR PREFERENCES & AVAILABILITY BLOCKS ──────────────────────────
+
+  /// Upsert detailer calendar operating hours and booking preferences
+  static Future<void> saveCalendarPreferences(String detailerId, DetailerCalendarPreferences preferences) async {
+    final client = _client;
+    if (client == null) return;
+
+    try {
+      await client.from('profiles').update({
+        'calendar_preferences': preferences.toJson(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', detailerId);
+      if (kDebugMode) print('[SupabaseDbService] Calendar preferences saved for: $detailerId');
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Note: calendar_preferences column not yet in profiles or offline: $e');
+    }
+  }
+
+  /// Upsert a calendar availability block (Day or Slot block)
+  static Future<void> saveAvailabilityBlock(CalendarAvailabilityBlock block) async {
+    final client = _client;
+    if (client == null) return;
+
+    try {
+      await client.from('availability_blocks').upsert(block.toJson());
+      if (kDebugMode) print('[SupabaseDbService] Availability block saved: ${block.id}');
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Note: availability_blocks table not yet configured or offline: $e');
+    }
+  }
+
+  /// Delete an availability block
+  static Future<void> deleteAvailabilityBlock(String blockId) async {
+    final client = _client;
+    if (client == null) return;
+
+    try {
+      await client.from('availability_blocks').delete().eq('id', blockId);
+      if (kDebugMode) print('[SupabaseDbService] Availability block deleted: $blockId');
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error deleting availability block: $e');
     }
   }
 }

@@ -45,14 +45,20 @@ class TeamMember {
 
   factory TeamMember.fromJson(Map<String, dynamic> json) {
     final schedList = json['customWeeklySchedule'] as List<dynamic>?;
-    final schedule = schedList?.map((item) => DayBusinessHours.fromJson(item as Map<String, dynamic>)).toList();
+    final schedule = schedList
+        ?.map((item) => DayBusinessHours.fromJson(Map<String, dynamic>.from(item as Map)))
+        .toList();
+
+    final avatarBytesStr = json['localAvatarBytes'] as String?;
 
     return TeamMember(
       id: json['id'] as String? ?? 'tm_${DateTime.now().millisecondsSinceEpoch}',
       name: json['name'] as String? ?? '',
       roleTitle: json['roleTitle'] as String? ?? 'Detail Specialist',
       avatarUrl: json['avatarUrl'] as String? ?? '',
-      localAvatarBytes: json['localAvatarBytes'] != null ? base64Decode(json['localAvatarBytes'] as String) : null,
+      localAvatarBytes: avatarBytesStr != null && avatarBytesStr.trim().isNotEmpty
+          ? base64Decode(avatarBytesStr.trim())
+          : null,
       rating: (json['rating'] as num?)?.toDouble() ?? 5.0,
       completedJobsCount: json['completedJobsCount'] as int? ?? 0,
       isAvailable: json['isAvailable'] as bool? ?? true,

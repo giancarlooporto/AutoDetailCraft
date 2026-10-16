@@ -54,7 +54,24 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         repository: widget.repository,
         vehicleToEdit: vehicle,
         onDelete: vehicle != null
-            ? () => widget.repository.removeVehicleFromGarage(vehicle.id)
+            ? () {
+                widget.repository.removeVehicleFromGarage(vehicle.id);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Row(
+                        children: [
+                          const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+                          const SizedBox(width: 8),
+                          Text('${vehicle.fullName} removed from Garage.'),
+                        ],
+                      ),
+                      backgroundColor: AppTheme.surface,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              }
             : null,
       ),
     );
@@ -263,6 +280,17 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     return ListenableBuilder(
       listenable: widget.repository,
       builder: (context, _) {
+        final user = widget.repository.currentUser;
+        final isDetailer = widget.repository.isDetailerWorkbenchMode ||
+            user.role == UserRole.detailer ||
+            widget.repository.workbenchMode == 'studio';
+
+        // If in detailer studio workbench mode, render DetailerWorkbenchView directly
+        // without blocking behind guest view.
+        if (isDetailer) {
+          return DetailerWorkbenchView(repository: widget.repository);
+        }
+
         final isLoggedIn = widget.repository.isLoggedIn;
         if (!isLoggedIn) {
           return Scaffold(
@@ -273,13 +301,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             ),
             body: _buildGuestView(),
           );
-        }
-
-        final user = widget.repository.currentUser;
-        final isDetailer = user.role == UserRole.detailer;
-
-        if (isDetailer) {
-          return DetailerWorkbenchView(repository: widget.repository);
         }
 
         final savedJobs = widget.repository.savedJobs;
@@ -555,13 +576,53 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                   ),
                                   const SizedBox(height: 16),
                                   if (garage.isEmpty)
-                                    const Center(
-                                      child: Padding(
-                                        padding: EdgeInsets.all(32),
-                                        child: Text(
-                                          'No vehicles added yet.\nAdd your car to store your paint color and track digital detail warranty passports!',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.5),
+                                    Center(
+                                      child: Container(
+                                        margin: const EdgeInsets.symmetric(vertical: 24),
+                                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
+                                        constraints: const BoxConstraints(maxWidth: 480),
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.surface.withAlpha(160),
+                                          borderRadius: BorderRadius.circular(16),
+                                          border: Border.all(color: AppTheme.border.withAlpha(120)),
+                                        ),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(18),
+                                              decoration: BoxDecoration(
+                                                color: AppTheme.primary.withAlpha(20),
+                                                shape: BoxShape.circle,
+                                                border: Border.all(color: AppTheme.primary.withAlpha(60)),
+                                              ),
+                                              child: const Icon(Icons.directions_car_outlined, size: 40, color: AppTheme.primary),
+                                            ),
+                                            const SizedBox(height: 16),
+                                            const Text(
+                                              'No Vehicles in Garage Yet',
+                                              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            const Text(
+                                              'Register your personal car to store OEM paint codes, track digital detail warranty passports, and quickly book tailored packages.',
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.5),
+                                            ),
+                                            const SizedBox(height: 20),
+                                            OutlinedButton.icon(
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor: AppTheme.primary,
+                                                side: BorderSide(color: AppTheme.primary.withAlpha(100)),
+                                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                              ),
+                                              icon: const Icon(Icons.add, size: 16),
+                                              label: const Text('Add Your First Vehicle', style: TextStyle(fontWeight: FontWeight.bold)),
+                                              onPressed: () => _openVehicleEditor(context),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     )
@@ -711,7 +772,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               aspectRatio: 16 / 9,
               child: Container(
                 color: AppTheme.surfaceLight,
-                child: veh.localImageBytes != null
+                child: veh.localImageBytes != null && veh.localImageBytes!.isNotEmpty
                     ? Image.memory(
                         veh.localImageBytes!,
                         fit: BoxFit.cover,

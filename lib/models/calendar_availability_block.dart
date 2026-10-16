@@ -182,7 +182,7 @@ class DetailerCalendarPreferences {
   factory DetailerCalendarPreferences.fromJson(Map<String, dynamic> json) {
     final list = json['weeklySchedule'] as List<dynamic>?;
     final schedule = list != null
-        ? list.map((item) => DayBusinessHours.fromJson(item as Map<String, dynamic>)).toList()
+        ? list.map((item) => DayBusinessHours.fromJson(Map<String, dynamic>.from(item as Map))).toList()
         : defaultWeeklySchedule;
     final customSlots = (json['customTimeSlots'] as List<dynamic>?)
         ?.map((s) => s.toString())

@@ -7,19 +7,29 @@ import '../models/detail_job.dart';
 import '../models/message_model.dart';
 import '../models/inventory_item.dart';
 import '../models/calendar_availability_block.dart';
+import '../models/user_vehicle.dart';
+import '../models/team_member.dart';
 import '../core/constants/detailing_presets.dart';
 
 class LocalStorageService {
   static const String _userKeyPrefix = 'adc_user_state_v3_';
   static const String _lastActiveUserKey = 'adc_last_active_user_id_v1';
-  static const String _bookingsKey = 'adc_bookings_state_v3';
-  static const String _customJobsKey = 'adc_custom_jobs_v1';
-  static const String _customPresetsKey = 'adc_custom_presets_v1';
+  static const String _servicePackagesKey = 'adc_service_packages_v1';
+  static const String _garageVehiclesKey = 'adc_garage_vehicles_v1';
+  static const String _teamMembersKey = 'adc_team_members_v1';
   static const String _inventoryKey = 'adc_inventory_items_v1';
   static const String _calendarBlocksKey = 'adc_calendar_blocks_v1';
   static const String _calendarPrefsKey = 'adc_calendar_prefs_v1';
+  static const String _bookingsKey = 'adc_bookings_v1';
+  static const String _legacyBookingsKey = 'adc_bookings_state_v3';
+  static const String _jobCommentsKey = 'adc_job_comments_v1';
+  static const String _mockJobOverridesKey = 'adc_mock_job_overrides_v1';
+  static const String _customJobsKey = 'adc_custom_jobs_v1';
+  static const String _customPresetsKey = 'adc_custom_presets_v1';
   static const String _savedJobsKey = 'adc_saved_jobs_v3';
-  static const String _likedJobsKey = 'adc_liked_jobs_v3';
+  static const String _likedJobsKey = 'adc_liked_jobs_v1';
+  static const String _legacyLikedJobsKey = 'adc_liked_jobs_v3';
+  static const String _jobLikeCountsKey = 'adc_job_like_counts_v1';
   static const String _activeTabKey = 'adc_active_tab_index_v1';
   static const String _isGuestKey = 'adc_is_guest_mode_v1';
   static const String _siteAccessUnlockedKey = 'adc_site_access_unlocked_v1';
@@ -152,31 +162,43 @@ class LocalStorageService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final list = bookings.map((b) => b.toJson()).toList();
-      await prefs.setString(_bookingsKey, jsonEncode(list));
+      final encoded = jsonEncode(list);
+      await prefs.setString(_bookingsKey, encoded);
+      await prefs.setString(_legacyBookingsKey, encoded);
     } catch (_) {}
   }
 
-  // Load bookings list
+  // Load bookings list with smooth legacy migration
   static Future<List<BookingAppointment>?> loadBookings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final jsonStr = prefs.getString(_bookingsKey);
+      var jsonStr = prefs.getString(_bookingsKey);
+      if (jsonStr == null || jsonStr.isEmpty) {
+        final legacyStr = prefs.getString(_legacyBookingsKey);
+        if (legacyStr != null && legacyStr.isNotEmpty) {
+          jsonStr = legacyStr;
+          // Smooth migration: persist into dedicated _bookingsKey
+          await prefs.setString(_bookingsKey, legacyStr);
+        }
+      }
       if (jsonStr != null && jsonStr.isNotEmpty) {
         final List<dynamic> list = jsonDecode(jsonStr);
-        return list.map((item) => BookingAppointment.fromJson(item as Map<String, dynamic>)).toList();
+        return list.map((item) => BookingAppointment.fromJson(Map<String, dynamic>.from(item as Map))).toList();
       }
     } catch (_) {}
     return null;
   }
 
-  // Save liked and saved job IDs
+  // Save liked and saved job IDs with dual-key synchronization (adc_liked_jobs_v1 and adc_liked_jobs_v3)
   static Future<void> saveInteractionState({
     required Set<String> likedJobIds,
     required Set<String> savedJobIds,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList(_likedJobsKey, likedJobIds.toList());
+      final likedList = likedJobIds.toList();
+      await prefs.setStringList(_likedJobsKey, likedList);
+      await prefs.setStringList(_legacyLikedJobsKey, likedList);
       await prefs.setStringList(_savedJobsKey, savedJobIds.toList());
     } catch (_) {}
   }
@@ -184,12 +206,38 @@ class LocalStorageService {
   static Future<({Set<String> likedJobIds, Set<String> savedJobIds})> loadInteractionState() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final liked = prefs.getStringList(_likedJobsKey)?.toSet() ?? {};
+      var likedList = prefs.getStringList(_likedJobsKey);
+      if (likedList == null || likedList.isEmpty) {
+        likedList = prefs.getStringList(_legacyLikedJobsKey);
+      }
+      final liked = likedList?.toSet() ?? {};
       final saved = prefs.getStringList(_savedJobsKey)?.toSet() ?? {};
       return (likedJobIds: liked, savedJobIds: saved);
     } catch (_) {
       return (likedJobIds: <String>{}, savedJobIds: <String>{});
     }
+  }
+
+  // Save Job Like Counts Map (adc_job_like_counts_v1)
+  static Future<void> saveJobLikeCounts(Map<String, int> counts) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = jsonEncode(counts);
+      await prefs.setString(_jobLikeCountsKey, encoded);
+    } catch (_) {}
+  }
+
+  // Load Job Like Counts Map (adc_job_like_counts_v1)
+  static Future<Map<String, int>> loadJobLikeCounts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_jobLikeCountsKey);
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final Map<String, dynamic> decoded = jsonDecode(jsonStr);
+        return decoded.map((k, v) => MapEntry(k, (v as num).toInt()));
+      }
+    } catch (_) {}
+    return {};
   }
 
   // Save custom user-created jobs
@@ -330,6 +378,9 @@ class LocalStorageService {
       final prefs = await SharedPreferences.getInstance();
       final list = blocks.map((b) => b.toJson()).toList();
       await prefs.setString(_calendarBlocksKey, jsonEncode(list));
+      if (kDebugMode) {
+        print('[LocalStorageService] Successfully saved ${blocks.length} calendar availability blocks.');
+      }
     } catch (_) {}
   }
 
@@ -399,5 +450,191 @@ class LocalStorageService {
     } catch (_) {
       return null;
     }
+  }
+
+  // Save Service Packages (adc_service_packages_v1)
+  static Future<void> saveServicePackages(List<ServicePackage> packages) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = packages.map((p) => p.toJson()).toList();
+      await prefs.setString(_servicePackagesKey, jsonEncode(list));
+      if (kDebugMode) {
+        print('[LocalStorageService] Successfully saved ${packages.length} service packages.');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[LocalStorageService] Error saving service packages: $e');
+      }
+    }
+  }
+
+  // Load Service Packages (adc_service_packages_v1)
+  static Future<List<ServicePackage>> loadServicePackages() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_servicePackagesKey);
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(jsonStr);
+        return list.map((item) => ServicePackage.fromJson(item as Map<String, dynamic>)).toList();
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[LocalStorageService] Error loading service packages: $e');
+      }
+    }
+    return [];
+  }
+
+  // Save Garage Vehicles (adc_garage_vehicles_v1)
+  static Future<void> saveGarageVehicles(List<UserVehicle> vehicles) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = vehicles.map((v) => v.toJson()).toList();
+      await prefs.setString(_garageVehiclesKey, jsonEncode(list));
+      if (kDebugMode) {
+        print('[LocalStorageService] Successfully saved ${vehicles.length} garage vehicles.');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[LocalStorageService] Error saving garage vehicles: $e');
+      }
+    }
+  }
+
+  // Load Garage Vehicles (adc_garage_vehicles_v1)
+  static Future<List<UserVehicle>> loadGarageVehicles() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_garageVehiclesKey);
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(jsonStr);
+        return list.map((item) => UserVehicle.fromJson(Map<String, dynamic>.from(item as Map))).toList();
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[LocalStorageService] Error loading garage vehicles: $e');
+      }
+    }
+    return [];
+  }
+
+  // Save Team Members (adc_team_members_v1)
+  static Future<void> saveTeamMembers(List<TeamMember> members) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = members.map((m) => m.toJson()).toList();
+      await prefs.setString(_teamMembersKey, jsonEncode(list));
+      if (kDebugMode) {
+        print('[LocalStorageService] Successfully saved ${members.length} team members.');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[LocalStorageService] Error saving team members: $e');
+      }
+    }
+  }
+
+  // Load Team Members (adc_team_members_v1)
+  static Future<List<TeamMember>> loadTeamMembers() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(_teamMembersKey);
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(jsonStr);
+        return list.map((item) => TeamMember.fromJson(Map<String, dynamic>.from(item as Map))).toList();
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[LocalStorageService] Error loading team members: $e');
+      }
+    }
+    return [];
+  }
+
+  // Save Job Comments Override with dual-key synchronization (adc_job_comments_v1 and adc_mock_job_overrides_v1)
+  static Future<void> saveJobCommentsOverride(String jobId, List<JobComment> comments) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final currentMap = await loadJobCommentsOverrides();
+      currentMap[jobId] = comments;
+      final encoded = jsonEncode(currentMap.map((k, v) => MapEntry(k, v.map((c) => c.toJson()).toList())));
+      await prefs.setString(_jobCommentsKey, encoded);
+      await prefs.setString(_mockJobOverridesKey, encoded);
+      if (kDebugMode) {
+        print('[LocalStorageService] Saved comment override for job $jobId (${comments.length} comments).');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[LocalStorageService] Error saving job comments override: $e');
+      }
+    }
+  }
+
+  // Load Job Comments Overrides (reading adc_job_comments_v1 with fallback to adc_mock_job_overrides_v1)
+  static Future<Map<String, List<JobComment>>> loadJobCommentsOverrides() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      var jsonStr = prefs.getString(_jobCommentsKey);
+      if (jsonStr == null || jsonStr.isEmpty) {
+        jsonStr = prefs.getString(_mockJobOverridesKey);
+      }
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final Map<String, dynamic> decoded = jsonDecode(jsonStr);
+        return decoded.map((k, v) {
+          final list = (v as List<dynamic>).map((c) => JobComment.fromJson(c as Map<String, dynamic>)).toList();
+          return MapEntry(k, list);
+        });
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[LocalStorageService] Error loading job comments overrides: $e');
+      }
+    }
+    return {};
+  }
+
+  // Convenience helper to load comments for a single job
+  static Future<List<JobComment>?> loadJobComments(String jobId) async {
+    final overrides = await loadJobCommentsOverrides();
+    return overrides[jobId];
+  }
+
+  // Calendar Blocks Contract Aliases
+  static Future<void> saveCalendarBlocks(List<CalendarAvailabilityBlock> blocks) => saveAvailabilityBlocks(blocks);
+  static Future<List<CalendarAvailabilityBlock>> loadCalendarBlocks() async => (await loadAvailabilityBlocks()) ?? [];
+
+  // Detailer Calendar Preferences with dual-key synchronization and detailerId support
+  static Future<void> saveDetailerCalendarPreferences(DetailerCalendarPreferences preferences, {String? detailerId}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = jsonEncode(preferences.toJson());
+      if (detailerId != null) {
+        await prefs.setString('${_calendarPrefsKey}_$detailerId', jsonStr);
+      }
+      await prefs.setString(_calendarPrefsKey, jsonStr);
+      if (kDebugMode) {
+        print('[LocalStorageService] Successfully saved calendar preferences.');
+      }
+    } catch (_) {}
+  }
+
+  static Future<DetailerCalendarPreferences?> loadDetailerCalendarPreferences({String? detailerId}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (detailerId != null) {
+        final detailerKey = '${_calendarPrefsKey}_$detailerId';
+        final detailerJson = prefs.getString(detailerKey);
+        if (detailerJson != null && detailerJson.isNotEmpty) {
+          final Map<String, dynamic> data = jsonDecode(detailerJson);
+          return DetailerCalendarPreferences.fromJson(Map<String, dynamic>.from(data));
+        }
+      }
+      final jsonStr = prefs.getString(_calendarPrefsKey);
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final Map<String, dynamic> data = jsonDecode(jsonStr);
+        return DetailerCalendarPreferences.fromJson(Map<String, dynamic>.from(data));
+      }
+    } catch (_) {}
+    return null;
   }
 }

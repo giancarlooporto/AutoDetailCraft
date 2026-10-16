@@ -137,6 +137,49 @@ class BookingsListScreen extends StatelessWidget {
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFB300),
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
+                    label: const Text('Start Service (In Progress)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () {
+                      repository.updateBookingStatus(booking.id, BookingStatus.inProgress);
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Service is now in progress!')),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2979FF),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.task_alt_rounded, size: 18),
+                    label: const Text('Complete Service & Release Escrow', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () {
+                      repository.updateBookingStatus(booking.id, BookingStatus.completed);
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Service marked as completed & escrow released!')),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ] else if (booking.status == BookingStatus.inProgress) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF2979FF),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -206,18 +249,42 @@ class BookingsListScreen extends StatelessWidget {
               ),
               if (booking.status != BookingStatus.cancelled && booking.status != BookingStatus.completed) ...[
                 const SizedBox(height: 12),
-                Center(
-                  child: TextButton.icon(
-                    onPressed: () {
-                      repository.updateBookingStatus(booking.id, BookingStatus.cancelled);
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Booking has been cancelled.')),
-                      );
-                    },
-                    icon: const Icon(Icons.cancel_outlined, size: 14, color: Color(0xFFFF5252)),
-                    label: const Text('Cancel Reservation', style: TextStyle(color: Color(0xFFFF5252), fontSize: 12)),
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () => _showRescheduleDialog(context, repository, booking),
+                      icon: const Icon(Icons.edit_calendar_rounded, size: 14, color: AppTheme.primary),
+                      label: const Text('Reschedule', style: TextStyle(color: AppTheme.primary, fontSize: 12)),
+                    ),
+                    const SizedBox(width: 16),
+                    TextButton.icon(
+                      onPressed: () {
+                        repository.cancelBooking(booking.id);
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            behavior: SnackBarBehavior.floating,
+                            backgroundColor: AppTheme.surface,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              side: const BorderSide(color: AppTheme.border),
+                            ),
+                            content: const Row(
+                              children: [
+                                Icon(Icons.cancel_outlined, color: Color(0xFFFF5252), size: 18),
+                                SizedBox(width: 8),
+                                Text('Booking reservation has been cancelled.', style: TextStyle(color: Colors.white, fontSize: 13)),
+                              ],
+                            ),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.cancel_outlined, size: 14, color: Color(0xFFFF5252)),
+                      label: const Text('Cancel Reservation', style: TextStyle(color: Color(0xFFFF5252), fontSize: 12)),
+                    ),
+                  ],
                 ),
               ],
             ],
@@ -227,6 +294,79 @@ class BookingsListScreen extends StatelessWidget {
     ),
   ),
 );
+  }
+
+  void _showRescheduleDialog(BuildContext context, JobRepository repo, BookingAppointment booking) async {
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: booking.scheduledDate.isAfter(DateTime.now()) ? booking.scheduledDate : DateTime.now().add(const Duration(days: 1)),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 90)),
+      builder: (ctx, child) => Theme(
+        data: AppTheme.darkTheme,
+        child: child!,
+      ),
+    );
+    if (pickedDate == null || !context.mounted) return;
+
+    final availableSlots = repo.calendarPreferences.customTimeSlots.isNotEmpty
+        ? repo.calendarPreferences.customTimeSlots
+        : ['09:00 AM - 12:00 PM', '01:00 PM - 04:00 PM'];
+    String chosenSlot = availableSlots.first;
+
+    await showDialog(
+      context: context,
+      builder: (dlgCtx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Select New Time Slot', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          content: DropdownButtonFormField<String>(
+            isExpanded: true,
+            initialValue: chosenSlot,
+            dropdownColor: AppTheme.surface,
+            decoration: const InputDecoration(labelText: 'Available Slots'),
+            items: availableSlots.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+            onChanged: (val) {
+              if (val != null) setDlgState(() => chosenSlot = val);
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dlgCtx),
+              child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary, foregroundColor: Colors.black),
+              onPressed: () {
+                repo.rescheduleBooking(booking.id, pickedDate, chosenSlot);
+                Navigator.pop(dlgCtx);
+                Navigator.pop(context); // close detail modal
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    behavior: SnackBarBehavior.floating,
+                    backgroundColor: AppTheme.surface,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: const BorderSide(color: AppTheme.border),
+                    ),
+                    content: Row(
+                      children: [
+                        const Icon(Icons.check_circle_rounded, color: AppTheme.primary, size: 18),
+                        const SizedBox(width: 8),
+                        Text('Booking rescheduled to ${pickedDate.month}/${pickedDate.day} at $chosenSlot!'),
+                      ],
+                    ),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              },
+              child: const Text('Confirm Reschedule', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _sectionHeader(String title, IconData icon) {
@@ -308,155 +448,212 @@ class BookingsListScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildBookingCard(BuildContext context, BookingAppointment booking) {
+    return GestureDetector(
+      onTap: () => _showBookingDetailsModal(context, booking),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppTheme.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundImage: booking.detailerAvatar.isNotEmpty ? NetworkImage(booking.detailerAvatar) : null,
+                      child: booking.detailerAvatar.isEmpty ? const Icon(Icons.storefront_rounded, size: 16) : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(booking.detailerBusinessName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        Text(booking.locationType.label, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                      ],
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: booking.status.statusColor.withAlpha(25),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: booking.status.statusColor.withAlpha(90)),
+                  ),
+                  child: Text(
+                    booking.status.label,
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: booking.status.statusColor),
+                  ),
+                ),
+              ],
+            ),
+            const Divider(color: AppTheme.border, height: 20),
+            Text(booking.package.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            const SizedBox(height: 4),
+            Text(booking.vehicleYearMakeModel, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.calendar_month_rounded, size: 14, color: AppTheme.primary),
+                const SizedBox(width: 6),
+                Text(
+                  DateFormat('EEE, MMM d').format(booking.scheduledDate),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(width: 14),
+                const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.textMuted),
+                const SizedBox(width: 6),
+                Text(booking.scheduledTimeSlot, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                const Spacer(),
+                Text(
+                  '\$${booking.totalPrice.toStringAsFixed(0)}',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppTheme.textPrimary),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBookingsTabList(
+    BuildContext context,
+    List<BookingAppointment> list, {
+    required String emptyTitle,
+    required String emptySubtitle,
+    required IconData emptyIcon,
+  }) {
+    if (list.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(emptyIcon, size: 44, color: AppTheme.textMuted.withAlpha(120)),
+              const SizedBox(height: 14),
+              Text(
+                emptyTitle,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                emptySubtitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 12, color: AppTheme.textMuted, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: list.length,
+      itemBuilder: (ctx, idx) => _buildBookingCard(context, list[idx]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: repository,
       builder: (context, _) {
         final isLoggedIn = repository.isLoggedIn;
+        final allBookings = repository.bookings;
 
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final isDesktop = constraints.maxWidth >= 768;
+        if (allBookings.isEmpty && !isLoggedIn) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Appointments & Bookings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+            body: _buildGuestBookingsView(context),
+          );
+        }
 
-            return Scaffold(
-              appBar: isDesktop
-                  ? null
-                  : AppBar(
-                      title: const Text('Appointments & Bookings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    ),
-              body: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 860),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: !isLoggedIn
-                        ? _buildGuestBookingsView(context)
-                        : repository.bookings.isEmpty
-                            ? Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(32),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.event_note_rounded, size: 48, color: AppTheme.textMuted.withAlpha(120)),
-                                      const SizedBox(height: 14),
-                                      const Text(
-                                        'No Bookings Yet',
-                                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      const Text(
-                                        'Explore verified detailers on the Explore tab and book your first paint correction or coating service.',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(fontSize: 12, color: AppTheme.textMuted, height: 1.4),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              )
-                            : Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (isDesktop) ...[
-                                    const Padding(
-                                      padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
-                                      child: Text(
-                                        'Appointments & Bookings',
-                                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                                      ),
-                                    ),
-                                  ],
-                                  Expanded(
-                                    child: ListView.builder(
-                                      padding: const EdgeInsets.all(16),
-                                      itemCount: repository.bookings.length,
-                                      itemBuilder: (ctx, idx) {
-                                        final booking = repository.bookings[idx];
-                                        return GestureDetector(
-                                          onTap: () => _showBookingDetailsModal(context, booking),
-                                          child: Container(
-                                            margin: const EdgeInsets.only(bottom: 14),
-                                            padding: const EdgeInsets.all(16),
-                                            decoration: BoxDecoration(
-                                              color: AppTheme.surface,
-                                              borderRadius: BorderRadius.circular(16),
-                                              border: Border.all(color: AppTheme.border),
-                                            ),
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Row(
-                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                  children: [
-                                                    Row(
-                                                      children: [
-                                                        CircleAvatar(
-                                                          radius: 16,
-                                                          backgroundImage: NetworkImage(booking.detailerAvatar),
-                                                        ),
-                                                        const SizedBox(width: 10),
-                                                        Column(
-                                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                                          children: [
-                                                            Text(booking.detailerBusinessName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                                            Text(booking.locationType.label, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-                                                          ],
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                                      decoration: BoxDecoration(
-                                                        color: booking.status.statusColor.withAlpha(25),
-                                                        borderRadius: BorderRadius.circular(6),
-                                                        border: Border.all(color: booking.status.statusColor.withAlpha(90)),
-                                                      ),
-                                                      child: Text(
-                                                        booking.status.label,
-                                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: booking.status.statusColor),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const Divider(color: AppTheme.border, height: 20),
-                                                Text(booking.package.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                                const SizedBox(height: 4),
-                                                Text(booking.vehicleYearMakeModel, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                                                const SizedBox(height: 12),
-                                                Row(
-                                                  children: [
-                                                    const Icon(Icons.calendar_month_rounded, size: 14, color: AppTheme.primary),
-                                                    const SizedBox(width: 6),
-                                                    Text(
-                                                      DateFormat('EEE, MMM d').format(booking.scheduledDate),
-                                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                                                    ),
-                                                    const SizedBox(width: 14),
-                                                    const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.textMuted),
-                                                    const SizedBox(width: 6),
-                                                    Text(booking.scheduledTimeSlot, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
-                                                    const Spacer(),
-                                                    Text(
-                                                      '\$${booking.totalPrice.toStringAsFixed(0)}',
-                                                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppTheme.textPrimary),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
+        final upcoming = allBookings.where((b) =>
+            b.status == BookingStatus.confirmed || b.status == BookingStatus.pending).toList();
+        final inProgress = allBookings.where((b) =>
+            b.status == BookingStatus.inProgress).toList();
+        final completed = allBookings.where((b) =>
+            b.status == BookingStatus.completed).toList();
+        final cancelled = allBookings.where((b) =>
+            b.status == BookingStatus.cancelled).toList();
+
+        return DefaultTabController(
+          length: 4,
+          initialIndex: 0,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return Scaffold(
+                appBar: AppBar(
+                  title: const Text('Appointments & Bookings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  bottom: TabBar(
+                    isScrollable: true,
+                    indicatorColor: AppTheme.primary,
+                    labelColor: AppTheme.primary,
+                    unselectedLabelColor: AppTheme.textMuted,
+                    labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                    unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal, fontSize: 12.5),
+                    tabs: [
+                      Tab(text: 'Upcoming (${upcoming.length})'),
+                      Tab(text: 'In Progress (${inProgress.length})'),
+                      Tab(text: 'Completed (${completed.length})'),
+                      Tab(text: 'Cancelled (${cancelled.length})'),
+                    ],
                   ),
                 ),
-              ),
-            );
-          },
+                body: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 860),
+                    child: TabBarView(
+                      children: [
+                        _buildBookingsTabList(
+                          context,
+                          upcoming,
+                          emptyTitle: 'No Upcoming Appointments',
+                          emptySubtitle: 'Confirmed and pending appointments will appear here.',
+                          emptyIcon: Icons.calendar_today_rounded,
+                        ),
+                        _buildBookingsTabList(
+                          context,
+                          inProgress,
+                          emptyTitle: 'No Services In Progress',
+                          emptySubtitle: 'Active detailing jobs underway will appear here.',
+                          emptyIcon: Icons.play_circle_outline_rounded,
+                        ),
+                        _buildBookingsTabList(
+                          context,
+                          completed,
+                          emptyTitle: 'No Completed Services',
+                          emptySubtitle: 'Your finished detailing appointments will be archived here.',
+                          emptyIcon: Icons.task_alt_rounded,
+                        ),
+                        _buildBookingsTabList(
+                          context,
+                          cancelled,
+                          emptyTitle: 'No Cancelled Bookings',
+                          emptySubtitle: 'Cancelled reservations will appear here.',
+                          emptyIcon: Icons.cancel_outlined,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
         );
       },
     );

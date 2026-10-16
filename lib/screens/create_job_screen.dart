@@ -312,7 +312,27 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
   }
 
   void _publishTransformation() {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: AppTheme.border),
+          ),
+          content: const Row(
+            children: [
+              Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 20),
+              SizedBox(width: 8),
+              Text('Please fill in all required job fields marked in red.'),
+            ],
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
 
     if (_beforePhotos.isEmpty || _afterPhotos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -383,15 +403,21 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       );
       widget.repository.updateJob(updated);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: AppTheme.border),
+          ),
+          content: const Row(
             children: [
-              Icon(Icons.check_circle_rounded, color: AppTheme.primary),
+              Icon(Icons.check_circle_rounded, color: AppTheme.primary, size: 18),
               SizedBox(width: 8),
               Text('Transformation updated successfully!'),
             ],
           ),
-          backgroundColor: AppTheme.surface,
+          duration: const Duration(seconds: 2),
         ),
       );
     } else {
@@ -433,15 +459,21 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       widget.repository.addJob(newJob);
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: AppTheme.border),
+          ),
+          content: const Row(
             children: [
-              Icon(Icons.check_circle_rounded, color: AppTheme.primary),
+              Icon(Icons.check_circle_rounded, color: AppTheme.primary, size: 18),
               SizedBox(width: 8),
               Text('Transformation recipe published to Explore & Portfolio!'),
             ],
           ),
-          backgroundColor: AppTheme.surface,
+          duration: const Duration(seconds: 2),
         ),
       );
     }

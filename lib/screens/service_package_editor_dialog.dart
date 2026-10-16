@@ -327,7 +327,27 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
   }
 
   void _submit() {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: AppTheme.border),
+          ),
+          content: const Row(
+            children: [
+              Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 20),
+              SizedBox(width: 8),
+              Text('Please fill in all required package fields marked in red.'),
+            ],
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
 
     final includesList = _includesController.text
         .split('\n')
@@ -381,22 +401,27 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primary.withAlpha(30),
-                          borderRadius: BorderRadius.circular(10),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary.withAlpha(30),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.design_services_rounded, color: AppTheme.primary, size: 20),
                         ),
-                        child: const Icon(Icons.design_services_rounded, color: AppTheme.primary, size: 20),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        isEditing ? 'Edit Service Package' : 'Create Service Package',
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
-                      ),
-                    ],
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            isEditing ? 'Edit Service Package' : 'Create Service Package',
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
@@ -444,12 +469,16 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
                                   const Icon(Icons.check_rounded, size: 12, color: AppTheme.primary),
                                   const SizedBox(width: 4),
                                 ],
-                                Text(
-                                  tmpl.title,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                    color: isSelected ? AppTheme.primary : AppTheme.textSecondary,
+                                Flexible(
+                                  child: Text(
+                                    tmpl.title,
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                      color: isSelected ? AppTheme.primary : AppTheme.textSecondary,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -768,7 +797,11 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
               const SizedBox(height: 16),
 
               // Action Buttons
-              Row(
+              Wrap(
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   if (widget.onDelete != null)
                     TextButton.icon(
@@ -779,7 +812,6 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
                       icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
                       label: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
                     ),
-                  const Spacer(),
                   OutlinedButton(
                     onPressed: () => Navigator.of(context).pop(),
                     style: OutlinedButton.styleFrom(
@@ -790,7 +822,6 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
                     ),
                     child: const Text('Cancel'),
                   ),
-                  const SizedBox(width: 10),
                   ElevatedButton(
                     onPressed: _submit,
                     style: ElevatedButton.styleFrom(
