@@ -20,6 +20,7 @@ class LocalStorageService {
   static const String _teamMembersKey = 'adc_team_members_v1';
   static const String _shiftRequestsKey = 'adc_shift_requests_v1';
   static const String _activeTeamMemberIdKey = 'adc_active_team_member_id_v1';
+  static const String _isStaffSessionKey = 'adc_is_staff_session_v1';
   static const String _inventoryKey = 'adc_inventory_items_v1';
   static const String _calendarBlocksKey = 'adc_calendar_blocks_v1';
   static const String _calendarPrefsKey = 'adc_calendar_prefs_v1';
@@ -82,6 +83,8 @@ class LocalStorageService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_isGuestKey, true);
+      await prefs.remove(_activeTeamMemberIdKey);
+      await prefs.remove(_isStaffSessionKey);
     } catch (_) {}
   }
 
@@ -640,6 +643,27 @@ class LocalStorageService {
       return prefs.getString(_activeTeamMemberIdKey);
     } catch (_) {
       return null;
+    }
+  }
+
+  // Staff Member Direct Session Flag (adc_is_staff_session_v1)
+  static Future<void> saveIsStaffSession(bool isStaffSession) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!isStaffSession) {
+        await prefs.remove(_isStaffSessionKey);
+      } else {
+        await prefs.setBool(_isStaffSessionKey, true);
+      }
+    } catch (_) {}
+  }
+
+  static Future<bool> loadIsStaffSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_isStaffSessionKey) ?? false;
+    } catch (_) {
+      return false;
     }
   }
 

@@ -27,6 +27,7 @@ import 'package:detail_craft/models/inventory_item.dart';
 import 'package:detail_craft/models/team_member.dart';
 import 'package:detail_craft/models/shift_request.dart';
 import 'package:detail_craft/models/calendar_availability_block.dart';
+import 'package:detail_craft/screens/auth_modal.dart';
 
 import 'dart:async';
 import 'dart:io';
@@ -4224,6 +4225,142 @@ void main() {
     // VERIFY: Owner sees Services and My Teams again
     expect(find.text('Services'), findsOneWidget);
     expect(find.text('My Teams'), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('Step 3: Staff authentication, PIN login, and restricted staff session lockdown', (tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    SharedPreferences.setMockInitialValues({});
+
+    final repo = JobRepository();
+    final staffMember = TeamMember(
+      id: 'staff_mateo',
+      name: 'Mateo Lopez',
+      roleTitle: 'Ceramic Specialist',
+      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400',
+      pin: '7890',
+      email: 'mateo@detailcraft.com',
+      password: 'mateopassword',
+      allowedHubSections: ['portfolio', 'inventory'],
+      canEditInventory: false,
+      canManageTeam: false,
+    );
+    repo.addTeamMember(staffMember);
+
+    // 1. Verify model authentication methods
+    expect(staffMember.authenticateWithPin('7890'), isTrue);
+    expect(staffMember.authenticateWithPin('0000'), isFalse);
+    expect(staffMember.authenticateWithPassword('mateo@detailcraft.com', 'mateopassword'), isTrue);
+    expect(staffMember.authenticateWithPassword('mateo@detailcraft.com', '7890'), isTrue);
+    expect(staffMember.authenticateWithPassword('wrong@email.com', 'mateopassword'), isFalse);
+
+    // 2. Repository Staff Login with PIN
+    final loginResult = await repo.loginStaffMember(pin: '7890');
+    expect(loginResult.success, isTrue);
+    expect(loginResult.member?.id, equals('staff_mateo'));
+    expect(repo.isStaffSession, isTrue);
+    expect(repo.isViewingAsTeamMember, isTrue);
+    expect(repo.activeTeamMemberId, equals('staff_mateo'));
+
+    // Verify staff cannot switch identity to another member while in staff session
+    repo.setActiveTeamMember('someone_else');
+    expect(repo.activeTeamMemberId, equals('staff_mateo')); // Still locked to Mateo!
+
+    // 3. Test DetailerWorkbenchView UI in direct staff session
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: DetailerWorkbenchView(repository: repo),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // VERIFY: Staff Session Banner is shown with [Sign Out] instead of [Back to Owner]
+    expect(find.text('Staff Session: Mateo Lopez'), findsOneWidget);
+    expect(find.text('Sign Out'), findsOneWidget);
+    expect(find.text('Back to Owner'), findsNothing);
+
+    // VERIFY: Account switcher buttons are hidden
+    expect(find.textContaining('Log in as'), findsNothing);
+
+    // 4. Test Sign Out from Staff Session
+    await tester.tap(find.text('Sign Out'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(repo.isStaffSession, isFalse);
+    expect(repo.isViewingAsTeamMember, isFalse);
+    expect(repo.activeTeamMemberId, isNull);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('Step 3: AuthModal allows staff login via 4-digit PIN into Studio Workbench', (tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    SharedPreferences.setMockInitialValues({});
+
+    final repo = JobRepository();
+    final staffMember = TeamMember(
+      id: 'staff_sarah',
+      name: 'Sarah Connor',
+      roleTitle: 'Correction Specialist',
+      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+      pin: '4321',
+    );
+    repo.addTeamMember(staffMember);
+
+    bool onSuccessCalled = false;
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: Builder(
+          builder: (ctx) => ElevatedButton(
+            onPressed: () {
+              AuthModal.show(
+                ctx,
+                repository: repo,
+                onSuccess: () => onSuccessCalled = true,
+              );
+            },
+            child: const Text('Open Login'),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Open modal
+    await tester.tap(find.text('Open Login'));
+    await tester.pumpAndSettle();
+
+    // Verify Mode Selector: Owner / Client vs Staff Member
+    expect(find.text('Owner / Client'), findsOneWidget);
+    expect(find.text('Staff Member'), findsOneWidget);
+
+    // Switch to Staff Member Mode
+    await tester.tap(find.text('Staff Member'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Staff Member Sign In'), findsOneWidget);
+    expect(find.text('4-Digit PIN'), findsOneWidget);
+
+    // Enter staff PIN '4321'
+    final pinField = find.byType(TextFormField).first;
+    await tester.enterText(pinField, '4321');
+    await tester.pumpAndSettle();
+
+    // Submit Staff Login
+    await tester.tap(find.text('Unlock Staff Workbench'));
+    await tester.pumpAndSettle();
+
+    // VERIFY: Modal dismissed, onSuccess called, and staff session activated
+    expect(onSuccessCalled, isTrue);
+    expect(repo.isStaffSession, isTrue);
+    expect(repo.activeTeamMemberId, equals('staff_sarah'));
 
     debugNetworkImageHttpClientProvider = null;
   });

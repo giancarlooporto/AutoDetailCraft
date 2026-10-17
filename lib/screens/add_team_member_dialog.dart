@@ -40,6 +40,9 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
   final TextEditingController _avatarUrlCtrl = TextEditingController(
     text: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
   );
+  final TextEditingController _emailCtrl = TextEditingController();
+  final TextEditingController _pinCtrl = TextEditingController();
+  final TextEditingController _passwordCtrl = TextEditingController();
 
   Uint8List? _uploadedAvatarBytes;
   bool _isUploadingPhoto = false;
@@ -52,10 +55,24 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
   bool _canViewAllTeamCalendar = true;
 
   @override
+  void initState() {
+    super.initState();
+    _generateRandomPin();
+  }
+
+  void _generateRandomPin() {
+    final rand = (1000 + (DateTime.now().microsecondsSinceEpoch % 9000)).toString();
+    _pinCtrl.text = rand;
+  }
+
+  @override
   void dispose() {
     _nameCtrl.dispose();
     _roleCtrl.dispose();
     _avatarUrlCtrl.dispose();
+    _emailCtrl.dispose();
+    _pinCtrl.dispose();
+    _passwordCtrl.dispose();
     super.dispose();
   }
 
@@ -148,6 +165,9 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
       canViewPricing: _canViewPricing,
       canManageTeam: _canManageTeam,
       canViewAllTeamCalendar: _canViewAllTeamCalendar,
+      email: _emailCtrl.text.trim().isNotEmpty ? _emailCtrl.text.trim() : null,
+      pin: _pinCtrl.text.trim().isNotEmpty ? _pinCtrl.text.trim() : null,
+      password: _passwordCtrl.text.trim().isNotEmpty ? _passwordCtrl.text.trim() : null,
     );
 
     widget.repository.addTeamMember(newMember);
@@ -337,6 +357,80 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
                   labelText: 'Or Photo Web URL',
                   hintText: 'https://...',
                   prefixIcon: Icon(Icons.link_rounded, size: 18),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Divider(color: AppTheme.border, height: 1),
+              const SizedBox(height: 14),
+
+              // Staff Login Credentials Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.pin_rounded, size: 16, color: AppTheme.primary),
+                      SizedBox(width: 8),
+                      Text(
+                        'STAFF LOGIN CREDENTIALS',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
+                      ),
+                    ],
+                  ),
+                  TextButton.icon(
+                    style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2)),
+                    icon: const Icon(Icons.refresh_rounded, size: 13, color: AppTheme.primary),
+                    label: const Text('Generate PIN', style: TextStyle(fontSize: 11, color: AppTheme.primary)),
+                    onPressed: () => setState(_generateRandomPin),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Assign a 4-digit quick PIN for shop tablet access, and an optional email/password for personal devices.',
+                style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+              ),
+              const SizedBox(height: 10),
+
+              // 4-Digit Quick PIN Field
+              TextField(
+                controller: _pinCtrl,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                decoration: InputDecoration(
+                  labelText: '4-Digit Quick PIN',
+                  hintText: 'e.g. 1234',
+                  prefixIcon: const Icon(Icons.dialpad_rounded, size: 18),
+                  counterText: '',
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.casino_outlined, size: 18, color: AppTheme.primary),
+                    tooltip: 'Generate Random PIN',
+                    onPressed: () => setState(_generateRandomPin),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // Staff Email Address (Optional)
+              TextField(
+                controller: _emailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(
+                  labelText: 'Staff Work Email (Optional)',
+                  hintText: 'staff@studio.com',
+                  prefixIcon: Icon(Icons.alternate_email_rounded, size: 18),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // Staff Password (Optional)
+              TextField(
+                controller: _passwordCtrl,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Password (Optional fallback)',
+                  hintText: 'Defaults to PIN if empty',
+                  prefixIcon: Icon(Icons.lock_outline_rounded, size: 18),
                 ),
               ),
               const SizedBox(height: 16),

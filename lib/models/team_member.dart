@@ -21,6 +21,11 @@ class TeamMember {
   final bool canManageTeam; // false = cannot add/remove other team members
   final bool canViewAllTeamCalendar; // false = can only view own schedule/bookings
 
+  // Authentication & Credentials (Step 3)
+  final String? email; // Staff member email
+  final String? pin; // 4-digit quick staff PIN (e.g. "1234")
+  final String? password; // Staff password (optional fallback)
+
   static const List<String> allHubSections = [
     'portfolio',
     'services',
@@ -53,7 +58,28 @@ class TeamMember {
     this.canViewPricing = true,
     this.canManageTeam = false,
     this.canViewAllTeamCalendar = true,
+    this.email,
+    this.pin,
+    this.password,
   });
+
+  bool authenticateWithPin(String inputPin) {
+    if (pin == null || pin!.trim().isEmpty) return false;
+    return pin!.trim() == inputPin.trim();
+  }
+
+  bool authenticateWithPassword(String inputEmail, String inputPassword) {
+    if (email == null || email!.trim().isEmpty) return false;
+    if (email!.trim().toLowerCase() != inputEmail.trim().toLowerCase()) return false;
+    final cleanInput = inputPassword.trim();
+    if (password != null && password!.trim().isNotEmpty && password!.trim() == cleanInput) {
+      return true;
+    }
+    if (pin != null && pin!.trim().isNotEmpty && pin!.trim() == cleanInput) {
+      return true;
+    }
+    return false;
+  }
 
   bool isSectionAllowed(String sectionName) {
     if (isFounder) return true;
@@ -85,6 +111,9 @@ class TeamMember {
       'canViewPricing': canViewPricing,
       'canManageTeam': canManageTeam,
       'canViewAllTeamCalendar': canViewAllTeamCalendar,
+      if (email != null) 'email': email,
+      if (pin != null) 'pin': pin,
+      if (password != null) 'password': password,
     };
   }
 
@@ -117,6 +146,9 @@ class TeamMember {
       canViewPricing: json['canViewPricing'] as bool? ?? true,
       canManageTeam: json['canManageTeam'] as bool? ?? false,
       canViewAllTeamCalendar: json['canViewAllTeamCalendar'] as bool? ?? true,
+      email: json['email'] as String?,
+      pin: json['pin'] as String?,
+      password: json['password'] as String?,
     );
   }
 
@@ -138,6 +170,9 @@ class TeamMember {
     bool? canViewPricing,
     bool? canManageTeam,
     bool? canViewAllTeamCalendar,
+    String? email,
+    String? pin,
+    String? password,
   }) {
     return TeamMember(
       id: id ?? this.id,
@@ -155,6 +190,9 @@ class TeamMember {
       canViewPricing: canViewPricing ?? this.canViewPricing,
       canManageTeam: canManageTeam ?? this.canManageTeam,
       canViewAllTeamCalendar: canViewAllTeamCalendar ?? this.canViewAllTeamCalendar,
+      email: email ?? this.email,
+      pin: pin ?? this.pin,
+      password: password ?? this.password,
     );
   }
 }

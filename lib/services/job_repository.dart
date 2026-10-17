@@ -30,6 +30,7 @@ class JobRepository extends ChangeNotifier {
   final Map<String, DetailerCalendarPreferences> _detailerPreferencesMap = {};
   List<ShiftRequest> _shiftRequests = [];
   String? _activeTeamMemberId; // null or 'founder' = shop owner (Founder)
+  bool _isStaffSession = false; // true = authenticated via staff PIN or staff credentials directly
 
   String _selectedServiceType = 'All Services';
   String _selectedLocationCity = 'All Locations';
@@ -76,6 +77,7 @@ class JobRepository extends ChangeNotifier {
       _shiftRequests.where((r) => r.isPending && (r.detailerId.isEmpty || r.detailerId == _currentUser.id)).toList();
 
   String? get activeTeamMemberId => _activeTeamMemberId;
+  bool get isStaffSession => _isStaffSession;
   bool get isViewingAsTeamMember => _activeTeamMemberId != null && _activeTeamMemberId != 'founder';
   TeamMember? get activeTeamMember =>
       isViewingAsTeamMember ? _currentUser.teamMembers.where((m) => m.id == _activeTeamMemberId).firstOrNull : null;
@@ -277,6 +279,11 @@ class JobRepository extends ChangeNotifier {
       // 2j. Hydrate dedicated shift requests and active team member session
       _shiftRequests = await LocalStorageService.loadShiftRequests();
       _activeTeamMemberId = await LocalStorageService.loadActiveTeamMemberId();
+      _isStaffSession = await LocalStorageService.loadIsStaffSession();
+      if (_isStaffSession && _activeTeamMemberId != null) {
+        _isLoggedIn = true;
+        _currentUser = _currentUser.copyWith(role: UserRole.detailer);
+      }
 
       // 4. Load custom recipe presets from local cache
       _customPresets = await LocalStorageService.loadCustomPresets();
@@ -586,6 +593,10 @@ class JobRepository extends ChangeNotifier {
   Future<void> logoutUser() async {
     _unsubscribeFromRealtime();
     await SupabaseAuthService.signOut();
+    _isStaffSession = false;
+    _activeTeamMemberId = null;
+    await LocalStorageService.saveIsStaffSession(false);
+    await LocalStorageService.saveActiveTeamMemberId(null);
     await LocalStorageService.logoutSession();
     await LocalStorageService.saveWorkbenchMode('garage');
     _isLoggedIn = false;
@@ -2456,9 +2467,132 @@ class JobRepository extends ChangeNotifier {
   }
 
   void setActiveTeamMember(String? memberId) {
+    if (_isStaffSession && memberId != _activeTeamMemberId) {
+      // Direct employee sessions cannot switch accounts or elevate privileges
+      return;
+    }
     _activeTeamMemberId = (memberId == null || memberId.isEmpty || memberId == 'founder') ? null : memberId;
     LocalStorageService.saveActiveTeamMemberId(_activeTeamMemberId);
     notifyListeners();
+  }
+
+  Future<void> logoutStaffMember() async {
+    _unsubscribeFromRealtime();
+    _isStaffSession = false;
+    _activeTeamMemberId = null;
+    await LocalStorageService.saveIsStaffSession(false);
+    await LocalStorageService.saveActiveTeamMemberId(null);
+    await LocalStorageService.logoutSession();
+    await LocalStorageService.saveWorkbenchMode('garage');
+    _isLoggedIn = false;
+    _currentUser = MockDataService.youUser;
+    notifyListeners();
+  }
+
+  Future<({bool success, String? error, TeamMember? member})> loginStaffMember({
+    String? pin,
+    String? email,
+    String? password,
+  }) async {
+    final cleanPin = pin?.trim();
+    final cleanEmail = email?.trim();
+    final cleanPass = password?.trim();
+
+    if ((cleanPin == null || cleanPin.isEmpty) &&
+        (cleanEmail == null || cleanEmail.isEmpty)) {
+      return (
+        success: false,
+        error: 'Please enter your 4-digit PIN or staff email.',
+        member: null,
+      );
+    }
+
+    // 1. Search locally in _currentUser.teamMembers
+    TeamMember? matchedMember;
+    for (final m in _currentUser.teamMembers) {
+      if (cleanPin != null && cleanPin.isNotEmpty && m.authenticateWithPin(cleanPin)) {
+        matchedMember = m;
+        break;
+      }
+      if (cleanEmail != null &&
+          cleanEmail.isNotEmpty &&
+          m.authenticateWithPassword(cleanEmail, cleanPass ?? cleanPin ?? '')) {
+        matchedMember = m;
+        break;
+      }
+    }
+
+    // 2. If not found in _currentUser, search in cached local storage team members
+    if (matchedMember == null) {
+      final cachedMembers = await LocalStorageService.loadTeamMembers();
+      for (final m in cachedMembers) {
+        if (cleanPin != null && cleanPin.isNotEmpty && m.authenticateWithPin(cleanPin)) {
+          matchedMember = m;
+          break;
+        }
+        if (cleanEmail != null &&
+            cleanEmail.isNotEmpty &&
+            m.authenticateWithPassword(cleanEmail, cleanPass ?? cleanPin ?? '')) {
+          matchedMember = m;
+          break;
+        }
+      }
+      if (matchedMember != null) {
+        final exists = _currentUser.teamMembers.any((m) => m.id == matchedMember!.id);
+        if (!exists) {
+          _currentUser = _currentUser.copyWith(teamMembers: [..._currentUser.teamMembers, matchedMember]);
+        }
+      }
+    }
+
+    // 3. If still not found, search Supabase cloud team members
+    if (matchedMember == null) {
+      try {
+        final cloudRes = await SupabaseDbService.findStaffMember(
+          pin: cleanPin,
+          email: cleanEmail,
+          password: cleanPass,
+        );
+        if (cloudRes != null) {
+          matchedMember = cloudRes.member;
+          final studioProfile = await SupabaseDbService.fetchUserProfile(cloudRes.studioId);
+          if (studioProfile != null) {
+            _currentUser = studioProfile;
+          } else {
+            _currentUser = _currentUser.copyWith(
+              id: cloudRes.studioId,
+              role: UserRole.detailer,
+              teamMembers: [matchedMember],
+            );
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) print('[JobRepository] Cloud staff lookup error: $e');
+      }
+    }
+
+    if (matchedMember == null) {
+      return (
+        success: false,
+        error: 'Invalid Staff PIN or email credentials. Please check with your shop owner.',
+        member: null,
+      );
+    }
+
+    // Successful staff authentication
+    _activeTeamMemberId = matchedMember.id;
+    _isStaffSession = true;
+    _isLoggedIn = true;
+    _currentUser = _currentUser.copyWith(role: UserRole.detailer);
+
+    await LocalStorageService.saveIsStaffSession(true);
+    await LocalStorageService.saveActiveTeamMemberId(matchedMember.id);
+    await LocalStorageService.saveWorkbenchMode('studio');
+    await LocalStorageService.saveIsGuest(false);
+    _persistUser();
+
+    notifyListeners();
+    return (success: true, error: null, member: matchedMember);
   }
 
   Future<void> submitShiftRequest(ShiftRequest req) async {

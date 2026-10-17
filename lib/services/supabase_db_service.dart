@@ -77,6 +77,9 @@ class SupabaseDbService {
           canViewPricing: (t['can_view_pricing'] ?? t['canViewPricing']) as bool? ?? true,
           canManageTeam: (t['can_manage_team'] ?? t['canManageTeam']) as bool? ?? false,
           canViewAllTeamCalendar: (t['can_view_all_team_calendar'] ?? t['canViewAllTeamCalendar']) as bool? ?? true,
+          email: t['email'] as String?,
+          pin: t['pin'] as String?,
+          password: t['password'] as String?,
         );
       }).toList();
 
@@ -303,6 +306,9 @@ class SupabaseDbService {
         'can_manage_team': m.canManageTeam,
         'can_view_all_team_calendar': m.canViewAllTeamCalendar,
       };
+      if (m.email != null) payload['email'] = m.email;
+      if (m.pin != null) payload['pin'] = m.pin;
+      if (m.password != null) payload['password'] = m.password;
       if (m.allowedHubSections != null) {
         payload['allowed_hub_sections'] = m.allowedHubSections;
       }
@@ -314,6 +320,83 @@ class SupabaseDbService {
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error saving team member: $e');
     }
+  }
+
+  /// Find a staff member across studios by PIN or Email/Password for multi-account staff login
+  static Future<({TeamMember member, String studioId})?> findStaffMember({
+    String? pin,
+    String? email,
+    String? password,
+  }) async {
+    final client = _client;
+    if (client == null) return null;
+
+    try {
+      var query = client.from('team_members').select();
+      if (pin != null && pin.trim().isNotEmpty) {
+        query = query.eq('pin', pin.trim());
+      } else if (email != null && email.trim().isNotEmpty) {
+        query = query.ilike('email', email.trim());
+      } else {
+        return null;
+      }
+
+      final res = await query.limit(1);
+      if (res.isNotEmpty) {
+        final t = res.first;
+        final studioId = (t['studio_id'] ?? t['studioId']) as String?;
+        if (studioId == null || studioId.isEmpty) return null;
+
+        List<DayBusinessHours>? schedule;
+        final schedRaw = t['custom_weekly_schedule'] ?? t['customWeeklySchedule'];
+        if (schedRaw != null && schedRaw is List) {
+          try {
+            schedule = schedRaw
+                .map((item) => DayBusinessHours.fromJson(Map<String, dynamic>.from(item as Map)))
+                .toList();
+          } catch (_) {}
+        }
+
+        final sectionsRaw = t['allowed_hub_sections'] ?? t['allowedHubSections'];
+        List<String>? allowedSections;
+        if (sectionsRaw != null && sectionsRaw is List) {
+          try {
+            allowedSections = sectionsRaw.map((e) => e.toString()).toList();
+          } catch (_) {}
+        }
+
+        final member = TeamMember(
+          id: t['id'] as String,
+          name: t['name'] as String,
+          roleTitle: (t['role_title'] ?? t['roleTitle']) as String? ?? 'Detail Specialist',
+          avatarUrl: (t['avatar_url'] ?? t['avatarUrl']) as String? ?? '',
+          rating: (t['rating'] as num?)?.toDouble() ?? 5.0,
+          completedJobsCount: (t['completed_jobs_count'] ?? t['completedJobsCount']) as int? ?? 0,
+          isAvailable: (t['is_available'] ?? t['isAvailable']) as bool? ?? true,
+          isFounder: (t['is_founder'] ?? t['isFounder']) as bool? ?? false,
+          customWeeklySchedule: schedule,
+          allowedHubSections: allowedSections,
+          canEditInventory: (t['can_edit_inventory'] ?? t['canEditInventory']) as bool? ?? true,
+          canViewPricing: (t['can_view_pricing'] ?? t['canViewPricing']) as bool? ?? true,
+          canManageTeam: (t['can_manage_team'] ?? t['canManageTeam']) as bool? ?? false,
+          canViewAllTeamCalendar: (t['can_view_all_team_calendar'] ?? t['canViewAllTeamCalendar']) as bool? ?? true,
+          email: t['email'] as String?,
+          pin: t['pin'] as String?,
+          password: t['password'] as String?,
+        );
+
+        if (pin != null && pin.trim().isNotEmpty) {
+          if (!member.authenticateWithPin(pin)) return null;
+        } else if (email != null && password != null) {
+          if (!member.authenticateWithPassword(email, password)) return null;
+        }
+
+        return (member: member, studioId: studioId);
+      }
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error finding staff member: $e');
+    }
+    return null;
   }
 
   /// Delete a team member from Supabase

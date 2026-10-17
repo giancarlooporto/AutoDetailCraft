@@ -3193,7 +3193,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               label: Text(widget.repository.isViewingAsTeamMember ? 'Request Shift Change' : 'Edit Shift Schedule', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               onPressed: () => _showEditTeamMemberScheduleDialog(context, member),
             ),
-            if (!member.isFounder) ...[
+            if (!member.isFounder && !widget.repository.isStaffSession) ...[
               const SizedBox(width: 8),
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
@@ -3232,9 +3232,268 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         ),
         const SizedBox(height: 14),
         _buildShiftRequestsCard(context, forMemberId: member.id),
+        _buildTeamMemberCredentialsCard(context, member),
         _buildTeamMemberPermissionsMatrixCard(context, member),
         _buildTeamMemberScheduleCard(context, member),
       ],
+    );
+  }
+
+  Widget _buildTeamMemberCredentialsCard(BuildContext context, TeamMember member) {
+    if (member.isFounder) return const SizedBox.shrink();
+    final isOwner = !widget.repository.isViewingAsTeamMember;
+    final canManage = isOwner || (widget.repository.activeTeamMember?.canManageTeam ?? false);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.pin_rounded, size: 16, color: AppTheme.primary),
+                  SizedBox(width: 8),
+                  Text(
+                    'STAFF LOGIN CREDENTIALS',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
+                  ),
+                ],
+              ),
+              if (canManage)
+                InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => _showEditTeamMemberCredentialsDialog(context, member),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surface,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.edit_rounded, size: 11, color: AppTheme.primary),
+                        SizedBox(width: 4),
+                        Text('Edit PIN / Credentials', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('4-Digit Quick PIN', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.dialpad_rounded, size: 14, color: AppTheme.primary),
+                          const SizedBox(width: 6),
+                          Text(
+                            member.pin?.isNotEmpty == true ? member.pin! : 'Not set',
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Staff Work Email', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.email_outlined, size: 14, color: AppTheme.textSecondary),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              member.email?.isNotEmpty == true ? member.email! : 'None assigned',
+                              style: const TextStyle(fontSize: 11.5, color: Colors.white70),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEditTeamMemberCredentialsDialog(BuildContext context, TeamMember member) {
+    final pinCtrl = TextEditingController(text: member.pin ?? '');
+    final emailCtrl = TextEditingController(text: member.email ?? '');
+    final passCtrl = TextEditingController(text: member.password ?? '');
+
+    void generatePin() {
+      final rand = (1000 + (DateTime.now().microsecondsSinceEpoch % 9000)).toString();
+      pinCtrl.text = rand;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          return Dialog(
+            backgroundColor: AppTheme.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: AppTheme.border),
+            ),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 420),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary.withAlpha(25),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.vpn_key_rounded, size: 18, color: AppTheme.primary),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Edit ${member.name.split(" ").first}\'s Credentials',
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        icon: const Icon(Icons.close_rounded, size: 18, color: AppTheme.textMuted),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  const Divider(color: AppTheme.border, height: 1),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: pinCtrl,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    decoration: InputDecoration(
+                      labelText: '4-Digit Quick PIN',
+                      hintText: 'e.g. 1234',
+                      prefixIcon: const Icon(Icons.dialpad_rounded, size: 18),
+                      counterText: '',
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.casino_outlined, size: 18, color: AppTheme.primary),
+                        tooltip: 'Generate Random PIN',
+                        onPressed: () => setDialogState(generatePin),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: 'Staff Work Email',
+                      hintText: 'staff@studio.com',
+                      prefixIcon: Icon(Icons.alternate_email_rounded, size: 18),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: passCtrl,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Password (Optional fallback)',
+                      hintText: 'Defaults to PIN if empty',
+                      prefixIcon: Icon(Icons.lock_outline_rounded, size: 18),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onPressed: () {
+                          final updated = member.copyWith(
+                            pin: pinCtrl.text.trim().isNotEmpty ? pinCtrl.text.trim() : null,
+                            email: emailCtrl.text.trim().isNotEmpty ? emailCtrl.text.trim() : null,
+                            password: passCtrl.text.trim().isNotEmpty ? passCtrl.text.trim() : null,
+                          );
+                          widget.repository.updateTeamMember(updated);
+                          Navigator.of(ctx).pop();
+                          setState(() {});
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Updated login credentials for ${member.name}'),
+                              backgroundColor: AppTheme.surface,
+                            ),
+                          );
+                        },
+                        child: const Text('Save Credentials', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -3924,27 +4183,36 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     final user = widget.repository.currentUser;
     final isViewingStaff = widget.repository.isViewingAsTeamMember;
     final activeMember = widget.repository.activeTeamMember;
+    final isStaffSession = widget.repository.isStaffSession;
 
     if (isViewingStaff && activeMember != null) {
       return Container(
         margin: const EdgeInsets.only(top: 8),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.amber.withAlpha(20),
+          color: isStaffSession ? const Color(0xFF00E676).withAlpha(15) : Colors.amber.withAlpha(20),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.amber.withAlpha(100)),
+          border: Border.all(color: isStaffSession ? const Color(0xFF00E676).withAlpha(100) : Colors.amber.withAlpha(100)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                const Icon(Icons.badge_rounded, size: 14, color: Colors.amber),
+                Icon(
+                  isStaffSession ? Icons.lock_person_rounded : Icons.badge_rounded,
+                  size: 14,
+                  color: isStaffSession ? const Color(0xFF00E676) : Colors.amber,
+                ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    'Staff View: ${activeMember.name}',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber),
+                    isStaffSession ? 'Staff Session: ${activeMember.name}' : 'Staff View: ${activeMember.name}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: isStaffSession ? const Color(0xFF00E676) : Colors.amber,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -3966,17 +4234,28 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 InkWell(
                   borderRadius: BorderRadius.circular(4),
                   onTap: () {
-                    widget.repository.setActiveTeamMember(null);
+                    if (isStaffSession) {
+                      widget.repository.logoutStaffMember();
+                    } else {
+                      widget.repository.setActiveTeamMember(null);
+                    }
                     setState(() {});
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: AppTheme.surfaceLight,
+                      color: isStaffSession ? Colors.redAccent.withAlpha(30) : AppTheme.surfaceLight,
                       borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: AppTheme.border),
+                      border: Border.all(color: isStaffSession ? Colors.redAccent.withAlpha(120) : AppTheme.border),
                     ),
-                    child: const Text('Back to Owner', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                    child: Text(
+                      isStaffSession ? 'Sign Out' : 'Back to Owner',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.bold,
+                        color: isStaffSession ? Colors.redAccent : AppTheme.primary,
+                      ),
+                    ),
                   ),
                 ),
               ],
