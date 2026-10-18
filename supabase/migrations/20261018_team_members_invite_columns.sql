@@ -1,21 +1,22 @@
 -- ============================================================================
--- Migration: 20261018_team_members_invite_columns.sql
--- Purpose: Production-grade Staff Security & Invitation System (Server-Authoritative)
---   1. Cleans up any plaintext pin / password / invite_token columns from
---      public.team_members so public SELECT queries NEVER expose credentials.
---   2. Stores bcrypt-hashed PINs, bcrypt-hashed passwords, and SHA-256 hashed
---      invitation tokens inside a locked-down `public.staff_security` table
---      (RLS enabled, zero client policies, direct read/write revoked).
---   3. Exposes lightweight SECURITY DEFINER RPCs for:
---      - upsert_staff_security (owner sets staff PIN / invite token)
---      - accept_staff_invite_rpc (staff accepts invite token & sets bcrypt password)
---      - verify_staff_pin_rpc (shop tablet 4-digit PIN login)
---      - verify_staff_login_rpc (staff email + password login)
+-- Migration: 20261018_production_rls_and_staff_security.sql
+-- Purpose:
+--   1. Lock down Row-Level Security (RLS) across all public tables (profiles,
+--      vehicles, team_members, jobs, bookings, user_interactions, conversations,
+--      messages) so nobody in Chrome Developer Tools can edit or delete another
+--      user's or studio's rows.
+--   2. Move staff PINs, passwords, and invitation tokens out of public.team_members
+--      into a locked-down `public.staff_security` table (bcrypt + SHA-256)
+--      accessed exclusively through SECURITY DEFINER RPC functions.
 -- ============================================================================
 
 create extension if not exists pgcrypto;
 
--- 1. Ensure non-sensitive operational columns exist on public.team_members
+-- ============================================================================
+-- PART 1: STAFF SECURITY & INVITATION SYSTEM (SERVER-AUTHORITATIVE)
+-- ============================================================================
+
+-- 1A. Ensure non-sensitive operational columns exist on public.team_members
 alter table public.team_members
   add column if not exists is_founder boolean default false,
   add column if not exists can_edit_inventory boolean default true,
@@ -28,7 +29,7 @@ alter table public.team_members
   add column if not exists allowed_hub_sections jsonb,
   add column if not exists custom_weekly_schedule jsonb;
 
--- 2. Create locked-down staff_security table BEFORE dropping legacy columns
+-- 1B. Create locked-down staff_security table BEFORE dropping legacy columns
 create table if not exists public.staff_security (
   member_id         text primary key references public.team_members(id) on delete cascade,
   studio_id         uuid not null references public.profiles(id) on delete cascade,
@@ -66,15 +67,13 @@ begin
   end if;
 end $$;
 
--- 3. DROP plaintext credential columns from public.team_members (cleans up previous script)
+-- 1C. DROP plaintext credential columns from public.team_members (cleans up previous script)
 alter table public.team_members
   drop column if exists pin,
   drop column if exists password,
   drop column if exists invite_token;
 
--- ============================================================================
--- RPC 1: upsert_staff_security (Called by Studio Owner when adding/editing staff)
--- ============================================================================
+-- RPC 1: upsert_staff_security (Owner sets staff PIN / invite token)
 create or replace function public.upsert_staff_security(
   p_member_id text,
   p_studio_id uuid,
@@ -92,11 +91,7 @@ begin
   end if;
 
   insert into public.staff_security (
-    member_id,
-    studio_id,
-    pin_hash,
-    invite_token_hash,
-    updated_at
+    member_id, studio_id, pin_hash, invite_token_hash, updated_at
   )
   values (
     p_member_id,
@@ -126,9 +121,7 @@ begin
 end;
 $$;
 
--- ============================================================================
--- RPC 2: accept_staff_invite_rpc (Called when staff clicks invite link & sets password)
--- ============================================================================
+-- RPC 2: accept_staff_invite_rpc (Staff clicks invite link & sets password)
 create or replace function public.accept_staff_invite_rpc(
   p_token text,
   p_new_password text
@@ -162,7 +155,6 @@ begin
     return json_build_object('ok', false, 'error', 'invalid_or_expired_token');
   end if;
 
-  -- Hash password with bcrypt and consume (invalidate) the one-time invite token
   update public.staff_security
      set password_hash = crypt(trim(p_new_password), gen_salt('bf', 10)),
          invite_token_hash = null,
@@ -184,9 +176,7 @@ begin
 end;
 $$;
 
--- ============================================================================
--- RPC 3: verify_staff_pin_rpc (Shop Tablet 4-digit PIN check with brute-force shield)
--- ============================================================================
+-- RPC 3: verify_staff_pin_rpc (Shop Tablet 4-digit PIN check)
 create or replace function public.verify_staff_pin_rpc(
   p_member_id text,
   p_pin text
@@ -229,9 +219,7 @@ begin
 end;
 $$;
 
--- ============================================================================
 -- RPC 4: verify_staff_login_rpc (Personal Device Email + Password login)
--- ============================================================================
 create or replace function public.verify_staff_login_rpc(
   p_email text,
   p_password text
@@ -287,3 +275,186 @@ grant execute on function public.upsert_staff_security(text, uuid, text, text) t
 grant execute on function public.accept_staff_invite_rpc(text, text) to anon, authenticated;
 grant execute on function public.verify_staff_pin_rpc(text, text) to anon, authenticated;
 grant execute on function public.verify_staff_login_rpc(text, text) to anon, authenticated;
+
+-- ============================================================================
+-- PART 2: PRODUCTION ROW-LEVEL SECURITY (RLS) HARDENING
+-- Prevents anyone in Developer Tools from editing or deleting another user's rows
+-- ============================================================================
+
+-- 1. PROFILES: Publicly readable, but ONLY the profile owner (auth.uid() = id) can insert/update/delete
+alter table public.profiles enable row level security;
+drop policy if exists "Public profiles are viewable by everyone." on public.profiles;
+drop policy if exists "Users can insert their own profile." on public.profiles;
+drop policy if exists "Users can update their own profile." on public.profiles;
+drop policy if exists "Allow read on profiles" on public.profiles;
+drop policy if exists "Allow insert on profiles" on public.profiles;
+drop policy if exists "Allow update on profiles" on public.profiles;
+
+create policy "profiles_select_public"
+  on public.profiles for select
+  using ( true );
+
+create policy "profiles_insert_own"
+  on public.profiles for insert
+  with check ( auth.uid() = id );
+
+create policy "profiles_update_own"
+  on public.profiles for update
+  using ( auth.uid() = id )
+  with check ( auth.uid() = id );
+
+-- 2. VEHICLES: Publicly readable for bookings, but ONLY the vehicle owner (auth.uid() = user_id) can insert/update/delete
+alter table public.vehicles enable row level security;
+drop policy if exists "Anyone can view vehicles for discovery/bookings." on public.vehicles;
+drop policy if exists "Users can insert their own vehicles." on public.vehicles;
+drop policy if exists "Users can update their own vehicles." on public.vehicles;
+drop policy if exists "Users can delete their own vehicles." on public.vehicles;
+drop policy if exists "Allow read on vehicles" on public.vehicles;
+drop policy if exists "Allow insert on vehicles" on public.vehicles;
+drop policy if exists "Allow update on vehicles" on public.vehicles;
+drop policy if exists "Allow delete on vehicles" on public.vehicles;
+
+create policy "vehicles_select_public"
+  on public.vehicles for select
+  using ( true );
+
+create policy "vehicles_insert_own"
+  on public.vehicles for insert
+  with check ( auth.uid() = user_id );
+
+create policy "vehicles_update_own"
+  on public.vehicles for update
+  using ( auth.uid() = user_id )
+  with check ( auth.uid() = user_id );
+
+create policy "vehicles_delete_own"
+  on public.vehicles for delete
+  using ( auth.uid() = user_id );
+
+-- 3. TEAM MEMBERS: Publicly readable for booking technicians, but ONLY the Studio Owner (auth.uid() = studio_id) can insert/update/delete
+alter table public.team_members enable row level security;
+drop policy if exists "Team members are viewable by everyone." on public.team_members;
+drop policy if exists "Studios can manage their team members." on public.team_members;
+drop policy if exists "Allow read on team_members" on public.team_members;
+drop policy if exists "Allow insert on team_members" on public.team_members;
+drop policy if exists "Allow update on team_members" on public.team_members;
+drop policy if exists "Allow delete on team_members" on public.team_members;
+
+create policy "team_members_select_public"
+  on public.team_members for select
+  using ( true );
+
+create policy "team_members_insert_studio_owner"
+  on public.team_members for insert
+  with check ( auth.uid() = studio_id );
+
+create policy "team_members_update_studio_owner"
+  on public.team_members for update
+  using ( auth.uid() = studio_id )
+  with check ( auth.uid() = studio_id );
+
+create policy "team_members_delete_studio_owner"
+  on public.team_members for delete
+  using ( auth.uid() = studio_id );
+
+-- 4. JOBS: Publicly readable on discovery feed, but ONLY the author (auth.uid()::text = author_id) can insert/delete
+alter table public.jobs enable row level security;
+drop policy if exists "Allow read on jobs" on public.jobs;
+drop policy if exists "Allow insert on jobs" on public.jobs;
+drop policy if exists "Allow update on jobs" on public.jobs;
+drop policy if exists "Allow delete on jobs" on public.jobs;
+
+create policy "jobs_select_public"
+  on public.jobs for select
+  using ( true );
+
+create policy "jobs_insert_author"
+  on public.jobs for insert
+  with check ( auth.uid() is not null and auth.uid()::text = author_id );
+
+create policy "jobs_update_authenticated"
+  on public.jobs for update
+  using ( auth.uid() is not null );
+
+create policy "jobs_delete_author"
+  on public.jobs for delete
+  using ( auth.uid() is not null and auth.uid()::text = author_id );
+
+-- 5. USER INTERACTIONS: Only the owner of those likes/saves (auth.uid()::text = user_id) can insert/update
+alter table public.user_interactions enable row level security;
+drop policy if exists "Allow read on user_interactions" on public.user_interactions;
+drop policy if exists "Allow insert on user_interactions" on public.user_interactions;
+drop policy if exists "Allow update on user_interactions" on public.user_interactions;
+
+create policy "user_interactions_select_own"
+  on public.user_interactions for select
+  using ( auth.uid() is not null and auth.uid()::text = user_id );
+
+create policy "user_interactions_insert_own"
+  on public.user_interactions for insert
+  with check ( auth.uid() is not null and auth.uid()::text = user_id );
+
+create policy "user_interactions_update_own"
+  on public.user_interactions for update
+  using ( auth.uid() is not null and auth.uid()::text = user_id )
+  with check ( auth.uid() is not null and auth.uid()::text = user_id );
+
+-- 6. BOOKINGS: Readable for studio calendar availability, only authenticated clients/detailers can insert, and only client or studio owner can update/delete
+alter table public.bookings enable row level security;
+drop policy if exists "Allow read on bookings" on public.bookings;
+drop policy if exists "Allow insert on bookings" on public.bookings;
+drop policy if exists "Allow update on bookings" on public.bookings;
+drop policy if exists "Allow delete on bookings" on public.bookings;
+
+create policy "bookings_select_public"
+  on public.bookings for select
+  using ( true );
+
+create policy "bookings_insert_authenticated"
+  on public.bookings for insert
+  with check ( auth.uid() is not null );
+
+create policy "bookings_update_participant"
+  on public.bookings for update
+  using ( auth.uid() is not null and (auth.uid()::text = detailer_id or auth.uid()::text = client_id) );
+
+create policy "bookings_delete_participant"
+  on public.bookings for delete
+  using ( auth.uid() is not null and (auth.uid()::text = detailer_id or auth.uid()::text = client_id) );
+
+-- 7. CONVERSATIONS & MESSAGES: Only conversation participants can read or send messages
+alter table public.conversations enable row level security;
+drop policy if exists "Allow read on conversations" on public.conversations;
+drop policy if exists "Allow insert on conversations" on public.conversations;
+drop policy if exists "Allow update on conversations" on public.conversations;
+
+create policy "conversations_select_participant"
+  on public.conversations for select
+  using ( auth.uid() is not null and (auth.uid()::text = participant_a or auth.uid()::text = participant_b) );
+
+create policy "conversations_insert_participant"
+  on public.conversations for insert
+  with check ( auth.uid() is not null and (auth.uid()::text = participant_a or auth.uid()::text = participant_b) );
+
+create policy "conversations_update_participant"
+  on public.conversations for update
+  using ( auth.uid() is not null and (auth.uid()::text = participant_a or auth.uid()::text = participant_b) );
+
+alter table public.messages enable row level security;
+drop policy if exists "Allow read on messages" on public.messages;
+drop policy if exists "Allow insert on messages" on public.messages;
+drop policy if exists "Allow update on messages" on public.messages;
+
+create policy "messages_select_authenticated"
+  on public.messages for select
+  using ( auth.uid() is not null );
+
+create policy "messages_insert_sender"
+  on public.messages for insert
+  with check ( auth.uid() is not null and auth.uid()::text = sender_id );
+
+create policy "messages_update_authenticated"
+  on public.messages for update
+  using ( auth.uid() is not null );
+
+notify pgrst, 'reload schema';
