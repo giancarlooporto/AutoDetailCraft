@@ -8378,6 +8378,15 @@ class _OwnerLockShieldContentState extends State<_OwnerLockShieldContent> {
     }
   }
 
+  String _formatShortName(String fullName) {
+    final parts = fullName.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return '';
+    if (parts.length == 1) return parts.first;
+    final first = parts.first;
+    final lastInitial = parts.last[0].toUpperCase();
+    return '$first $lastInitial.';
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = widget.repository.currentUser;
@@ -8566,7 +8575,7 @@ class _OwnerLockShieldContentState extends State<_OwnerLockShieldContent> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                m.name,
+                                _formatShortName(m.name),
                                 style: TextStyle(
                                   fontSize: widget.isCompactPhone ? 12 : 13,
                                   fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
@@ -8593,7 +8602,7 @@ class _OwnerLockShieldContentState extends State<_OwnerLockShieldContent> {
         Text(
           isAdminSelected
               ? 'Enter 4-digit PIN for Admin'
-              : 'Enter 4-digit PIN for ${selectedMember?.name ?? ''}',
+              : 'Enter 4-digit PIN for ${selectedMember != null ? _formatShortName(selectedMember.name) : ''}',
           style: TextStyle(
             fontSize: widget.isCompactPhone ? 11.5 : 12.5,
             color: AppTheme.textSecondary,

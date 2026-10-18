@@ -37,11 +37,10 @@ class AddTeamMemberDialog extends StatefulWidget {
 class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
   final TextEditingController _nameCtrl = TextEditingController();
   final TextEditingController _roleCtrl = TextEditingController(text: 'Lead Paint Correction Specialist');
-  final TextEditingController _avatarUrlCtrl = TextEditingController();
   final TextEditingController _emailCtrl = TextEditingController();
   final TextEditingController _pinCtrl = TextEditingController();
-  final TextEditingController _passwordCtrl = TextEditingController();
 
+  String _uploadedAvatarUrl = '';
   Uint8List? _uploadedAvatarBytes;
   bool _isUploadingPhoto = false;
 
@@ -53,24 +52,11 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
   bool _canViewAllTeamCalendar = true;
 
   @override
-  void initState() {
-    super.initState();
-    _generateRandomPin();
-  }
-
-  void _generateRandomPin() {
-    final rand = (1000 + (DateTime.now().microsecondsSinceEpoch % 9000)).toString();
-    _pinCtrl.text = rand;
-  }
-
-  @override
   void dispose() {
     _nameCtrl.dispose();
     _roleCtrl.dispose();
-    _avatarUrlCtrl.dispose();
     _emailCtrl.dispose();
     _pinCtrl.dispose();
-    _passwordCtrl.dispose();
     super.dispose();
   }
 
@@ -93,7 +79,7 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
         setState(() {
           _isUploadingPhoto = false;
           if (cloudUrl != null && cloudUrl.isNotEmpty) {
-            _avatarUrlCtrl.text = cloudUrl;
+            _uploadedAvatarUrl = cloudUrl;
           }
         });
 
@@ -123,7 +109,7 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
   void _submit() {
     final name = _nameCtrl.text.trim();
     final role = _roleCtrl.text.trim();
-    final url = _avatarUrlCtrl.text.trim();
+    final url = _uploadedAvatarUrl.trim();
 
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -149,11 +135,10 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
 
     final emailText = _emailCtrl.text.trim();
     final hasEmail = emailText.isNotEmpty;
-    final passText = _passwordCtrl.text.trim();
     final inviteToken = hasEmail
         ? 'inv_${DateTime.now().millisecondsSinceEpoch}_${name.replaceAll(RegExp(r'\s+'), '').toLowerCase()}'
         : null;
-    final inviteStatus = hasEmail ? (passText.isNotEmpty ? 'accepted' : 'pending') : 'none';
+    final inviteStatus = hasEmail ? 'pending' : 'none';
     final inviteSentAt = hasEmail ? DateTime.now() : null;
 
     final newMember = TeamMember(
@@ -172,7 +157,6 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
       canViewAllTeamCalendar: _canViewAllTeamCalendar,
       email: hasEmail ? emailText : null,
       pin: _pinCtrl.text.trim().isNotEmpty ? _pinCtrl.text.trim() : null,
-      password: passText.isNotEmpty ? passText : null,
       inviteToken: inviteToken,
       inviteStatus: inviteStatus,
       inviteSentAt: inviteSentAt,
@@ -216,7 +200,7 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
                       const SizedBox(width: 12),
                       const Expanded(
                         child: Text(
-                          'Add Hired Staff Member',
+                          'Add Staff',
                           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -253,10 +237,10 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
                         backgroundColor: AppTheme.surfaceLight,
                         backgroundImage: _uploadedAvatarBytes != null
                             ? MemoryImage(_uploadedAvatarBytes!) as ImageProvider
-                            : (_avatarUrlCtrl.text.trim().isNotEmpty
-                                ? NetworkImage(_avatarUrlCtrl.text.trim()) as ImageProvider
+                            : (_uploadedAvatarUrl.trim().isNotEmpty
+                                ? NetworkImage(_uploadedAvatarUrl.trim()) as ImageProvider
                                 : null),
-                        child: (_uploadedAvatarBytes == null && _avatarUrlCtrl.text.trim().isEmpty)
+                        child: (_uploadedAvatarBytes == null && _uploadedAvatarUrl.trim().isEmpty)
                             ? const Icon(Icons.person_rounded, size: 38, color: AppTheme.textMuted)
                             : null,
                       ),
@@ -346,47 +330,24 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
                   );
                 }).toList(),
               ),
-              const SizedBox(height: 12),
-
-              // Or Photo URL (Alternative)
-              TextField(
-                controller: _avatarUrlCtrl,
-                onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(
-                  labelText: 'Or Photo Web URL',
-                  hintText: 'https://...',
-                  prefixIcon: Icon(Icons.link_rounded, size: 18),
-                ),
-              ),
               const SizedBox(height: 16),
               const Divider(color: AppTheme.border, height: 1),
               const SizedBox(height: 14),
 
               // Staff Login Credentials Header
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              const Row(
                 children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.pin_rounded, size: 16, color: AppTheme.primary),
-                      SizedBox(width: 8),
-                      Text(
-                        'STAFF LOGIN CREDENTIALS',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
-                      ),
-                    ],
-                  ),
-                  TextButton.icon(
-                    style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2)),
-                    icon: const Icon(Icons.refresh_rounded, size: 13, color: AppTheme.primary),
-                    label: const Text('Generate PIN', style: TextStyle(fontSize: 11, color: AppTheme.primary)),
-                    onPressed: () => setState(_generateRandomPin),
+                  Icon(Icons.pin_rounded, size: 16, color: AppTheme.primary),
+                  SizedBox(width: 8),
+                  Text(
+                    'STAFF LOGIN CREDENTIALS',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
                   ),
                 ],
               ),
               const SizedBox(height: 4),
               const Text(
-                'Assign a 4-digit quick PIN for shop tablet access, and an optional email/password for personal devices.',
+                'Assign a 4-digit quick PIN for shop tablet access, and a work email to send their password setup link.',
                 style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
               ),
               const SizedBox(height: 10),
@@ -395,17 +356,12 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
               TextField(
                 controller: _pinCtrl,
                 keyboardType: TextInputType.number,
-                maxLength: 6,
-                decoration: InputDecoration(
+                maxLength: 4,
+                decoration: const InputDecoration(
                   labelText: '4-Digit Quick PIN',
                   hintText: 'e.g. 1234',
-                  prefixIcon: const Icon(Icons.dialpad_rounded, size: 18),
+                  prefixIcon: Icon(Icons.dialpad_rounded, size: 18),
                   counterText: '',
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.casino_outlined, size: 18, color: AppTheme.primary),
-                    tooltip: 'Generate Random PIN',
-                    onPressed: () => setState(_generateRandomPin),
-                  ),
                 ),
               ),
               const SizedBox(height: 10),
@@ -479,18 +435,6 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
                       ),
                     ),
                   ],
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Staff Password (Optional)
-              TextField(
-                controller: _passwordCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Password (Optional fallback)',
-                  hintText: 'Defaults to PIN if empty',
-                  prefixIcon: Icon(Icons.lock_outline_rounded, size: 18),
                 ),
               ),
               const SizedBox(height: 16),

@@ -4565,7 +4565,7 @@ void main() {
     expect(find.text(repo.currentUser.businessName), findsOneWidget);
     expect(find.text('Admin'), findsOneWidget);
     expect(find.text('Team'), findsOneWidget);
-    expect(find.text('Leo Ortiz'), findsOneWidget);
+    expect(find.text('Leo O.'), findsOneWidget);
     expect(find.text('Apprentice Detailer'), findsNothing); // No profession/role on lock modal
     expect(find.text('Switch to Client Garage'), findsNothing);
     expect(find.text('Unlock Owner Mode'), findsNothing); // Auto-logs in on 4th digit
@@ -4591,10 +4591,11 @@ void main() {
     expect(find.text('Admin'), findsOneWidget);
     expect(find.text('Team'), findsOneWidget);
 
-    // Click Leo Ortiz tile under Team
+    // Click Leo Ortiz tile under Team (displayed as "Leo O.")
+    expect(find.text('Leo O.'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('lock_profile_staff_leo')));
     await tester.pumpAndSettle();
-    expect(find.text('Enter 4-digit PIN for Leo Ortiz'), findsOneWidget);
+    expect(find.text('Enter 4-digit PIN for Leo O.'), findsOneWidget);
 
     // Enter wrong PIN for Leo first
     await tester.enterText(find.byType(TextField).last, '0000');
