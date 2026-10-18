@@ -181,7 +181,7 @@ class UserProfile {
   final int followersCount;
   final int followingCount;
   final double startingPrice;
-  final String ownerPin;
+  final String? ownerPinHash; // salted PBKDF2 hash only, never the raw PIN
 
   const UserProfile({
     required this.id,
@@ -212,7 +212,7 @@ class UserProfile {
     this.followersCount = 0,
     this.followingCount = 0,
     this.startingPrice = 150.0,
-    this.ownerPin = '1234',
+    this.ownerPinHash,
   });
 
   UserProfile copyWith({
@@ -244,7 +244,7 @@ class UserProfile {
     int? followersCount,
     int? followingCount,
     double? startingPrice,
-    String? ownerPin,
+    String? ownerPinHash,
   }) {
     return UserProfile(
       id: id ?? this.id,
@@ -275,7 +275,7 @@ class UserProfile {
       followersCount: followersCount ?? this.followersCount,
       followingCount: followingCount ?? this.followingCount,
       startingPrice: startingPrice ?? this.startingPrice,
-      ownerPin: ownerPin ?? this.ownerPin,
+      ownerPinHash: ownerPinHash ?? this.ownerPinHash,
     );
   }
 
@@ -309,7 +309,7 @@ class UserProfile {
       'followersCount': followersCount,
       'followingCount': followingCount,
       'startingPrice': startingPrice,
-      'owner_pin': ownerPin,
+      'owner_pin_hash': ownerPinHash,
     };
   }
 
@@ -365,7 +365,7 @@ class UserProfile {
       followersCount: json['followersCount'] as int? ?? 0,
       followingCount: json['followingCount'] as int? ?? 0,
       startingPrice: (json['startingPrice'] as num?)?.toDouble() ?? 150.0,
-      ownerPin: json['owner_pin'] as String? ?? json['ownerPin'] as String? ?? '1234',
+      ownerPinHash: json['owner_pin_hash'] as String?,
     );
   }
 }

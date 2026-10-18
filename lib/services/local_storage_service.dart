@@ -672,19 +672,53 @@ class LocalStorageService {
   }
 
   // Owner Master PIN & Security Lock
-  static Future<void> saveOwnerPin(String pin) async {
+  // Only a salted PBKDF2 hash is stored. The legacy plaintext key is purged.
+  static const String _ownerPinHashKey = 'adc_owner_pin_hash_v2';
+  static const String _ownerPinFailsKey = 'adc_owner_pin_fails_v2';
+  static const String _ownerPinLockedUntilKey = 'adc_owner_pin_locked_until_v2';
+
+  static Future<void> saveOwnerPinHash(String? hash) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_ownerPinKey, pin);
+      await prefs.remove(_ownerPinKey);
+      if (hash == null) {
+        await prefs.remove(_ownerPinHashKey);
+      } else {
+        await prefs.setString(_ownerPinHashKey, hash);
+      }
     } catch (_) {}
   }
 
-  static Future<String?> loadOwnerPin() async {
+  static Future<String?> loadOwnerPinHash() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(_ownerPinKey);
+      await prefs.remove(_ownerPinKey); // purge legacy plaintext PIN
+      return prefs.getString(_ownerPinHashKey);
     } catch (_) {
       return null;
+    }
+  }
+
+  static Future<void> saveOwnerPinLockout(int fails, DateTime? lockedUntil) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_ownerPinFailsKey, fails);
+      if (lockedUntil == null) {
+        await prefs.remove(_ownerPinLockedUntilKey);
+      } else {
+        await prefs.setString(_ownerPinLockedUntilKey, lockedUntil.toIso8601String());
+      }
+    } catch (_) {}
+  }
+
+  static Future<(int, DateTime?)> loadOwnerPinLockout() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final fails = prefs.getInt(_ownerPinFailsKey) ?? 0;
+      final until = prefs.getString(_ownerPinLockedUntilKey);
+      return (fails, until == null ? null : DateTime.tryParse(until));
+    } catch (_) {
+      return (0, null);
     }
   }
 

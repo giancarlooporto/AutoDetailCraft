@@ -17,6 +17,7 @@ import 'supabase_service.dart';
 import 'r2_storage_service.dart';
 import '../models/calendar_availability_block.dart';
 import '../models/shift_request.dart';
+import 'owner_pin_security.dart';
 
 class JobRepository extends ChangeNotifier {
   List<DetailJob> _jobs = MockDataService.getInitialJobs();
@@ -31,7 +32,12 @@ class JobRepository extends ChangeNotifier {
   List<ShiftRequest> _shiftRequests = [];
   String? _activeTeamMemberId; // null or 'founder' = shop owner (Founder)
   bool _isStaffSession = false; // true = authenticated via staff PIN or staff credentials directly
-  String _ownerPin = '1234';
+  String? _ownerPinHash; // salted PBKDF2 hash; null = owner has not created a PIN yet
+  bool _serverHasOwnerPin = false;
+  int _ownerPinFails = 0;
+  DateTime? _ownerPinLockedUntil;
+  static const int _maxOwnerPinAttempts = 5;
+  static const Duration _ownerPinLockDuration = Duration(minutes: 15);
   bool _isOwnerLocked = false;
   int _ownerAutoLockMinutes = 5;
 
@@ -85,10 +91,13 @@ class JobRepository extends ChangeNotifier {
   TeamMember? get activeTeamMember =>
       isViewingAsTeamMember ? _currentUser.teamMembers.where((m) => m.id == _activeTeamMemberId).firstOrNull : null;
 
-  String get ownerPin => _ownerPin;
+  bool get hasOwnerPin => _ownerPinHash != null || _serverHasOwnerPin;
+  bool get hasCustomOwnerPin => hasOwnerPin;
+  bool get isOwnerPinLockedOut =>
+      _ownerPinLockedUntil != null && _ownerPinLockedUntil!.isAfter(DateTime.now());
+  DateTime? get ownerPinLockedUntil => _ownerPinLockedUntil;
   bool get isOwnerLocked => _isOwnerLocked;
   int get ownerAutoLockMinutes => _ownerAutoLockMinutes;
-  bool get hasCustomOwnerPin => _ownerPin != '1234';
 
   Future<void> init() async {
     if (_isInitialized) return;
@@ -288,11 +297,15 @@ class JobRepository extends ChangeNotifier {
         _currentUser = _currentUser.copyWith(role: UserRole.detailer);
       }
 
-      // 2k. Hydrate owner PIN and lock state
-      final savedOwnerPin = await LocalStorageService.loadOwnerPin();
-      _ownerPin = savedOwnerPin ?? _currentUser.ownerPin;
+      // 2k. Hydrate owner PIN hash, brute-force lockout, and lock state
+      _ownerPinHash = await LocalStorageService.loadOwnerPinHash() ?? _currentUser.ownerPinHash;
+      final lockout = await LocalStorageService.loadOwnerPinLockout();
+      _ownerPinFails = lockout.$1;
+      _ownerPinLockedUntil = lockout.$2;
       _ownerAutoLockMinutes = await LocalStorageService.loadOwnerAutoLockMinutes();
       _isOwnerLocked = await LocalStorageService.loadIsOwnerLocked();
+      if (!hasOwnerPin) _isOwnerLocked = false; // can't be locked without a PIN
+      unawaited(refreshOwnerPinStatus());
 
       // 4. Load custom recipe presets from local cache
       _customPresets = await LocalStorageService.loadCustomPresets();
@@ -2497,53 +2510,167 @@ class JobRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool verifyOwnerPin(String pin) {
-    return pin.trim() == _ownerPin.trim();
+  /// Fetches whether a PIN exists on the server (authoritative when signed in).
+  Future<void> refreshOwnerPinStatus() async {
+    final res = await SupabaseDbService.ownerPinStatus();
+    if (res == null) return;
+    final had = hasOwnerPin;
+    _serverHasOwnerPin = res['has_pin'] == true;
+    final until = res['locked_until'];
+    if (until is String) _ownerPinLockedUntil = DateTime.tryParse(until)?.toLocal();
+    if (had != hasOwnerPin) notifyListeners();
   }
 
-  Future<bool> setOwnerPin({required String currentPin, required String newPin}) async {
-    final cleanCurrent = currentPin.trim();
-    final cleanNew = newPin.trim();
-    if (!verifyOwnerPin(cleanCurrent)) {
-      return false;
-    }
-    if (cleanNew.length != 4 || int.tryParse(cleanNew) == null) {
-      return false;
-    }
-    _ownerPin = cleanNew;
-    _currentUser = _currentUser.copyWith(ownerPin: cleanNew);
-    await LocalStorageService.saveOwnerPin(cleanNew);
+  /// Offline check against the locally cached salted hash (no lockout accounting).
+  bool verifyOwnerPin(String pin) => OwnerPinSecurity.verify(pin, _ownerPinHash);
+
+  Future<void> _cacheOwnerPinHash(String pin) async {
+    _ownerPinHash = OwnerPinSecurity.hashPin(pin);
+    _currentUser = _currentUser.copyWith(ownerPinHash: _ownerPinHash);
+    await LocalStorageService.saveOwnerPinHash(_ownerPinHash);
     _persistUser();
+  }
+
+  Future<void> _registerPinFailure({DateTime? serverLockedUntil}) async {
+    if (serverLockedUntil != null) {
+      _ownerPinLockedUntil = serverLockedUntil;
+      _ownerPinFails = 0;
+    } else {
+      _ownerPinFails++;
+      if (_ownerPinFails >= _maxOwnerPinAttempts) {
+        _ownerPinLockedUntil = DateTime.now().add(_ownerPinLockDuration);
+        _ownerPinFails = 0;
+      }
+    }
+    await LocalStorageService.saveOwnerPinLockout(_ownerPinFails, _ownerPinLockedUntil);
+  }
+
+  Future<void> _resetPinFailures() async {
+    _ownerPinFails = 0;
+    _ownerPinLockedUntil = null;
+    await LocalStorageService.saveOwnerPinLockout(0, null);
+  }
+
+  OwnerPinResult _lockedResult() =>
+      OwnerPinResult(ok: false, error: 'locked', lockedUntil: _ownerPinLockedUntil);
+
+  /// First-time PIN creation: PIN entered twice, no "current PIN".
+  Future<OwnerPinResult> createOwnerPin({required String pin, required String confirm}) async {
+    final p = pin.trim();
+    if (!OwnerPinSecurity.isValidFormat(p)) {
+      return const OwnerPinResult(ok: false, error: 'invalid_format');
+    }
+    if (p != confirm.trim()) return const OwnerPinResult(ok: false, error: 'mismatch');
+    if (hasOwnerPin) return const OwnerPinResult(ok: false, error: 'already_set');
+
+    final res = await SupabaseDbService.setOwnerPin(newPin: p);
+    if (res != null && res['ok'] != true) {
+      if (res['error'] == 'wrong_pin') {
+        // A PIN already exists server-side (e.g. created on another device).
+        _serverHasOwnerPin = true;
+        notifyListeners();
+        return const OwnerPinResult(ok: false, error: 'already_set');
+      }
+      return OwnerPinResult(ok: false, error: res['error'] as String?);
+    }
+    if (res != null) _serverHasOwnerPin = true;
+    await _cacheOwnerPinHash(p);
+    await _resetPinFailures();
     notifyListeners();
-    return true;
+    return const OwnerPinResult(ok: true);
+  }
+
+  /// Verifies a PIN with brute-force protection. Server is authoritative when available.
+  Future<OwnerPinResult> attemptOwnerPin(String pin) async {
+    if (!hasOwnerPin) return const OwnerPinResult(ok: false, error: 'no_pin');
+    if (isOwnerPinLockedOut) return _lockedResult();
+
+    final res = await SupabaseDbService.verifyOwnerPin(pin.trim());
+    if (res != null && res['error'] != 'no_pin') {
+      if (res['ok'] == true) {
+        await _resetPinFailures();
+        // Refresh local hash cache so offline verification stays in sync.
+        if (!verifyOwnerPin(pin)) await _cacheOwnerPinHash(pin.trim());
+        return const OwnerPinResult(ok: true);
+      }
+      if (res['error'] == 'locked') {
+        final until = DateTime.tryParse('${res['locked_until']}')?.toLocal() ??
+            DateTime.now().add(_ownerPinLockDuration);
+        await _registerPinFailure(serverLockedUntil: until);
+        notifyListeners();
+        return _lockedResult();
+      }
+      final remaining = (res['remaining'] as num?)?.toInt();
+      _ownerPinFails = _maxOwnerPinAttempts - (remaining ?? _maxOwnerPinAttempts);
+      await LocalStorageService.saveOwnerPinLockout(_ownerPinFails, _ownerPinLockedUntil);
+      return OwnerPinResult(ok: false, error: 'wrong_pin', remaining: remaining);
+    }
+
+    // Offline / not signed in: verify against the local salted hash.
+    if (verifyOwnerPin(pin)) {
+      await _resetPinFailures();
+      return const OwnerPinResult(ok: true);
+    }
+    await _registerPinFailure();
+    notifyListeners();
+    if (isOwnerPinLockedOut) return _lockedResult();
+    return OwnerPinResult(
+      ok: false,
+      error: 'wrong_pin',
+      remaining: _maxOwnerPinAttempts - _ownerPinFails,
+    );
+  }
+
+  /// Change an existing PIN (requires current PIN). Returns false on failure.
+  Future<bool> setOwnerPin({required String currentPin, required String newPin}) async {
+    final result = await changeOwnerPin(currentPin: currentPin, newPin: newPin);
+    return result.ok;
+  }
+
+  Future<OwnerPinResult> changeOwnerPin({required String currentPin, required String newPin}) async {
+    final cleanNew = newPin.trim();
+    if (!OwnerPinSecurity.isValidFormat(cleanNew)) {
+      return const OwnerPinResult(ok: false, error: 'invalid_format');
+    }
+    final check = await attemptOwnerPin(currentPin);
+    if (!check.ok) return check;
+
+    final res = await SupabaseDbService.setOwnerPin(currentPin: currentPin.trim(), newPin: cleanNew);
+    if (res != null && res['ok'] != true) {
+      return OwnerPinResult(ok: false, error: res['error'] as String?);
+    }
+    await _cacheOwnerPinHash(cleanNew);
+    notifyListeners();
+    return const OwnerPinResult(ok: true);
   }
 
   void lockOwnerView() {
+    if (!hasOwnerPin) return; // Nothing to unlock with — UI prompts PIN creation first.
     _isOwnerLocked = true;
     LocalStorageService.saveIsOwnerLocked(true);
     notifyListeners();
   }
 
-  bool unlockOwnerView(String pin) {
-    if (verifyOwnerPin(pin)) {
+  Future<OwnerPinResult> unlockOwnerView(String pin) async {
+    final result = await attemptOwnerPin(pin);
+    if (result.ok) {
       _isOwnerLocked = false;
       LocalStorageService.saveIsOwnerLocked(false);
       notifyListeners();
-      return true;
     }
-    return false;
+    return result;
   }
 
-  bool unlockOwnerModeWithPin(String pin) {
-    if (verifyOwnerPin(pin)) {
+  Future<OwnerPinResult> unlockOwnerModeWithPin(String pin) async {
+    final result = await attemptOwnerPin(pin);
+    if (result.ok) {
       _isOwnerLocked = false;
       _activeTeamMemberId = null;
       LocalStorageService.saveIsOwnerLocked(false);
       LocalStorageService.saveActiveTeamMemberId(null);
       notifyListeners();
-      return true;
     }
-    return false;
+    return result;
   }
 
   Future<void> setOwnerAutoLockMinutes(int minutes) async {

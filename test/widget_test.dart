@@ -4134,10 +4134,11 @@ void main() {
     expect(repo.pendingShiftRequests.length, equals(1));
 
     // 3. Switch back to Owner via Owner PIN
+    await repo.createOwnerPin(pin: '8426', confirm: '8426');
     await tester.tap(find.text('Back to Owner'));
     await tester.pumpAndSettle();
     expect(find.text('Owner Mode Access'), findsOneWidget);
-    await tester.enterText(find.byType(TextField).last, '1234');
+    await tester.enterText(find.byType(TextField).last, '8426');
     await tester.tap(find.text('Unlock Owner Mode'));
     await tester.pumpAndSettle();
 
@@ -4493,23 +4494,14 @@ void main() {
       teamMembers: [staff],
     ));
 
-    // 1. Verify initial PIN and lock state
-    expect(repo.ownerPin, equals('1234'));
+    // 1. Verify NO default PIN exists initially
+    expect(repo.hasOwnerPin, isFalse);
+    expect(repo.hasCustomOwnerPin, isFalse);
     expect(repo.isOwnerLocked, isFalse);
-    expect(repo.verifyOwnerPin('1234'), isTrue);
+    expect(repo.verifyOwnerPin('1234'), isFalse);
     expect(repo.verifyOwnerPin('0000'), isFalse);
 
-    // 2. Change Owner PIN
-    final changeFail = await repo.setOwnerPin(currentPin: '0000', newPin: '9876');
-    expect(changeFail, isFalse);
-    expect(repo.ownerPin, equals('1234'));
-
-    final changeSuccess = await repo.setOwnerPin(currentPin: '1234', newPin: '9876');
-    expect(changeSuccess, isTrue);
-    expect(repo.ownerPin, equals('9876'));
-    expect(repo.hasCustomOwnerPin, isTrue);
-
-    // 3. Pump DetailerWorkbenchView in desktop mode
+    // 2. Pump DetailerWorkbenchView in desktop mode
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(() {
@@ -4525,12 +4517,47 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    // Verify Owner Mode banner is present
+    // Verify Owner Mode banner is present and no "Default PIN" text appears anywhere
     expect(find.text('Owner Mode'), findsOneWidget);
+    expect(find.textContaining('Default PIN'), findsNothing);
 
-    // 4. Tap Lock Owner View button
+    // 3. Tap Lock Owner View button -> since no PIN exists yet, opens "Create Owner Master PIN" modal (2 inputs only)
     await tester.tap(find.byTooltip('Lock Owner View (Shield Financials)'));
     await tester.pumpAndSettle();
+
+    expect(find.text('Create Owner Master PIN'), findsOneWidget);
+    expect(find.text('Create 4-Digit PIN'), findsOneWidget);
+    expect(find.text('Confirm PIN'), findsOneWidget);
+    expect(find.text('Current Owner PIN'), findsNothing);
+    expect(find.textContaining('Default'), findsNothing);
+
+    final createDialogFields = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byType(TextField),
+    );
+    expect(createDialogFields, findsNWidgets(2));
+
+    // Test mismatched PINs first
+    await tester.enterText(createDialogFields.at(0), '9876');
+    await tester.enterText(createDialogFields.at(1), '1111');
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Create PIN'));
+    await tester.pumpAndSettle();
+    expect(find.text('PINs do not match.'), findsOneWidget);
+    expect(repo.hasOwnerPin, isFalse);
+
+    // Enter matching PIN twice -> creates PIN and immediately locks view
+    await tester.enterText(createDialogFields.at(0), '9876');
+    await tester.enterText(createDialogFields.at(1), '9876');
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Create PIN'));
+    await tester.pumpAndSettle();
+
+    expect(repo.hasOwnerPin, isTrue);
+    expect(repo.hasCustomOwnerPin, isTrue);
+    expect(repo.verifyOwnerPin('9876'), isTrue);
+    // Ensure raw PIN is never stored in UserProfile or SharedPreferences
+    expect(repo.currentUser.ownerPinHash, isNotNull);
+    expect(repo.currentUser.ownerPinHash!.startsWith('pbkdf2\$'), isTrue);
+    expect(repo.currentUser.ownerPinHash!.contains('9876'), isFalse);
 
     expect(repo.isOwnerLocked, isTrue);
 
@@ -4538,8 +4565,9 @@ void main() {
     expect(find.text('Owner Mode Locked'), findsOneWidget);
     expect(find.textContaining('Financial figures, gross revenue, and business administration are shielded'), findsOneWidget);
     expect(find.text('Unlock Owner Mode'), findsOneWidget);
+    expect(find.textContaining('Default PIN'), findsNothing);
 
-    // 5. Test unlocking with wrong PIN
+    // 5. Test unlocking with wrong PIN (shows remaining attempts)
     await tester.enterText(find.byType(TextField).last, '1111');
     await tester.tap(find.text('Unlock Owner Mode'));
     await tester.pumpAndSettle();

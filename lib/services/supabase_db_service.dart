@@ -1077,5 +1077,32 @@ class SupabaseDbService {
       if (kDebugMode) print('[SupabaseDbService] Error deleting availability block: $e');
     }
   }
+
+  // --- OWNER MASTER PIN (server-authoritative, bcrypt-hashed) ---
+
+  /// Returns the RPC JSON map, or null when offline / not authenticated / not deployed.
+  static Future<Map<String, dynamic>?> _ownerPinRpc(String fn, [Map<String, dynamic>? params]) async {
+    final client = _client;
+    if (client == null || client.auth.currentUser == null) return null;
+    try {
+      final res = await client.rpc(fn, params: params);
+      if (res is Map) {
+        final map = Map<String, dynamic>.from(res);
+        if (map['error'] == 'not_authenticated') return null;
+        return map;
+      }
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Owner PIN RPC $fn unavailable: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> ownerPinStatus() => _ownerPinRpc('owner_pin_status');
+
+  static Future<Map<String, dynamic>?> setOwnerPin({String? currentPin, required String newPin}) =>
+      _ownerPinRpc('set_owner_pin', {'p_current': currentPin, 'p_new': newPin});
+
+  static Future<Map<String, dynamic>?> verifyOwnerPin(String pin) =>
+      _ownerPinRpc('verify_owner_pin', {'p_pin': pin});
 }
 

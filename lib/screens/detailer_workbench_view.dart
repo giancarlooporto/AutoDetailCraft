@@ -134,6 +134,15 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     });
   }
 
+  Future<void> _lockOwnerViewOrSetupPin() async {
+    if (!widget.repository.hasOwnerPin) {
+      final created = await _showCreateOwnerPinDialog();
+      if (!created) return;
+    }
+    widget.repository.lockOwnerView();
+    if (mounted) setState(() {});
+  }
+
   void _resetAutoLockTimer() {
     if (widget.repository.ownerAutoLockMinutes > 0) {
       _startAutoLockTimer();
@@ -4706,10 +4715,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             tooltip: 'Lock Owner View (Shield Financials)',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
-            onPressed: () {
-              widget.repository.lockOwnerView();
-              setState(() {});
-            },
+            onPressed: _lockOwnerViewOrSetupPin,
           ),
           const SizedBox(width: 4),
           PopupMenuButton<String>(
@@ -4761,8 +4767,17 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   }
 
   Future<void> _promptUnlockOwner() async {
+    if (!widget.repository.hasOwnerPin) {
+      final created = await _showCreateOwnerPinDialog();
+      if (created && mounted) {
+        widget.repository.setActiveTeamMember('founder');
+        setState(() {});
+      }
+      return;
+    }
     final pinController = TextEditingController();
     String? errorMessage;
+    bool verifying = false;
 
     final unlocked = await showDialog<bool>(
       context: context,
@@ -4809,19 +4824,24 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.primary, width: 2)),
                     errorText: errorMessage,
                   ),
-                  onSubmitted: (val) {
-                    if (widget.repository.unlockOwnerModeWithPin(val)) {
-                      Navigator.of(dialogCtx).pop(true);
+                  onSubmitted: (val) async {
+                    if (verifying) return;
+                    setDialogState(() => verifying = true);
+                    final res = await widget.repository.unlockOwnerModeWithPin(val);
+                    if (res.ok) {
+                      if (dialogCtx.mounted) Navigator.of(dialogCtx).pop(true);
                     } else {
                       setDialogState(() {
-                        errorMessage = 'Incorrect PIN. Default is 1234.';
+                        verifying = false;
+                        errorMessage = res.message;
+                        pinController.clear();
                       });
                     }
                   },
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Default PIN is 1234. Change anytime in Owner Security.',
+                  '5 failed attempts locks the PIN for 15 minutes.',
                   style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
                 ),
               ],
@@ -4837,15 +4857,21 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   foregroundColor: Colors.black,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
-                onPressed: () {
-                  if (widget.repository.unlockOwnerModeWithPin(pinController.text)) {
-                    Navigator.of(dialogCtx).pop(true);
-                  } else {
-                    setDialogState(() {
-                      errorMessage = 'Incorrect PIN. Default is 1234.';
-                    });
-                  }
-                },
+                onPressed: verifying
+                    ? null
+                    : () async {
+                        setDialogState(() => verifying = true);
+                        final res = await widget.repository.unlockOwnerModeWithPin(pinController.text);
+                        if (res.ok) {
+                          if (dialogCtx.mounted) Navigator.of(dialogCtx).pop(true);
+                        } else {
+                          setDialogState(() {
+                            verifying = false;
+                            errorMessage = res.message;
+                            pinController.clear();
+                          });
+                        }
+                      },
                 child: const Text('Unlock Owner Mode', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
@@ -4865,7 +4891,134 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     }
   }
 
+  /// First-time Owner PIN setup: enter the PIN twice. No default PIN exists.
+  Future<bool> _showCreateOwnerPinDialog() async {
+    final pinController = TextEditingController();
+    final confirmController = TextEditingController();
+    String? errorMessage;
+    bool saving = false;
+
+    InputDecoration deco(String hint) => InputDecoration(
+          counterText: '',
+          hintText: hint,
+          filled: true,
+          fillColor: AppTheme.surfaceLight,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.border)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.primary)),
+        );
+
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) {
+          Future<void> submit() async {
+            if (saving) return;
+            setDialogState(() {
+              saving = true;
+              errorMessage = null;
+            });
+            final res = await widget.repository.createOwnerPin(
+              pin: pinController.text,
+              confirm: confirmController.text,
+            );
+            if (res.ok) {
+              if (dialogCtx.mounted) Navigator.of(dialogCtx).pop(true);
+            } else {
+              setDialogState(() {
+                saving = false;
+                errorMessage = res.message;
+              });
+            }
+          }
+
+          return AlertDialog(
+            backgroundColor: AppTheme.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: AppTheme.border),
+            ),
+            title: const Row(
+              children: [
+                Icon(Icons.lock_person_rounded, color: AppTheme.primary, size: 20),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text('Create Owner Master PIN', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Create a private 4-digit PIN to shield your financials and owner controls from staff on shared devices.',
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Create 4-Digit PIN', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: pinController,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    maxLength: 4,
+                    obscureText: true,
+                    decoration: deco('4-digit numbers only'),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Confirm PIN', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: confirmController,
+                    keyboardType: TextInputType.number,
+                    maxLength: 4,
+                    obscureText: true,
+                    decoration: deco('Re-enter 4-digit PIN'),
+                    onSubmitted: (_) => submit(),
+                  ),
+                  if (errorMessage != null) ...[
+                    const SizedBox(height: 10),
+                    Text(errorMessage!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogCtx).pop(false),
+                child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: saving ? null : submit,
+                child: const Text('Create PIN', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (created == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Owner Master PIN created and secured.')),
+      );
+      setState(() {});
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _showChangeOwnerPinDialog() async {
+    if (!widget.repository.hasOwnerPin) {
+      await _showCreateOwnerPinDialog();
+      return;
+    }
     final currentPinController = TextEditingController();
     final newPinController = TextEditingController();
     final confirmPinController = TextEditingController();
@@ -4908,7 +5061,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     obscureText: true,
                     decoration: InputDecoration(
                       counterText: '',
-                      hintText: 'Enter current PIN (Default: 1234)',
+                      hintText: 'Enter current PIN',
                       filled: true,
                       fillColor: AppTheme.surfaceLight,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.border)),
@@ -5005,9 +5158,11 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                       setDialogState(() => errorMessage = 'New PIN and confirmation do not match.');
                       return;
                     }
-                    final ok = await widget.repository.setOwnerPin(currentPin: cur, newPin: n);
-                    if (!ok) {
-                      setDialogState(() => errorMessage = 'Current PIN is incorrect.');
+                    final res = await widget.repository.changeOwnerPin(currentPin: cur, newPin: n);
+                    if (!res.ok) {
+                      setDialogState(() => errorMessage = res.error == 'wrong_pin'
+                          ? 'Current PIN is incorrect. ${res.remaining != null ? '${res.remaining} attempts left.' : ''}'
+                          : res.message);
                       return;
                     }
                   }
@@ -5063,7 +5218,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  repo.hasCustomOwnerPin ? 'Custom PIN Set' : 'Default PIN (1234)',
+                  repo.hasOwnerPin ? 'PIN Secured' : 'No PIN Yet',
                   style: const TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.bold),
                 ),
               ),
@@ -5097,7 +5252,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 ),
                 icon: const Icon(Icons.settings_rounded, size: 14),
-                label: const Text('Change PIN / Timer', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                label: Text(
+                  repo.hasOwnerPin ? 'Change PIN / Timer' : 'Create PIN',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                ),
                 onPressed: () => _showChangeOwnerPinDialog(),
               ),
               const SizedBox(width: 8),
@@ -5109,10 +5267,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 ),
                 icon: const Icon(Icons.lock_rounded, size: 14),
                 label: const Text('Lock View', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                onPressed: () {
-                  repo.lockOwnerView();
-                  setState(() {});
-                },
+                onPressed: _lockOwnerViewOrSetupPin,
               ),
             ],
           ),
@@ -8123,12 +8278,20 @@ class _OwnerLockShieldContentState extends State<_OwnerLockShieldContent> {
     super.dispose();
   }
 
-  void _verifyPin(String pin) {
-    if (widget.repository.unlockOwnerView(pin)) {
+  bool _verifying = false;
+
+  Future<void> _verifyPin(String pin) async {
+    if (_verifying) return;
+    setState(() => _verifying = true);
+    final res = await widget.repository.unlockOwnerView(pin);
+    if (!mounted) return;
+    if (res.ok) {
+      _verifying = false;
       widget.onUnlocked();
     } else {
       setState(() {
-        _errorMessage = 'Incorrect PIN. Try 1234 or your custom PIN.';
+        _verifying = false;
+        _errorMessage = res.message;
         _pinController.clear();
       });
       _focusNode.requestFocus();
@@ -8306,7 +8469,7 @@ class _OwnerLockShieldContentState extends State<_OwnerLockShieldContent> {
 
         const SizedBox(height: 8),
         const Text(
-          'Default PIN is 1234. Change anytime in Owner Security.',
+          '5 failed attempts locks the PIN for 15 minutes.',
           style: TextStyle(fontSize: 10.5, color: AppTheme.textMuted),
           textAlign: TextAlign.center,
         ),
