@@ -1,13 +1,12 @@
 -- ============================================================================
--- Migration: 20261018_production_rls_and_staff_security.sql
+-- Migration: 20261018_team_members_invite_columns.sql
 -- Purpose:
---   1. Lock down Row-Level Security (RLS) across all public tables (profiles,
---      vehicles, team_members, jobs, bookings, user_interactions, conversations,
---      messages) so nobody in Chrome Developer Tools can edit or delete another
---      user's or studio's rows.
---   2. Move staff PINs, passwords, and invitation tokens out of public.team_members
+--   1. Move staff PINs, passwords, and invitation tokens out of public.team_members
 --      into a locked-down `public.staff_security` table (bcrypt + SHA-256)
 --      accessed exclusively through SECURITY DEFINER RPC functions.
+--   2. Lock down Row-Level Security (RLS) across all public tables using
+--      universal ::text casts (`auth.uid()::text = column::text`) so it works
+--      regardless of whether a column is typed as TEXT or UUID.
 -- ============================================================================
 
 create extension if not exists pgcrypto;
@@ -30,9 +29,10 @@ alter table public.team_members
   add column if not exists custom_weekly_schedule jsonb;
 
 -- 1B. Create locked-down staff_security table BEFORE dropping legacy columns
+-- Note: studio_id is TEXT so it matches team_members.studio_id whether TEXT or UUID
 create table if not exists public.staff_security (
   member_id         text primary key references public.team_members(id) on delete cascade,
-  studio_id         uuid not null references public.profiles(id) on delete cascade,
+  studio_id         text not null,
   pin_hash          text,
   password_hash     text,
   invite_token_hash text,
@@ -53,8 +53,8 @@ begin
   ) then
     insert into public.staff_security (member_id, studio_id, pin_hash, password_hash, invite_token_hash)
     select
-      id,
-      studio_id,
+      id::text,
+      studio_id::text,
       case when pin is not null and length(trim(pin)) > 0 then crypt(trim(pin), gen_salt('bf', 10)) else null end,
       case when password is not null and length(trim(password)) > 0 then crypt(trim(password), gen_salt('bf', 10)) else null end,
       case when invite_token is not null and length(trim(invite_token)) > 0 then encode(digest(trim(invite_token), 'sha256'), 'hex') else null end
@@ -73,10 +73,13 @@ alter table public.team_members
   drop column if exists password,
   drop column if exists invite_token;
 
+-- Drop old signature if it was created with uuid
+drop function if exists public.upsert_staff_security(text, uuid, text, text);
+
 -- RPC 1: upsert_staff_security (Owner sets staff PIN / invite token)
 create or replace function public.upsert_staff_security(
   p_member_id text,
-  p_studio_id uuid,
+  p_studio_id text,
   p_pin text default null,
   p_invite_token text default null
 )
@@ -86,7 +89,7 @@ security definer
 set search_path = public, extensions
 as $$
 begin
-  if auth.uid() is null or auth.uid() <> p_studio_id then
+  if auth.uid() is null or auth.uid()::text <> p_studio_id::text then
     return json_build_object('ok', false, 'error', 'unauthorized');
   end if;
 
@@ -165,7 +168,7 @@ begin
 
   update public.team_members
      set invite_status = 'accepted'
-   where id = v_sec.member_id
+   where id::text = v_sec.member_id::text
   returning * into v_member;
 
   return json_build_object(
@@ -204,7 +207,7 @@ begin
     update public.staff_security
        set failed_attempts = 0, locked_until = null, updated_at = now()
      where member_id = p_member_id;
-    select * into v_member from public.team_members where id = p_member_id;
+    select * into v_member from public.team_members where id::text = p_member_id::text;
     return json_build_object('ok', true, 'studio_id', v_sec.studio_id, 'member', row_to_json(v_member));
   end if;
 
@@ -243,7 +246,7 @@ begin
     return json_build_object('ok', false, 'error', 'invalid_credentials');
   end if;
 
-  select * into v_sec from public.staff_security where member_id = v_member.id for update;
+  select * into v_sec from public.staff_security where member_id = v_member.id::text for update;
   if v_sec.member_id is null or v_sec.password_hash is null then
     return json_build_object('ok', false, 'error', 'invalid_credentials');
   end if;
@@ -255,7 +258,7 @@ begin
   if p_password is not null and crypt(trim(p_password), v_sec.password_hash) = v_sec.password_hash then
     update public.staff_security
        set failed_attempts = 0, locked_until = null, updated_at = now()
-     where member_id = v_member.id;
+     where member_id = v_member.id::text;
     return json_build_object('ok', true, 'studio_id', v_member.studio_id, 'member', row_to_json(v_member));
   end if;
 
@@ -264,24 +267,24 @@ begin
      set failed_attempts = case when v_attempts >= 5 then 0 else v_attempts end,
          locked_until = case when v_attempts >= 5 then now() + interval '15 minutes' else null end,
          updated_at = now()
-   where member_id = v_member.id;
+   where member_id = v_member.id::text;
 
   return json_build_object('ok', false, 'error', 'invalid_credentials');
 end;
 $$;
 
-revoke all on function public.upsert_staff_security(text, uuid, text, text) from public, anon;
-grant execute on function public.upsert_staff_security(text, uuid, text, text) to authenticated;
+revoke all on function public.upsert_staff_security(text, text, text, text) from public, anon;
+grant execute on function public.upsert_staff_security(text, text, text, text) to authenticated;
 grant execute on function public.accept_staff_invite_rpc(text, text) to anon, authenticated;
 grant execute on function public.verify_staff_pin_rpc(text, text) to anon, authenticated;
 grant execute on function public.verify_staff_login_rpc(text, text) to anon, authenticated;
 
 -- ============================================================================
 -- PART 2: PRODUCTION ROW-LEVEL SECURITY (RLS) HARDENING
--- Prevents anyone in Developer Tools from editing or deleting another user's rows
+-- Uses explicit ::text casts on both sides so it works whether columns are TEXT or UUID
 -- ============================================================================
 
--- 1. PROFILES: Publicly readable, but ONLY the profile owner (auth.uid() = id) can insert/update/delete
+-- 1. PROFILES: Publicly readable, but ONLY the profile owner can insert/update
 alter table public.profiles enable row level security;
 drop policy if exists "Public profiles are viewable by everyone." on public.profiles;
 drop policy if exists "Users can insert their own profile." on public.profiles;
@@ -289,21 +292,15 @@ drop policy if exists "Users can update their own profile." on public.profiles;
 drop policy if exists "Allow read on profiles" on public.profiles;
 drop policy if exists "Allow insert on profiles" on public.profiles;
 drop policy if exists "Allow update on profiles" on public.profiles;
+drop policy if exists "profiles_select_public" on public.profiles;
+drop policy if exists "profiles_insert_own" on public.profiles;
+drop policy if exists "profiles_update_own" on public.profiles;
 
-create policy "profiles_select_public"
-  on public.profiles for select
-  using ( true );
+create policy "profiles_select_public" on public.profiles for select using ( true );
+create policy "profiles_insert_own" on public.profiles for insert with check ( auth.uid() is not null and auth.uid()::text = id::text );
+create policy "profiles_update_own" on public.profiles for update using ( auth.uid() is not null and auth.uid()::text = id::text ) with check ( auth.uid() is not null and auth.uid()::text = id::text );
 
-create policy "profiles_insert_own"
-  on public.profiles for insert
-  with check ( auth.uid() = id );
-
-create policy "profiles_update_own"
-  on public.profiles for update
-  using ( auth.uid() = id )
-  with check ( auth.uid() = id );
-
--- 2. VEHICLES: Publicly readable for bookings, but ONLY the vehicle owner (auth.uid() = user_id) can insert/update/delete
+-- 2. VEHICLES: Publicly readable for bookings, but ONLY the vehicle owner can insert/update/delete
 alter table public.vehicles enable row level security;
 drop policy if exists "Anyone can view vehicles for discovery/bookings." on public.vehicles;
 drop policy if exists "Users can insert their own vehicles." on public.vehicles;
@@ -313,25 +310,17 @@ drop policy if exists "Allow read on vehicles" on public.vehicles;
 drop policy if exists "Allow insert on vehicles" on public.vehicles;
 drop policy if exists "Allow update on vehicles" on public.vehicles;
 drop policy if exists "Allow delete on vehicles" on public.vehicles;
+drop policy if exists "vehicles_select_public" on public.vehicles;
+drop policy if exists "vehicles_insert_own" on public.vehicles;
+drop policy if exists "vehicles_update_own" on public.vehicles;
+drop policy if exists "vehicles_delete_own" on public.vehicles;
 
-create policy "vehicles_select_public"
-  on public.vehicles for select
-  using ( true );
+create policy "vehicles_select_public" on public.vehicles for select using ( true );
+create policy "vehicles_insert_own" on public.vehicles for insert with check ( auth.uid() is not null and auth.uid()::text = user_id::text );
+create policy "vehicles_update_own" on public.vehicles for update using ( auth.uid() is not null and auth.uid()::text = user_id::text ) with check ( auth.uid() is not null and auth.uid()::text = user_id::text );
+create policy "vehicles_delete_own" on public.vehicles for delete using ( auth.uid() is not null and auth.uid()::text = user_id::text );
 
-create policy "vehicles_insert_own"
-  on public.vehicles for insert
-  with check ( auth.uid() = user_id );
-
-create policy "vehicles_update_own"
-  on public.vehicles for update
-  using ( auth.uid() = user_id )
-  with check ( auth.uid() = user_id );
-
-create policy "vehicles_delete_own"
-  on public.vehicles for delete
-  using ( auth.uid() = user_id );
-
--- 3. TEAM MEMBERS: Publicly readable for booking technicians, but ONLY the Studio Owner (auth.uid() = studio_id) can insert/update/delete
+-- 3. TEAM MEMBERS: Publicly readable for booking technicians, but ONLY the Studio Owner can insert/update/delete
 alter table public.team_members enable row level security;
 drop policy if exists "Team members are viewable by everyone." on public.team_members;
 drop policy if exists "Studios can manage their team members." on public.team_members;
@@ -339,122 +328,84 @@ drop policy if exists "Allow read on team_members" on public.team_members;
 drop policy if exists "Allow insert on team_members" on public.team_members;
 drop policy if exists "Allow update on team_members" on public.team_members;
 drop policy if exists "Allow delete on team_members" on public.team_members;
+drop policy if exists "team_members_select_public" on public.team_members;
+drop policy if exists "team_members_insert_studio_owner" on public.team_members;
+drop policy if exists "team_members_update_studio_owner" on public.team_members;
+drop policy if exists "team_members_delete_studio_owner" on public.team_members;
 
-create policy "team_members_select_public"
-  on public.team_members for select
-  using ( true );
+create policy "team_members_select_public" on public.team_members for select using ( true );
+create policy "team_members_insert_studio_owner" on public.team_members for insert with check ( auth.uid() is not null and auth.uid()::text = studio_id::text );
+create policy "team_members_update_studio_owner" on public.team_members for update using ( auth.uid() is not null and auth.uid()::text = studio_id::text ) with check ( auth.uid() is not null and auth.uid()::text = studio_id::text );
+create policy "team_members_delete_studio_owner" on public.team_members for delete using ( auth.uid() is not null and auth.uid()::text = studio_id::text );
 
-create policy "team_members_insert_studio_owner"
-  on public.team_members for insert
-  with check ( auth.uid() = studio_id );
-
-create policy "team_members_update_studio_owner"
-  on public.team_members for update
-  using ( auth.uid() = studio_id )
-  with check ( auth.uid() = studio_id );
-
-create policy "team_members_delete_studio_owner"
-  on public.team_members for delete
-  using ( auth.uid() = studio_id );
-
--- 4. JOBS: Publicly readable on discovery feed, but ONLY the author (auth.uid()::text = author_id) can insert/delete
+-- 4. JOBS: Publicly readable on discovery feed, but ONLY the author can insert/delete
 alter table public.jobs enable row level security;
 drop policy if exists "Allow read on jobs" on public.jobs;
 drop policy if exists "Allow insert on jobs" on public.jobs;
 drop policy if exists "Allow update on jobs" on public.jobs;
 drop policy if exists "Allow delete on jobs" on public.jobs;
+drop policy if exists "jobs_select_public" on public.jobs;
+drop policy if exists "jobs_insert_author" on public.jobs;
+drop policy if exists "jobs_update_authenticated" on public.jobs;
+drop policy if exists "jobs_delete_author" on public.jobs;
 
-create policy "jobs_select_public"
-  on public.jobs for select
-  using ( true );
+create policy "jobs_select_public" on public.jobs for select using ( true );
+create policy "jobs_insert_author" on public.jobs for insert with check ( auth.uid() is not null and auth.uid()::text = author_id::text );
+create policy "jobs_update_authenticated" on public.jobs for update using ( auth.uid() is not null );
+create policy "jobs_delete_author" on public.jobs for delete using ( auth.uid() is not null and auth.uid()::text = author_id::text );
 
-create policy "jobs_insert_author"
-  on public.jobs for insert
-  with check ( auth.uid() is not null and auth.uid()::text = author_id );
-
-create policy "jobs_update_authenticated"
-  on public.jobs for update
-  using ( auth.uid() is not null );
-
-create policy "jobs_delete_author"
-  on public.jobs for delete
-  using ( auth.uid() is not null and auth.uid()::text = author_id );
-
--- 5. USER INTERACTIONS: Only the owner of those likes/saves (auth.uid()::text = user_id) can insert/update
+-- 5. USER INTERACTIONS: Only the owner of those likes/saves can read/insert/update
 alter table public.user_interactions enable row level security;
 drop policy if exists "Allow read on user_interactions" on public.user_interactions;
 drop policy if exists "Allow insert on user_interactions" on public.user_interactions;
 drop policy if exists "Allow update on user_interactions" on public.user_interactions;
+drop policy if exists "user_interactions_select_own" on public.user_interactions;
+drop policy if exists "user_interactions_insert_own" on public.user_interactions;
+drop policy if exists "user_interactions_update_own" on public.user_interactions;
 
-create policy "user_interactions_select_own"
-  on public.user_interactions for select
-  using ( auth.uid() is not null and auth.uid()::text = user_id );
+create policy "user_interactions_select_own" on public.user_interactions for select using ( auth.uid() is not null and auth.uid()::text = user_id::text );
+create policy "user_interactions_insert_own" on public.user_interactions for insert with check ( auth.uid() is not null and auth.uid()::text = user_id::text );
+create policy "user_interactions_update_own" on public.user_interactions for update using ( auth.uid() is not null and auth.uid()::text = user_id::text ) with check ( auth.uid() is not null and auth.uid()::text = user_id::text );
 
-create policy "user_interactions_insert_own"
-  on public.user_interactions for insert
-  with check ( auth.uid() is not null and auth.uid()::text = user_id );
-
-create policy "user_interactions_update_own"
-  on public.user_interactions for update
-  using ( auth.uid() is not null and auth.uid()::text = user_id )
-  with check ( auth.uid() is not null and auth.uid()::text = user_id );
-
--- 6. BOOKINGS: Readable for studio calendar availability, only authenticated clients/detailers can insert, and only client or studio owner can update/delete
+-- 6. BOOKINGS: Readable for studio calendar availability, only authenticated users can insert, and only client or studio owner can update/delete
 alter table public.bookings enable row level security;
 drop policy if exists "Allow read on bookings" on public.bookings;
 drop policy if exists "Allow insert on bookings" on public.bookings;
 drop policy if exists "Allow update on bookings" on public.bookings;
 drop policy if exists "Allow delete on bookings" on public.bookings;
+drop policy if exists "bookings_select_public" on public.bookings;
+drop policy if exists "bookings_insert_authenticated" on public.bookings;
+drop policy if exists "bookings_update_participant" on public.bookings;
+drop policy if exists "bookings_delete_participant" on public.bookings;
 
-create policy "bookings_select_public"
-  on public.bookings for select
-  using ( true );
-
-create policy "bookings_insert_authenticated"
-  on public.bookings for insert
-  with check ( auth.uid() is not null );
-
-create policy "bookings_update_participant"
-  on public.bookings for update
-  using ( auth.uid() is not null and (auth.uid()::text = detailer_id or auth.uid()::text = client_id) );
-
-create policy "bookings_delete_participant"
-  on public.bookings for delete
-  using ( auth.uid() is not null and (auth.uid()::text = detailer_id or auth.uid()::text = client_id) );
+create policy "bookings_select_public" on public.bookings for select using ( true );
+create policy "bookings_insert_authenticated" on public.bookings for insert with check ( auth.uid() is not null );
+create policy "bookings_update_participant" on public.bookings for update using ( auth.uid() is not null and (auth.uid()::text = detailer_id::text or auth.uid()::text = client_id::text) );
+create policy "bookings_delete_participant" on public.bookings for delete using ( auth.uid() is not null and (auth.uid()::text = detailer_id::text or auth.uid()::text = client_id::text) );
 
 -- 7. CONVERSATIONS & MESSAGES: Only conversation participants can read or send messages
 alter table public.conversations enable row level security;
 drop policy if exists "Allow read on conversations" on public.conversations;
 drop policy if exists "Allow insert on conversations" on public.conversations;
 drop policy if exists "Allow update on conversations" on public.conversations;
+drop policy if exists "conversations_select_participant" on public.conversations;
+drop policy if exists "conversations_insert_participant" on public.conversations;
+drop policy if exists "conversations_update_participant" on public.conversations;
 
-create policy "conversations_select_participant"
-  on public.conversations for select
-  using ( auth.uid() is not null and (auth.uid()::text = participant_a or auth.uid()::text = participant_b) );
-
-create policy "conversations_insert_participant"
-  on public.conversations for insert
-  with check ( auth.uid() is not null and (auth.uid()::text = participant_a or auth.uid()::text = participant_b) );
-
-create policy "conversations_update_participant"
-  on public.conversations for update
-  using ( auth.uid() is not null and (auth.uid()::text = participant_a or auth.uid()::text = participant_b) );
+create policy "conversations_select_participant" on public.conversations for select using ( auth.uid() is not null and (auth.uid()::text = participant_a::text or auth.uid()::text = participant_b::text) );
+create policy "conversations_insert_participant" on public.conversations for insert with check ( auth.uid() is not null and (auth.uid()::text = participant_a::text or auth.uid()::text = participant_b::text) );
+create policy "conversations_update_participant" on public.conversations for update using ( auth.uid() is not null and (auth.uid()::text = participant_a::text or auth.uid()::text = participant_b::text) );
 
 alter table public.messages enable row level security;
 drop policy if exists "Allow read on messages" on public.messages;
 drop policy if exists "Allow insert on messages" on public.messages;
 drop policy if exists "Allow update on messages" on public.messages;
+drop policy if exists "messages_select_authenticated" on public.messages;
+drop policy if exists "messages_insert_sender" on public.messages;
+drop policy if exists "messages_update_authenticated" on public.messages;
 
-create policy "messages_select_authenticated"
-  on public.messages for select
-  using ( auth.uid() is not null );
-
-create policy "messages_insert_sender"
-  on public.messages for insert
-  with check ( auth.uid() is not null and auth.uid()::text = sender_id );
-
-create policy "messages_update_authenticated"
-  on public.messages for update
-  using ( auth.uid() is not null );
+create policy "messages_select_authenticated" on public.messages for select using ( auth.uid() is not null );
+create policy "messages_insert_sender" on public.messages for insert with check ( auth.uid() is not null and auth.uid()::text = sender_id::text );
+create policy "messages_update_authenticated" on public.messages for update using ( auth.uid() is not null );
 
 notify pgrst, 'reload schema';
