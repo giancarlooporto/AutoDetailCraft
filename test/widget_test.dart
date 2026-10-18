@@ -4665,8 +4665,7 @@ void main() {
 
     expect(newStaff.isInvitePending, isTrue);
     expect(newStaff.isStaffAccountActive, isFalse);
-    expect(newStaff.getInviteLink(), contains('token=inv_token_mateo_123'));
-    expect(newStaff.getInviteLink(), contains('email=mateo%40autodetailcraft.com'));
+    expect(newStaff.getInviteLink(), equals('https://www.autodetailcraft.com/?token=inv_token_mateo_123'));
 
     // 2. Render DetailerWorkbenchView in desktop mode to inspect My Teams pane
     tester.view.physicalSize = const Size(1280, 800);

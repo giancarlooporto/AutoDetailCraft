@@ -106,20 +106,8 @@ class TeamMember {
   bool get isStaffAccountActive =>
       (password != null && password!.trim().isNotEmpty) || inviteStatus == 'accepted';
 
-  String getInviteLink({String? studioId}) {
-    final params = <String, String>{
-      'token': inviteToken ?? id,
-      'memberId': id,
-      'name': name,
-      'role': roleTitle,
-      if (email != null && email!.isNotEmpty) 'email': email!,
-      if (studioId != null && studioId.isNotEmpty) 'studioId': studioId,
-    };
-    final query = params.entries
-        .map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
-        .join('&');
-    return 'https://www.autodetailcraft.com/?$query';
-  }
+  String getInviteLink({String? studioId}) =>
+      'https://www.autodetailcraft.com/?token=${Uri.encodeQueryComponent(inviteToken ?? id)}';
 
   Map<String, dynamic> toJson() {
     return {

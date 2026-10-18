@@ -290,36 +290,29 @@ class SupabaseDbService {
     }
   }
 
-  /// Upsert a team member to Supabase (with automatic fallback if extended columns aren't migrated yet)
+  /// Upsert a team member to Supabase and sync hashed PIN/invite token via SECURITY DEFINER RPC
   static Future<void> saveTeamMember(String studioId, TeamMember m) async {
     final client = _client;
     if (client == null) return;
 
-    final basePayload = <String, dynamic>{
-      'id': m.id,
-      'studio_id': studioId,
-      'name': m.name,
-      'role_title': m.roleTitle,
-      'avatar_url': m.avatarUrl,
-      'rating': m.rating,
-      'completed_jobs_count': m.completedJobsCount,
-      'is_available': m.isAvailable,
-    };
-
     try {
       final payload = <String, dynamic>{
-        ...basePayload,
+        'id': m.id,
+        'studio_id': studioId,
+        'name': m.name,
+        'role_title': m.roleTitle,
+        'avatar_url': m.avatarUrl,
+        'rating': m.rating,
+        'completed_jobs_count': m.completedJobsCount,
+        'is_available': m.isAvailable,
         'is_founder': m.isFounder,
         'can_edit_inventory': m.canEditInventory,
         'can_view_pricing': m.canViewPricing,
         'can_manage_team': m.canManageTeam,
         'can_view_all_team_calendar': m.canViewAllTeamCalendar,
+        'invite_status': m.inviteStatus,
       };
       if (m.email != null) payload['email'] = m.email;
-      if (m.pin != null) payload['pin'] = m.pin;
-      if (m.password != null) payload['password'] = m.password;
-      if (m.inviteToken != null) payload['invite_token'] = m.inviteToken;
-      payload['invite_status'] = m.inviteStatus;
       if (m.inviteSentAt != null) payload['invite_sent_at'] = m.inviteSentAt!.toIso8601String();
       if (m.allowedHubSections != null) {
         payload['allowed_hub_sections'] = m.allowedHubSections;
@@ -329,177 +322,124 @@ class SupabaseDbService {
             m.customWeeklySchedule!.map((h) => h.toJson()).toList();
       }
       await client.from('team_members').upsert(payload);
+
+      // Sync PIN and invite token to server-side staff_security table (hashed via bcrypt/sha256)
+      if ((m.pin != null && m.pin!.trim().isNotEmpty) ||
+          (m.inviteToken != null && m.inviteToken!.trim().isNotEmpty)) {
+        await client.rpc('upsert_staff_security', params: {
+          'p_member_id': m.id,
+          'p_studio_id': studioId,
+          'p_pin': (m.pin != null && m.pin!.trim().isNotEmpty) ? m.pin!.trim() : null,
+          'p_invite_token': (m.inviteToken != null && m.inviteToken!.trim().isNotEmpty && m.inviteStatus == 'pending')
+              ? m.inviteToken!.trim()
+              : null,
+        });
+      }
     } catch (e) {
-      if (kDebugMode) {
-        print('[SupabaseDbService] Extended saveTeamMember failed ($e), falling back to base columns.');
-      }
-      try {
-        await client.from('team_members').upsert(basePayload);
-      } catch (e2) {
-        if (kDebugMode) print('[SupabaseDbService] Base saveTeamMember error: $e2');
-      }
+      if (kDebugMode) print('[SupabaseDbService] Error saving team member: $e');
     }
   }
 
-  /// Find a staff member across studios by PIN or Email/Password for multi-account staff login
+  static TeamMember _parseTeamMemberMap(Map<String, dynamic> t) {
+    List<DayBusinessHours>? schedule;
+    final schedRaw = t['custom_weekly_schedule'] ?? t['customWeeklySchedule'];
+    if (schedRaw != null && schedRaw is List) {
+      try {
+        schedule = schedRaw
+            .map((item) => DayBusinessHours.fromJson(Map<String, dynamic>.from(item as Map)))
+            .toList();
+      } catch (_) {}
+    }
+
+    final sectionsRaw = t['allowed_hub_sections'] ?? t['allowedHubSections'];
+    List<String>? allowedSections;
+    if (sectionsRaw != null && sectionsRaw is List) {
+      try {
+        allowedSections = sectionsRaw.map((e) => e.toString()).toList();
+      } catch (_) {}
+    }
+
+    return TeamMember(
+      id: t['id'] as String,
+      name: t['name'] as String,
+      roleTitle: (t['role_title'] ?? t['roleTitle']) as String? ?? 'Detail Specialist',
+      avatarUrl: (t['avatar_url'] ?? t['avatarUrl']) as String? ?? '',
+      rating: (t['rating'] as num?)?.toDouble() ?? 5.0,
+      completedJobsCount: (t['completed_jobs_count'] ?? t['completedJobsCount']) as int? ?? 0,
+      isAvailable: (t['is_available'] ?? t['isAvailable']) as bool? ?? true,
+      isFounder: (t['is_founder'] ?? t['isFounder']) as bool? ?? false,
+      customWeeklySchedule: schedule,
+      allowedHubSections: allowedSections,
+      canEditInventory: (t['can_edit_inventory'] ?? t['canEditInventory']) as bool? ?? true,
+      canViewPricing: (t['can_view_pricing'] ?? t['canViewPricing']) as bool? ?? true,
+      canManageTeam: (t['can_manage_team'] ?? t['canManageTeam']) as bool? ?? false,
+      canViewAllTeamCalendar: (t['can_view_all_team_calendar'] ?? t['canViewAllTeamCalendar']) as bool? ?? true,
+      email: t['email'] as String?,
+      inviteStatus: (t['invite_status'] ?? t['inviteStatus']) as String? ?? 'none',
+      inviteSentAt: (t['invite_sent_at'] ?? t['inviteSentAt']) != null
+          ? DateTime.tryParse((t['invite_sent_at'] ?? t['inviteSentAt']) as String)
+          : null,
+    );
+  }
+
+  /// Verify staff Email + Password on Supabase server via verify_staff_login_rpc
   static Future<({TeamMember member, String studioId})?> findStaffMember({
     String? pin,
     String? email,
     String? password,
+    String? memberId,
   }) async {
     final client = _client;
     if (client == null) return null;
 
     try {
-      var query = client.from('team_members').select();
-      if (pin != null && pin.trim().isNotEmpty) {
-        query = query.eq('pin', pin.trim());
-      } else if (email != null && email.trim().isNotEmpty) {
-        query = query.ilike('email', email.trim());
-      } else {
+      if (pin != null && pin.trim().isNotEmpty && memberId != null && memberId.isNotEmpty) {
+        final res = await client.rpc('verify_staff_pin_rpc', params: {
+          'p_member_id': memberId,
+          'p_pin': pin.trim(),
+        });
+        if (res is Map && res['ok'] == true && res['member'] != null && res['studio_id'] != null) {
+          final member = _parseTeamMemberMap(Map<String, dynamic>.from(res['member'] as Map));
+          return (member: member, studioId: res['studio_id'].toString());
+        }
         return null;
       }
 
-      final res = await query.limit(1);
-      if (res.isNotEmpty) {
-        final t = res.first;
-        final studioId = (t['studio_id'] ?? t['studioId']) as String?;
-        if (studioId == null || studioId.isEmpty) return null;
-
-        List<DayBusinessHours>? schedule;
-        final schedRaw = t['custom_weekly_schedule'] ?? t['customWeeklySchedule'];
-        if (schedRaw != null && schedRaw is List) {
-          try {
-            schedule = schedRaw
-                .map((item) => DayBusinessHours.fromJson(Map<String, dynamic>.from(item as Map)))
-                .toList();
-          } catch (_) {}
+      if (email != null && email.trim().isNotEmpty && password != null && password.trim().isNotEmpty) {
+        final res = await client.rpc('verify_staff_login_rpc', params: {
+          'p_email': email.trim(),
+          'p_password': password.trim(),
+        });
+        if (res is Map && res['ok'] == true && res['member'] != null && res['studio_id'] != null) {
+          final member = _parseTeamMemberMap(Map<String, dynamic>.from(res['member'] as Map));
+          return (member: member, studioId: res['studio_id'].toString());
         }
-
-        final sectionsRaw = t['allowed_hub_sections'] ?? t['allowedHubSections'];
-        List<String>? allowedSections;
-        if (sectionsRaw != null && sectionsRaw is List) {
-          try {
-            allowedSections = sectionsRaw.map((e) => e.toString()).toList();
-          } catch (_) {}
-        }
-
-        final member = TeamMember(
-          id: t['id'] as String,
-          name: t['name'] as String,
-          roleTitle: (t['role_title'] ?? t['roleTitle']) as String? ?? 'Detail Specialist',
-          avatarUrl: (t['avatar_url'] ?? t['avatarUrl']) as String? ?? '',
-          rating: (t['rating'] as num?)?.toDouble() ?? 5.0,
-          completedJobsCount: (t['completed_jobs_count'] ?? t['completedJobsCount']) as int? ?? 0,
-          isAvailable: (t['is_available'] ?? t['isAvailable']) as bool? ?? true,
-          isFounder: (t['is_founder'] ?? t['isFounder']) as bool? ?? false,
-          customWeeklySchedule: schedule,
-          allowedHubSections: allowedSections,
-          canEditInventory: (t['can_edit_inventory'] ?? t['canEditInventory']) as bool? ?? true,
-          canViewPricing: (t['can_view_pricing'] ?? t['canViewPricing']) as bool? ?? true,
-          canManageTeam: (t['can_manage_team'] ?? t['canManageTeam']) as bool? ?? false,
-          canViewAllTeamCalendar: (t['can_view_all_team_calendar'] ?? t['canViewAllTeamCalendar']) as bool? ?? true,
-          email: t['email'] as String?,
-          pin: t['pin'] as String?,
-          password: t['password'] as String?,
-          inviteToken: (t['invite_token'] ?? t['inviteToken']) as String?,
-          inviteStatus: (t['invite_status'] ?? t['inviteStatus']) as String? ?? 'none',
-          inviteSentAt: (t['invite_sent_at'] ?? t['inviteSentAt']) != null
-              ? DateTime.tryParse((t['invite_sent_at'] ?? t['inviteSentAt']) as String)
-              : null,
-        );
-
-        if (pin != null && pin.trim().isNotEmpty) {
-          if (!member.authenticateWithPin(pin)) return null;
-        } else if (email != null && password != null) {
-          if (!member.authenticateWithPassword(email, password)) return null;
-        }
-
-        return (member: member, studioId: studioId);
       }
     } catch (e) {
-      if (kDebugMode) print('[SupabaseDbService] Error finding staff member: $e');
+      if (kDebugMode) print('[SupabaseDbService] Error verifying staff member via RPC: $e');
     }
     return null;
   }
 
-  /// Find a staff member across studios by invite token for staff activation
-  static Future<({TeamMember member, String studioId})?> findStaffMemberByInviteToken(String token) async {
+  /// Accept a staff invite token and set password on the server via accept_staff_invite_rpc
+  static Future<({TeamMember member, String studioId})?> acceptStaffInviteOnServer({
+    required String token,
+    required String newPassword,
+  }) async {
     final client = _client;
     if (client == null) return null;
 
-    final cleanToken = token.trim();
-    List<dynamic> res = const [];
-
     try {
-      res = await client
-          .from('team_members')
-          .select()
-          .or('invite_token.eq.$cleanToken,id.eq.$cleanToken')
-          .limit(1);
-    } catch (_) {
-      try {
-        final memberIdParam = Uri.base.queryParameters['memberId'];
-        final lookupId = (memberIdParam != null && memberIdParam.isNotEmpty) ? memberIdParam : cleanToken;
-        res = await client
-            .from('team_members')
-            .select()
-            .eq('id', lookupId)
-            .limit(1);
-      } catch (e) {
-        if (kDebugMode) print('[SupabaseDbService] Fallback token lookup error: $e');
+      final res = await client.rpc('accept_staff_invite_rpc', params: {
+        'p_token': token.trim(),
+        'p_new_password': newPassword.trim(),
+      });
+      if (res is Map && res['ok'] == true && res['member'] != null && res['studio_id'] != null) {
+        final member = _parseTeamMemberMap(Map<String, dynamic>.from(res['member'] as Map));
+        return (member: member, studioId: res['studio_id'].toString());
       }
-    }
-
-    if (res.isNotEmpty) {
-      final t = res.first;
-      final studioId = (t['studio_id'] ?? t['studioId']) as String?;
-      if (studioId != null && studioId.isNotEmpty) {
-        List<DayBusinessHours>? schedule;
-        final schedRaw = t['custom_weekly_schedule'] ?? t['customWeeklySchedule'];
-        if (schedRaw != null && schedRaw is List) {
-          try {
-            schedule = schedRaw
-                .map((item) => DayBusinessHours.fromJson(Map<String, dynamic>.from(item as Map)))
-                .toList();
-          } catch (_) {}
-        }
-
-        final sectionsRaw = t['allowed_hub_sections'] ?? t['allowedHubSections'];
-        List<String>? allowedSections;
-        if (sectionsRaw != null && sectionsRaw is List) {
-          try {
-            allowedSections = sectionsRaw.map((e) => e.toString()).toList();
-          } catch (_) {}
-        }
-
-        final member = TeamMember(
-          id: t['id'] as String,
-          name: t['name'] as String,
-          roleTitle: (t['role_title'] ?? t['roleTitle']) as String? ?? 'Detail Specialist',
-          avatarUrl: (t['avatar_url'] ?? t['avatarUrl']) as String? ?? '',
-          rating: (t['rating'] as num?)?.toDouble() ?? 5.0,
-          completedJobsCount: (t['completed_jobs_count'] ?? t['completedJobsCount']) as int? ?? 0,
-          isAvailable: (t['is_available'] ?? t['isAvailable']) as bool? ?? true,
-          isFounder: (t['is_founder'] ?? t['isFounder']) as bool? ?? false,
-          customWeeklySchedule: schedule,
-          allowedHubSections: allowedSections,
-          canEditInventory: (t['can_edit_inventory'] ?? t['canEditInventory']) as bool? ?? true,
-          canViewPricing: (t['can_view_pricing'] ?? t['canViewPricing']) as bool? ?? true,
-          canManageTeam: (t['can_manage_team'] ?? t['canManageTeam']) as bool? ?? false,
-          canViewAllTeamCalendar: (t['can_view_all_team_calendar'] ?? t['canViewAllTeamCalendar']) as bool? ?? true,
-          email: t['email'] as String?,
-          pin: t['pin'] as String?,
-          password: t['password'] as String?,
-          inviteToken: (t['invite_token'] ?? t['inviteToken']) as String? ?? cleanToken,
-          inviteStatus: (t['invite_status'] ?? t['inviteStatus']) as String? ?? 'pending',
-          inviteSentAt: (t['invite_sent_at'] ?? t['inviteSentAt']) != null
-              ? DateTime.tryParse((t['invite_sent_at'] ?? t['inviteSentAt']) as String)
-              : null,
-        );
-
-        return (member: member, studioId: studioId);
-      }
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error in acceptStaffInviteOnServer: $e');
     }
     return null;
   }

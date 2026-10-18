@@ -2873,22 +2873,11 @@ class JobRepository extends ChangeNotifier {
     var cleanToken = token.trim();
     final cleanPass = password.trim();
 
-    String? parsedMemberId = Uri.base.queryParameters['memberId'];
-    String? parsedStudioId = Uri.base.queryParameters['studioId'];
-    String? parsedName = Uri.base.queryParameters['name'];
-    String? parsedRole = Uri.base.queryParameters['role'];
-    String? parsedEmail = Uri.base.queryParameters['email'];
-
-    // If user pasted a full URL into the token box, extract its query parameters
+    // If user pasted the full invite URL into the input box, extract only the `token` parameter
     if (cleanToken.contains('http://') || cleanToken.contains('https://') || cleanToken.contains('token=')) {
       final uri = Uri.tryParse(cleanToken);
       if (uri != null) {
         cleanToken = uri.queryParameters['token'] ?? uri.queryParameters['invite'] ?? cleanToken;
-        parsedMemberId ??= uri.queryParameters['memberId'];
-        parsedStudioId ??= uri.queryParameters['studioId'];
-        parsedName ??= uri.queryParameters['name'];
-        parsedRole ??= uri.queryParameters['role'];
-        parsedEmail ??= uri.queryParameters['email'];
       }
     }
 
@@ -2899,90 +2888,48 @@ class JobRepository extends ChangeNotifier {
       return (success: false, error: 'Password must be at least 6 characters.', member: null);
     }
 
-    bool matchesToken(TeamMember m) {
-      return m.inviteToken == cleanToken ||
-          m.id == cleanToken ||
-          (parsedMemberId != null && parsedMemberId.isNotEmpty && m.id == parsedMemberId) ||
-          (parsedEmail != null && parsedEmail.isNotEmpty && m.email?.toLowerCase() == parsedEmail.toLowerCase());
+    TeamMember? matchedMember;
+
+    // 1. Server-authoritative verification via Supabase SECURITY DEFINER RPC (accept_staff_invite_rpc)
+    try {
+      final cloudRes = await SupabaseDbService.acceptStaffInviteOnServer(
+        token: cleanToken,
+        newPassword: cleanPass,
+      );
+      if (cloudRes != null) {
+        matchedMember = cloudRes.member;
+        final studioProfile = await SupabaseDbService.fetchUserProfile(cloudRes.studioId);
+        if (studioProfile != null) {
+          final hasMember = studioProfile.teamMembers.any((m) => m.id == matchedMember!.id);
+          _currentUser = hasMember
+              ? studioProfile
+              : studioProfile.copyWith(teamMembers: [...studioProfile.teamMembers, matchedMember]);
+        } else {
+          _currentUser = _currentUser.copyWith(
+            id: cloudRes.studioId,
+            role: UserRole.detailer,
+            teamMembers: [matchedMember],
+          );
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print('[JobRepository] Server invite verification error: $e');
     }
 
-    // 1. Search in _currentUser.teamMembers
-    TeamMember? matchedMember = _currentUser.teamMembers.where(matchesToken).firstOrNull;
+    // 2. Same-device local state check (when owner/staff test on the same device or offline)
+    matchedMember ??= _currentUser.teamMembers
+        .where((m) => m.inviteToken == cleanToken || m.id == cleanToken)
+        .firstOrNull;
 
-    // 2. Search in local storage team members
     if (matchedMember == null) {
       final cachedMembers = await LocalStorageService.loadTeamMembers();
-      matchedMember = cachedMembers.where(matchesToken).firstOrNull;
+      matchedMember = cachedMembers
+          .where((m) => m.inviteToken == cleanToken || m.id == cleanToken)
+          .firstOrNull;
       if (matchedMember != null) {
         final exists = _currentUser.teamMembers.any((m) => m.id == matchedMember!.id);
         if (!exists) {
           _currentUser = _currentUser.copyWith(teamMembers: [..._currentUser.teamMembers, matchedMember]);
-        }
-      }
-    }
-
-    // 3. Search in cloud Supabase team members
-    if (matchedMember == null) {
-      try {
-        final cloudRes = await SupabaseDbService.findStaffMemberByInviteToken(cleanToken);
-        if (cloudRes != null) {
-          matchedMember = cloudRes.member;
-          final studioProfile = await SupabaseDbService.fetchUserProfile(cloudRes.studioId);
-          if (studioProfile != null) {
-            final hasMember = studioProfile.teamMembers.any((m) => m.id == matchedMember!.id);
-            _currentUser = hasMember
-                ? studioProfile
-                : studioProfile.copyWith(teamMembers: [...studioProfile.teamMembers, matchedMember]);
-          } else {
-            _currentUser = _currentUser.copyWith(
-              id: cloudRes.studioId,
-              role: UserRole.detailer,
-              teamMembers: [matchedMember],
-            );
-          }
-        }
-      } catch (e) {
-        if (kDebugMode) print('[JobRepository] Cloud token lookup error: $e');
-      }
-    }
-
-    // 4. Fallback: Reconstruct from verified Supabase Auth magic-link session or self-contained invite link
-    if (matchedMember == null) {
-      final authUser = SupabaseAuthService.currentAuthUser;
-      final metaToken = authUser?.userMetadata?['staff_invite_token'] as String?;
-      final metaName = authUser?.userMetadata?['display_name'] as String?;
-      final isVerifiedAuthInvite = metaToken != null && metaToken.trim() == cleanToken;
-
-      if (isVerifiedAuthInvite || (parsedMemberId != null && parsedName != null)) {
-        final targetStudioId = parsedStudioId ?? _currentUser.id;
-        if (parsedStudioId != null && parsedStudioId.isNotEmpty) {
-          try {
-            final studioProfile = await SupabaseDbService.fetchUserProfile(parsedStudioId);
-            if (studioProfile != null) {
-              _currentUser = studioProfile;
-              matchedMember = studioProfile.teamMembers.where(matchesToken).firstOrNull;
-            }
-          } catch (_) {}
-        }
-
-        matchedMember ??= TeamMember(
-          id: parsedMemberId ?? 'team_${DateTime.now().millisecondsSinceEpoch}',
-          name: parsedName ?? metaName ?? 'Staff Member',
-          roleTitle: parsedRole ?? 'Detail Specialist',
-          avatarUrl: '',
-          email: parsedEmail ?? authUser?.email,
-          inviteToken: cleanToken,
-          inviteStatus: 'accepted',
-          allowedHubSections: TeamMember.defaultStaffHubSections,
-        );
-
-        final exists = _currentUser.teamMembers.any((m) => m.id == matchedMember!.id);
-        if (!exists) {
-          _currentUser = _currentUser.copyWith(
-            id: targetStudioId,
-            role: UserRole.detailer,
-            teamMembers: [..._currentUser.teamMembers, matchedMember],
-          );
         }
       }
     }
@@ -3000,13 +2947,12 @@ class JobRepository extends ChangeNotifier {
       await SupabaseAuthService.updateUserPassword(cleanPass);
     }
 
-    // Update member password and accept status
+    // Update member status to accepted (clear one-time inviteToken locally)
     final updatedMember = matchedMember.copyWith(
       password: cleanPass,
       inviteStatus: 'accepted',
     );
     updateTeamMember(updatedMember);
-    await SupabaseDbService.saveTeamMember(_currentUser.id, updatedMember);
 
     // Automatically log in as the staff member into My Studio
     _activeTeamMemberId = updatedMember.id;
