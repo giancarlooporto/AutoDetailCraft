@@ -5277,34 +5277,66 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   }
 
   Widget _buildOwnerLockShield(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final viewInsets = MediaQuery.viewInsetsOf(context);
+    final isCompactPhone = size.width < 600;
+    final isTablet = size.width >= 600 && size.width < 1024;
+    final double modalMaxWidth = isCompactPhone ? 380 : (isTablet ? 540 : 560);
+    final EdgeInsets modalPadding = isCompactPhone
+        ? const EdgeInsets.symmetric(horizontal: 16, vertical: 18)
+        : (isTablet
+            ? const EdgeInsets.symmetric(horizontal: 28, vertical: 26)
+            : const EdgeInsets.symmetric(horizontal: 32, vertical: 28));
+
     return Scaffold(
       backgroundColor: AppTheme.background,
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 420),
-            padding: const EdgeInsets.all(32),
-            decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: AppTheme.primary.withAlpha(100), width: 1.5),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withAlpha(180),
-                  blurRadius: 30,
-                  offset: const Offset(0, 10),
-                ),
-                BoxShadow(
-                  color: AppTheme.primary.withAlpha(30),
-                  blurRadius: 40,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-            child: _OwnerLockShieldContent(
-              repository: widget.repository,
-              onUnlocked: () => setState(() {}),
+      body: SafeArea(
+        child: AnimatedPadding(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.only(
+            left: isCompactPhone ? 12 : 24,
+            right: isCompactPhone ? 12 : 24,
+            top: isCompactPhone ? 8 : 16,
+            bottom: (isCompactPhone ? 8 : 16) + (viewInsets.bottom > 0 ? 4 : 0),
+          ),
+          child: Center(
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: modalMaxWidth,
+                maxHeight: (size.height - viewInsets.bottom - 24).clamp(320.0, 760.0),
+              ),
+              padding: modalPadding,
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(isCompactPhone ? 18 : 24),
+                border: Border.all(color: AppTheme.primary.withAlpha(100), width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(180),
+                    blurRadius: 30,
+                    offset: const Offset(0, 10),
+                  ),
+                  BoxShadow(
+                    color: AppTheme.primary.withAlpha(30),
+                    blurRadius: 40,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: _OwnerLockShieldContent(
+                repository: widget.repository,
+                isCompactPhone: isCompactPhone,
+                isTablet: isTablet,
+                onUnlocked: () {
+                  setState(() {
+                    final activeMember = widget.repository.activeTeamMember;
+                    if (activeMember != null && !activeMember.isSectionAllowed(_selectedHub.name)) {
+                      _selectedHub = _visibleHubSections.first;
+                    }
+                  });
+                },
+              ),
             ),
           ),
         ),
@@ -8248,10 +8280,14 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 class _OwnerLockShieldContent extends StatefulWidget {
   final JobRepository repository;
   final VoidCallback onUnlocked;
+  final bool isCompactPhone;
+  final bool isTablet;
 
   const _OwnerLockShieldContent({
     required this.repository,
     required this.onUnlocked,
+    this.isCompactPhone = false,
+    this.isTablet = false,
   });
 
   @override
@@ -8261,7 +8297,10 @@ class _OwnerLockShieldContent extends StatefulWidget {
 class _OwnerLockShieldContentState extends State<_OwnerLockShieldContent> {
   final _pinController = TextEditingController();
   final _focusNode = FocusNode();
+  final _teamScrollController = ScrollController();
+  String _selectedProfileId = 'admin'; // 'admin' or TeamMember.id
   String? _errorMessage;
+  bool _verifying = false;
 
   @override
   void initState() {
@@ -8275,69 +8314,274 @@ class _OwnerLockShieldContentState extends State<_OwnerLockShieldContent> {
   void dispose() {
     _pinController.dispose();
     _focusNode.dispose();
+    _teamScrollController.dispose();
     super.dispose();
   }
 
-  bool _verifying = false;
+  void _selectProfile(String profileId) {
+    setState(() {
+      _selectedProfileId = profileId;
+      _errorMessage = null;
+      _pinController.clear();
+    });
+    _focusNode.requestFocus();
+  }
 
   Future<void> _verifyPin(String pin) async {
-    if (_verifying) return;
+    if (_verifying || pin.trim().length != 4) return;
     setState(() => _verifying = true);
-    final res = await widget.repository.unlockOwnerView(pin);
-    if (!mounted) return;
-    if (res.ok) {
-      _verifying = false;
-      widget.onUnlocked();
-    } else {
-      setState(() {
+
+    if (_selectedProfileId == 'admin') {
+      final res = await widget.repository.unlockOwnerModeWithPin(pin);
+      if (!mounted) return;
+      if (res.ok) {
         _verifying = false;
-        _errorMessage = res.message;
-        _pinController.clear();
-      });
-      _focusNode.requestFocus();
+        widget.onUnlocked();
+      } else {
+        setState(() {
+          _verifying = false;
+          _errorMessage = res.message;
+          _pinController.clear();
+        });
+        _focusNode.requestFocus();
+      }
+    } else {
+      final ok = widget.repository.unlockAsTeamMemberWithPin(_selectedProfileId, pin);
+      if (!mounted) return;
+      if (ok) {
+        _verifying = false;
+        widget.onUnlocked();
+      } else {
+        setState(() {
+          _verifying = false;
+          _errorMessage = 'Incorrect PIN. Try again.';
+          _pinController.clear();
+        });
+        _focusNode.requestFocus();
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final user = widget.repository.currentUser;
+    final studioName = user.businessName.trim().isNotEmpty
+        ? user.businessName.trim()
+        : user.displayName;
+    final members = user.teamMembers;
     final pin = _pinController.text;
+    final isAdminSelected = _selectedProfileId == 'admin';
+    final selectedMember = isAdminSelected
+        ? null
+        : members.where((m) => m.id == _selectedProfileId).firstOrNull;
+
+    final int crossAxisCount = widget.isCompactPhone ? 2 : 3;
+    final double tileHeight = widget.isCompactPhone ? 44 : 50;
+    final double gridSpacing = widget.isCompactPhone ? 8 : 10;
+    // Fits 3 full rows (9 staff on iPad/Desktop, 6 on compact iPhone) without scrolling;
+    // 10+ staff scrolls inside the Team container only.
+    final double maxTeamGridHeight = (tileHeight * 3) + (gridSpacing * 2);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Container(
-          width: 68,
-          height: 68,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppTheme.primary.withAlpha(30),
-            border: Border.all(color: AppTheme.primary, width: 2),
-            boxShadow: [
-              BoxShadow(color: AppTheme.primary.withAlpha(50), blurRadius: 16),
-            ],
-          ),
-          child: const Icon(Icons.shield_rounded, size: 36, color: AppTheme.primary),
+        // --- PINNED HEADER: Lock Icon + Studio Business Name ---
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: EdgeInsets.all(widget.isCompactPhone ? 7 : 9),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppTheme.primary.withAlpha(28),
+                border: Border.all(color: AppTheme.primary, width: 1.5),
+              ),
+              child: Icon(
+                Icons.lock_rounded,
+                size: widget.isCompactPhone ? 18 : 22,
+                color: AppTheme.primary,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                studioName,
+                style: TextStyle(
+                  fontSize: widget.isCompactPhone ? 17 : 21,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  letterSpacing: 0.4,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 18),
-        const Text(
-          'Owner Mode Locked',
+        SizedBox(height: widget.isCompactPhone ? 12 : 16),
+
+        // --- PINNED ADMIN BUTTON (Centered) ---
+        Center(
+          child: InkWell(
+            key: const ValueKey('lock_profile_admin'),
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => _selectProfile('admin'),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: EdgeInsets.symmetric(
+                horizontal: widget.isCompactPhone ? 22 : 28,
+                vertical: widget.isCompactPhone ? 10 : 12,
+              ),
+              decoration: BoxDecoration(
+                color: isAdminSelected
+                    ? AppTheme.primary.withAlpha(38)
+                    : AppTheme.surfaceLight,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isAdminSelected ? AppTheme.primary : AppTheme.border,
+                  width: isAdminSelected ? 2 : 1,
+                ),
+                boxShadow: isAdminSelected
+                    ? [BoxShadow(color: AppTheme.primary.withAlpha(60), blurRadius: 12)]
+                    : null,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.shield_rounded,
+                    size: widget.isCompactPhone ? 16 : 18,
+                    color: isAdminSelected ? AppTheme.primary : AppTheme.textSecondary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Admin',
+                    style: TextStyle(
+                      fontSize: widget.isCompactPhone ? 13.5 : 15,
+                      fontWeight: FontWeight.bold,
+                      color: isAdminSelected ? AppTheme.primary : Colors.white,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        // --- TEAM SECTION (Scrolls internally only if > 9 staff) ---
+        if (members.isNotEmpty) ...[
+          SizedBox(height: widget.isCompactPhone ? 14 : 18),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Team',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textSecondary,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Flexible(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxTeamGridHeight),
+              child: Scrollbar(
+                controller: _teamScrollController,
+                thumbVisibility: members.length > (crossAxisCount * 3),
+                child: GridView.builder(
+                  controller: _teamScrollController,
+                  shrinkWrap: true,
+                  physics: members.length > (crossAxisCount * 3)
+                      ? const ClampingScrollPhysics()
+                      : const NeverScrollableScrollPhysics(),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: crossAxisCount,
+                    mainAxisExtent: tileHeight,
+                    crossAxisSpacing: gridSpacing,
+                    mainAxisSpacing: gridSpacing,
+                  ),
+                  itemCount: members.length,
+                  itemBuilder: (ctx, idx) {
+                    final m = members[idx];
+                    final isSelected = _selectedProfileId == m.id;
+                    return InkWell(
+                      key: ValueKey('lock_profile_${m.id}'),
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => _selectProfile(m.id),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? AppTheme.primary.withAlpha(35)
+                              : AppTheme.surfaceLight,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isSelected ? AppTheme.primary : AppTheme.border,
+                            width: isSelected ? 2 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: widget.isCompactPhone ? 12 : 14,
+                              backgroundColor: isSelected
+                                  ? AppTheme.primary
+                                  : AppTheme.primary.withAlpha(30),
+                              child: Text(
+                                m.name.isNotEmpty ? m.name[0].toUpperCase() : 'T',
+                                style: TextStyle(
+                                  fontSize: widget.isCompactPhone ? 11 : 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: isSelected ? Colors.black : AppTheme.primary,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                m.name,
+                                style: TextStyle(
+                                  fontSize: widget.isCompactPhone ? 12 : 13,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                  color: isSelected ? AppTheme.primary : Colors.white,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ],
+
+        SizedBox(height: widget.isCompactPhone ? 16 : 22),
+
+        // --- PINNED FOOTER: Selected Target + 4-Digit Auto-Login Input ---
+        Text(
+          isAdminSelected
+              ? 'Enter 4-digit PIN for Admin'
+              : 'Enter 4-digit PIN for ${selectedMember?.name ?? ''}',
           style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-            letterSpacing: 0.5,
+            fontSize: widget.isCompactPhone ? 11.5 : 12.5,
+            color: AppTheme.textSecondary,
+            fontWeight: FontWeight.w500,
           ),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 8),
-        const Text(
-          'Financial figures, gross revenue, and business administration are shielded from staff peek.',
-          style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary, height: 1.4),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 10),
 
         // PIN Indicator Dots
         Row(
@@ -8345,9 +8589,9 @@ class _OwnerLockShieldContentState extends State<_OwnerLockShieldContent> {
           children: List.generate(4, (index) {
             final isFilled = index < pin.length;
             return Container(
-              margin: const EdgeInsets.symmetric(horizontal: 8),
-              width: 16,
-              height: 16,
+              margin: const EdgeInsets.symmetric(horizontal: 7),
+              width: widget.isCompactPhone ? 13 : 15,
+              height: widget.isCompactPhone ? 13 : 15,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: isFilled ? AppTheme.primary : AppTheme.surfaceLight,
@@ -8362,11 +8606,11 @@ class _OwnerLockShieldContentState extends State<_OwnerLockShieldContent> {
             );
           }),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
 
-        // Text field for numeric input
+        // 4-Digit Input Box (Auto-verifies & logs in immediately on 4th digit)
         SizedBox(
-          width: 220,
+          width: widget.isCompactPhone ? 190 : 220,
           child: TextField(
             controller: _pinController,
             focusNode: _focusNode,
@@ -8375,16 +8619,30 @@ class _OwnerLockShieldContentState extends State<_OwnerLockShieldContent> {
             maxLength: 4,
             obscureText: true,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 22, letterSpacing: 10, fontWeight: FontWeight.bold, color: Colors.white),
+            style: TextStyle(
+              fontSize: widget.isCompactPhone ? 20 : 22,
+              letterSpacing: 10,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
             decoration: InputDecoration(
               counterText: '',
-              hintText: 'Enter 4-digit PIN',
-              hintStyle: const TextStyle(fontSize: 12, letterSpacing: 0, color: AppTheme.textMuted),
+              hintText: '••••',
+              hintStyle: const TextStyle(fontSize: 18, letterSpacing: 8, color: AppTheme.textMuted),
               filled: true,
               fillColor: AppTheme.surfaceLight,
-              contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.border)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primary, width: 2)),
+              contentPadding: EdgeInsets.symmetric(
+                vertical: widget.isCompactPhone ? 8 : 10,
+                horizontal: 16,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppTheme.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppTheme.primary, width: 2),
+              ),
             ),
             onChanged: (val) {
               setState(() {
@@ -8406,114 +8664,7 @@ class _OwnerLockShieldContentState extends State<_OwnerLockShieldContent> {
             textAlign: TextAlign.center,
           ),
         ],
-
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primary,
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            icon: const Icon(Icons.lock_open_rounded, size: 16),
-            label: const Text('Unlock Owner Mode', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            onPressed: () => _verifyPin(_pinController.text),
-          ),
-        ),
-
-        const SizedBox(height: 20),
-        const Row(
-          children: [
-            Expanded(child: Divider(color: AppTheme.border)),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 10),
-              child: Text('OR SWITCH OPERATING MODE', style: TextStyle(fontSize: 9.5, color: AppTheme.textMuted, fontWeight: FontWeight.bold)),
-            ),
-            Expanded(child: Divider(color: AppTheme.border)),
-          ],
-        ),
-        const SizedBox(height: 16),
-
-        if (user.teamMembers.isNotEmpty) ...[
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.amber,
-                side: BorderSide(color: Colors.amber.withAlpha(120)),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              icon: const Icon(Icons.badge_outlined, size: 16),
-              label: const Text('Switch to Staff / Kiosk Mode', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-              onPressed: () => _showStaffPicker(context),
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
-
-        SizedBox(
-          width: double.infinity,
-          child: TextButton.icon(
-            style: TextButton.styleFrom(
-              foregroundColor: AppTheme.textSecondary,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-            ),
-            icon: const Icon(Icons.directions_car_rounded, size: 15),
-            label: const Text('Switch to Client Garage', style: TextStyle(fontSize: 12)),
-            onPressed: () => widget.repository.toggleHostMode(targetRole: UserRole.client),
-          ),
-        ),
-
-        const SizedBox(height: 8),
-        const Text(
-          '5 failed attempts locks the PIN for 15 minutes.',
-          style: TextStyle(fontSize: 10.5, color: AppTheme.textMuted),
-          textAlign: TextAlign.center,
-        ),
       ],
-    );
-  }
-
-  void _showStaffPicker(BuildContext context) {
-    final members = widget.repository.currentUser.teamMembers;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Select Team Member', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-              const SizedBox(height: 4),
-              const Text('Switch into restricted staff view to log tasks and check schedules.', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-              const SizedBox(height: 12),
-              ...members.map((m) => ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: AppTheme.primary.withAlpha(30),
-                  child: Text(m.name.isNotEmpty ? m.name[0] : 'S', style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold)),
-                ),
-                title: Text(m.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                subtitle: Text(m.roleTitle, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-                trailing: const Icon(Icons.chevron_right, color: AppTheme.textMuted),
-                onTap: () {
-                  Navigator.of(ctx).pop();
-                  widget.repository.setActiveTeamMember(m.id);
-                  widget.onUnlocked();
-                },
-              )),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

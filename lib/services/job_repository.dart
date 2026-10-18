@@ -2673,6 +2673,24 @@ class JobRepository extends ChangeNotifier {
     return result;
   }
 
+  /// Verifies a team member's 4-digit PIN from the workstation lock modal and unlocks into their restricted view.
+  bool unlockAsTeamMemberWithPin(String memberId, String pin) {
+    final cleanPin = pin.trim();
+    if (cleanPin.length != 4) return false;
+    final member = _currentUser.teamMembers.where((m) => m.id == memberId).firstOrNull;
+    if (member == null) return false;
+    final expectedPin = member.pin?.trim() ?? '';
+    if (expectedPin.isEmpty || expectedPin != cleanPin) {
+      return false;
+    }
+    _isOwnerLocked = false;
+    _activeTeamMemberId = member.id;
+    LocalStorageService.saveIsOwnerLocked(false);
+    LocalStorageService.saveActiveTeamMemberId(member.id);
+    notifyListeners();
+    return true;
+  }
+
   Future<void> setOwnerAutoLockMinutes(int minutes) async {
     _ownerAutoLockMinutes = minutes;
     await LocalStorageService.saveOwnerAutoLockMinutes(minutes);

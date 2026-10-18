@@ -4561,43 +4561,53 @@ void main() {
 
     expect(repo.isOwnerLocked, isTrue);
 
-    // VERIFY: Owner Privacy Shield is active
-    expect(find.text('Owner Mode Locked'), findsOneWidget);
-    expect(find.textContaining('Financial figures, gross revenue, and business administration are shielded'), findsOneWidget);
-    expect(find.text('Unlock Owner Mode'), findsOneWidget);
+    // VERIFY: Studio Lock Modal displays Business Name, centered Admin button, and Team grid (names only)
+    expect(find.text(repo.currentUser.businessName), findsOneWidget);
+    expect(find.text('Admin'), findsOneWidget);
+    expect(find.text('Team'), findsOneWidget);
+    expect(find.text('Leo Ortiz'), findsOneWidget);
+    expect(find.text('Apprentice Detailer'), findsNothing); // No profession/role on lock modal
+    expect(find.text('Switch to Client Garage'), findsNothing);
+    expect(find.text('Unlock Owner Mode'), findsNothing); // Auto-logs in on 4th digit
     expect(find.textContaining('Default PIN'), findsNothing);
 
-    // 5. Test unlocking with wrong PIN (shows remaining attempts)
+    // 5. Test Admin auto-login with wrong 4-digit PIN (clears & shows error immediately)
     await tester.enterText(find.byType(TextField).last, '1111');
-    await tester.tap(find.text('Unlock Owner Mode'));
     await tester.pumpAndSettle();
 
     expect(repo.isOwnerLocked, isTrue);
     expect(find.textContaining('Incorrect PIN'), findsOneWidget);
 
-    // 6. Test unlocking with correct custom PIN (9876)
+    // 6. Test Admin auto-login with correct 4-digit PIN (9876) -> logs in immediately on 4th digit
     await tester.enterText(find.byType(TextField).last, '9876');
-    await tester.tap(find.text('Unlock Owner Mode'));
     await tester.pumpAndSettle();
 
     expect(repo.isOwnerLocked, isFalse);
     expect(find.text('Owner Mode'), findsOneWidget);
 
-    // 7. Test locking again and switching to Staff Kiosk Mode
+    // 7. Test locking again and clicking Team member (Leo Ortiz) -> requires Leo's 4-digit PIN (5555)
     repo.lockOwnerView();
     await tester.pumpAndSettle();
-    expect(find.text('Owner Mode Locked'), findsOneWidget);
+    expect(find.text('Admin'), findsOneWidget);
+    expect(find.text('Team'), findsOneWidget);
 
-    // Tap "Switch to Staff / Kiosk Mode"
-    await tester.tap(find.text('Switch to Staff / Kiosk Mode'));
+    // Click Leo Ortiz tile under Team
+    await tester.tap(find.byKey(const ValueKey('lock_profile_staff_leo')));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter 4-digit PIN for Leo Ortiz'), findsOneWidget);
+
+    // Enter wrong PIN for Leo first
+    await tester.enterText(find.byType(TextField).last, '0000');
+    await tester.pumpAndSettle();
+    expect(repo.isOwnerLocked, isTrue);
+    expect(find.text('Incorrect PIN. Try again.'), findsOneWidget);
+
+    // Enter Leo's correct 4-digit PIN (5555) -> logs in immediately into restricted Staff View
+    await tester.enterText(find.byType(TextField).last, '5555');
     await tester.pumpAndSettle();
 
-    // Pick Leo Ortiz
-    expect(find.text('Select Team Member'), findsOneWidget);
-    await tester.tap(find.text('Leo Ortiz'));
-    await tester.pumpAndSettle();
-
-    // Verify now in Staff View
+    // Verify now in Staff View as Leo Ortiz
+    expect(repo.isOwnerLocked, isFalse);
     expect(repo.isViewingAsTeamMember, isTrue);
     expect(repo.activeTeamMemberId, equals('staff_leo'));
     expect(find.text('Back to Owner'), findsOneWidget);
