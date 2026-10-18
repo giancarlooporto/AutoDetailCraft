@@ -107,7 +107,7 @@ class TeamMember {
       (password != null && password!.trim().isNotEmpty) || inviteStatus == 'accepted';
 
   String getInviteLink({String? studioId}) =>
-      'https://autodetailcraft.pages.dev/?token=${inviteToken ?? id}&email=${Uri.encodeComponent(email ?? '')}';
+      'https://www.autodetailcraft.com/?token=${inviteToken ?? id}&email=${Uri.encodeComponent(email ?? '')}';
 
   Map<String, dynamic> toJson() {
     return {
