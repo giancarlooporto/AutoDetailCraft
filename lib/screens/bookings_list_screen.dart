@@ -573,7 +573,7 @@ class BookingsListScreen extends StatelessWidget {
         final isLoggedIn = repository.isLoggedIn;
         final allBookings = repository.bookings;
 
-        if (allBookings.isEmpty && !isLoggedIn) {
+        if (!isLoggedIn) {
           return Scaffold(
             appBar: AppBar(
               title: const Text('Appointments & Bookings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),

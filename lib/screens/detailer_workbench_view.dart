@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
@@ -100,6 +102,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   // Responsive state
   bool _isFocusMode = false;
   int _mobileStep = 0; // 0 = Hub (Pane 1), 1 = List (Pane 2), 2 = Inspector (Pane 3)
+  Timer? _autoLockTimer;
 
   @override
   void initState() {
@@ -113,6 +116,28 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     }
     widget.repository.addListener(_onRepoChanged);
     _ensureSelection();
+    _startAutoLockTimer();
+  }
+
+  void _startAutoLockTimer() {
+    _autoLockTimer?.cancel();
+    final minutes = widget.repository.ownerAutoLockMinutes;
+    if (minutes <= 0) return;
+    _autoLockTimer = Timer(Duration(minutes: minutes), () {
+      if (mounted &&
+          !widget.repository.isOwnerLocked &&
+          !widget.repository.isViewingAsTeamMember &&
+          !widget.repository.isStaffSession &&
+          widget.repository.isDetailerWorkbenchMode) {
+        widget.repository.lockOwnerView();
+      }
+    });
+  }
+
+  void _resetAutoLockTimer() {
+    if (widget.repository.ownerAutoLockMinutes > 0) {
+      _startAutoLockTimer();
+    }
   }
 
   Future<void> _loadSavedHubSection() async {
@@ -140,6 +165,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
   @override
   void dispose() {
+    _autoLockTimer?.cancel();
     widget.repository.removeListener(_onRepoChanged);
     super.dispose();
   }
@@ -149,6 +175,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       setState(() {
         _ensureSelection();
       });
+      _startAutoLockTimer();
     }
   }
 
@@ -264,7 +291,16 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         break;
       case StudioHubSection.teams:
         if (!_canManageTeam) return;
-        AddTeamMemberDialog.show(context, repository: widget.repository);
+        AddTeamMemberDialog.show(
+          context,
+          repository: widget.repository,
+          onMemberAdded: (newMember) {
+            setState(() {
+              _selectedTeamMemberId = newMember.id;
+              if (isMobile) _mobileStep = 2;
+            });
+          },
+        );
         break;
       case StudioHubSection.portfolio:
         CreateJobScreen.show(
@@ -3116,6 +3152,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           _buildInfoSection(title: 'SERVICE RADIUS & LOCATIONS', content: '${user.location} • ${user.serviceRadius}', icon: Icons.location_on_outlined),
           const SizedBox(height: 14),
           _buildInfoSection(title: 'CONTACT & SOCIAL', content: 'Phone: ${user.phone.isNotEmpty ? user.phone : "Not provided"} • IG: ${user.instagramHandle}', icon: Icons.phone_outlined),
+          const SizedBox(height: 16),
+          _buildOwnerSecurityCard(context),
         ],
       );
     }
@@ -3258,16 +3296,22 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.pin_rounded, size: 16, color: AppTheme.primary),
-                  SizedBox(width: 8),
-                  Text(
-                    'STAFF LOGIN CREDENTIALS',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
-                  ),
-                ],
+              const Expanded(
+                child: Row(
+                  children: [
+                    Icon(Icons.badge_outlined, size: 16, color: AppTheme.primary),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'STAFF CREDENTIALS',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               if (canManage)
                 InkWell(
                   borderRadius: BorderRadius.circular(6),
@@ -3355,7 +3399,353 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          // Account & Invitation Status Banner
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: member.isStaffAccountActive
+                  ? Colors.green.withAlpha(20)
+                  : Colors.amber.withAlpha(20),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: member.isStaffAccountActive
+                    ? Colors.green.withAlpha(80)
+                    : Colors.amber.withAlpha(80),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Icon(
+                            member.isStaffAccountActive
+                                ? Icons.check_circle_rounded
+                                : Icons.mark_email_unread_rounded,
+                            size: 14,
+                            color: member.isStaffAccountActive ? Colors.greenAccent : Colors.amberAccent,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              member.isStaffAccountActive
+                                  ? 'Staff Account Active & Configured'
+                                  : 'Staff Password Setup Pending',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: member.isStaffAccountActive ? Colors.greenAccent : Colors.amberAccent,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (member.isStaffAccountActive && canManage) ...[
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () => _showStaffAcceptInviteDialog(context, member),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.greenAccent.withAlpha(25),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.greenAccent.withAlpha(80)),
+                          ),
+                          child: const Text('Reset Password', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.greenAccent)),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (!member.isStaffAccountActive) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    member.email != null && member.email!.isNotEmpty
+                        ? 'An automated invitation email was dispatched to ${member.email}. Staff can use the secure link below to set their personal password.'
+                        : 'Assign an email address to dispatch an automated invitation link, or set their password now directly.',
+                    style: const TextStyle(fontSize: 10.5, color: AppTheme.textSecondary),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surface,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Text(
+                      member.getInviteLink(),
+                      style: const TextStyle(fontSize: 10, color: AppTheme.textMuted, fontFamily: 'monospace'),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (canManage)
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                          icon: const Icon(Icons.key_rounded, size: 13),
+                          label: const Text('Set Password Now'),
+                          onPressed: () => _showStaffAcceptInviteDialog(context, member),
+                        ),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.primary,
+                          side: const BorderSide(color: AppTheme.primary),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                        icon: const Icon(Icons.copy_rounded, size: 13),
+                        label: const Text('Copy Invite Link'),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: member.getInviteLink()));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Row(
+                                children: [
+                                  Icon(Icons.check_circle_rounded, color: AppTheme.primary, size: 16),
+                                  SizedBox(width: 8),
+                                  Text('Invitation link copied to clipboard!'),
+                                ],
+                              ),
+                              duration: Duration(seconds: 2),
+                              backgroundColor: AppTheme.surface,
+                            ),
+                          );
+                        },
+                      ),
+                      if (member.email != null && member.email!.isNotEmpty && canManage)
+                        TextButton.icon(
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppTheme.textMuted,
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            textStyle: const TextStyle(fontSize: 11),
+                          ),
+                          icon: const Icon(Icons.refresh_rounded, size: 13),
+                          label: const Text('Resend Invite'),
+                          onPressed: () async {
+                            await widget.repository.sendStaffInvite(member);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Row(
+                                    children: [
+                                      const Icon(Icons.send_rounded, color: AppTheme.primary, size: 16),
+                                      const SizedBox(width: 8),
+                                      Text('Invitation link resent to ${member.email}!'),
+                                    ],
+                                  ),
+                                  duration: const Duration(seconds: 2),
+                                  backgroundColor: AppTheme.surface,
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  void _showStaffAcceptInviteDialog(BuildContext context, TeamMember member) {
+    final passCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+    String? localError;
+    bool obscure = true;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          return Dialog(
+            backgroundColor: AppTheme.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: AppTheme.border),
+            ),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 420),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primary.withAlpha(25),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.lock_reset_rounded, size: 18, color: AppTheme.primary),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Set Password for ${member.name.split(" ").first}',
+                                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        icon: const Icon(Icons.close_rounded, size: 18, color: AppTheme.textMuted),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(color: AppTheme.border, height: 1),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Configure a personal password for ${member.email ?? member.name} so they can log in directly on any device.',
+                    style: const TextStyle(fontSize: 11.5, color: AppTheme.textSecondary),
+                  ),
+                  const SizedBox(height: 14),
+                  if (localError != null) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withAlpha(25),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.redAccent.withAlpha(100)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline_rounded, size: 14, color: Colors.redAccent),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(localError!, style: const TextStyle(color: Colors.redAccent, fontSize: 11)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  TextField(
+                    controller: passCtrl,
+                    obscureText: obscure,
+                    decoration: InputDecoration(
+                      labelText: 'New Password (min 6 chars)',
+                      hintText: '••••••••',
+                      prefixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                          size: 16,
+                          color: AppTheme.textMuted,
+                        ),
+                        onPressed: () => setDialogState(() => obscure = !obscure),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: confirmCtrl,
+                    obscureText: obscure,
+                    decoration: const InputDecoration(
+                      labelText: 'Confirm Password',
+                      hintText: '••••••••',
+                      prefixIcon: Icon(Icons.lock_outline_rounded, size: 18),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onPressed: () async {
+                          final pass = passCtrl.text.trim();
+                          final confirm = confirmCtrl.text.trim();
+                          if (pass.length < 6) {
+                            setDialogState(() => localError = 'Password must be at least 6 characters.');
+                            return;
+                          }
+                          if (pass != confirm) {
+                            setDialogState(() => localError = 'Passwords do not match.');
+                            return;
+                          }
+                          final res = await widget.repository.acceptStaffInvite(
+                            token: member.inviteToken ?? member.id,
+                            password: pass,
+                          );
+                          if (res.success) {
+                            if (ctx.mounted) Navigator.of(ctx).pop();
+                            if (context.mounted) {
+                              setState(() {});
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Row(
+                                    children: [
+                                      const Icon(Icons.check_circle_rounded, color: AppTheme.primary),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text('Staff password set for ${member.name}! Account is now active.'),
+                                      ),
+                                    ],
+                                  ),
+                                  backgroundColor: AppTheme.surface,
+                                ),
+                              );
+                            }
+                          } else {
+                            setDialogState(() => localError = res.error ?? 'Failed to set password.');
+                          }
+                        },
+                        child: const Text('Save & Activate', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -3390,22 +3780,27 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primary.withAlpha(25),
-                              borderRadius: BorderRadius.circular(8),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primary.withAlpha(25),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.vpn_key_rounded, size: 18, color: AppTheme.primary),
                             ),
-                            child: const Icon(Icons.vpn_key_rounded, size: 18, color: AppTheme.primary),
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            'Edit ${member.name.split(" ").first}\'s Credentials',
-                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
-                          ),
-                        ],
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Edit ${member.name.split(" ").first}\'s Credentials',
+                                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       IconButton(
                         onPressed: () => Navigator.of(ctx).pop(),
@@ -3469,10 +3864,21 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
                         onPressed: () {
+                          final newPin = pinCtrl.text.trim().isNotEmpty ? pinCtrl.text.trim() : null;
+                          final newEmail = emailCtrl.text.trim().isNotEmpty ? emailCtrl.text.trim() : null;
+                          final newPass = passCtrl.text.trim().isNotEmpty ? passCtrl.text.trim() : null;
+                          final token = member.inviteToken ??
+                              (newEmail != null
+                                  ? 'inv_${DateTime.now().millisecondsSinceEpoch}_${member.name.replaceAll(RegExp(r'\s+'), '').toLowerCase()}'
+                                  : null);
+                          final status = newPass != null ? 'accepted' : (newEmail != null ? 'pending' : 'none');
+
                           final updated = member.copyWith(
-                            pin: pinCtrl.text.trim().isNotEmpty ? pinCtrl.text.trim() : null,
-                            email: emailCtrl.text.trim().isNotEmpty ? emailCtrl.text.trim() : null,
-                            password: passCtrl.text.trim().isNotEmpty ? passCtrl.text.trim() : null,
+                            pin: newPin,
+                            email: newEmail,
+                            password: newPass,
+                            inviteToken: token,
+                            inviteStatus: status,
                           );
                           widget.repository.updateTeamMember(updated);
                           Navigator.of(ctx).pop();
@@ -4236,10 +4642,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   onTap: () {
                     if (isStaffSession) {
                       widget.repository.logoutStaffMember();
+                      setState(() {});
                     } else {
-                      widget.repository.setActiveTeamMember(null);
+                      _promptUnlockOwner();
                     }
-                    setState(() {});
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -4248,13 +4654,22 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(color: isStaffSession ? Colors.redAccent.withAlpha(120) : AppTheme.border),
                     ),
-                    child: Text(
-                      isStaffSession ? 'Sign Out' : 'Back to Owner',
-                      style: TextStyle(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.bold,
-                        color: isStaffSession ? Colors.redAccent : AppTheme.primary,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          isStaffSession ? 'Sign Out' : 'Back to Owner',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.bold,
+                            color: isStaffSession ? Colors.redAccent : AppTheme.primary,
+                          ),
+                        ),
+                        if (!isStaffSession) ...[
+                          const SizedBox(width: 3),
+                          const Icon(Icons.lock_rounded, size: 9, color: AppTheme.primary),
+                        ],
+                      ],
                     ),
                   ),
                 ),
@@ -4286,6 +4701,17 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          IconButton(
+            icon: const Icon(Icons.lock_outline_rounded, size: 14, color: AppTheme.primary),
+            tooltip: 'Lock Owner View (Shield Financials)',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: () {
+              widget.repository.lockOwnerView();
+              setState(() {});
+            },
+          ),
+          const SizedBox(width: 4),
           PopupMenuButton<String>(
             tooltip: 'Switch to Team Member View',
             padding: EdgeInsets.zero,
@@ -4298,13 +4724,29 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               ],
             ),
             onSelected: (val) {
-              widget.repository.setActiveTeamMember(val == 'founder' ? null : val);
-              setState(() {});
+              if (val == 'pin_settings') {
+                _showChangeOwnerPinDialog();
+              } else if (val == 'founder') {
+                _promptUnlockOwner();
+              } else {
+                widget.repository.setActiveTeamMember(val);
+                setState(() {});
+              }
             },
             itemBuilder: (ctx) => [
               const PopupMenuItem(
                 value: 'founder',
                 child: Text('Shop Owner (Founder)', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+              const PopupMenuItem(
+                value: 'pin_settings',
+                child: Row(
+                  children: [
+                    Icon(Icons.password_rounded, size: 16, color: AppTheme.textSecondary),
+                    SizedBox(width: 8),
+                    Text('Owner PIN & Security'),
+                  ],
+                ),
               ),
               const PopupMenuDivider(),
               ...user.teamMembers.map((m) => PopupMenuItem(
@@ -4314,6 +4756,403 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _promptUnlockOwner() async {
+    final pinController = TextEditingController();
+    String? errorMessage;
+
+    final unlocked = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) {
+          return AlertDialog(
+            backgroundColor: AppTheme.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: AppTheme.border),
+            ),
+            title: const Row(
+              children: [
+                Icon(Icons.shield_rounded, color: AppTheme.primary, size: 20),
+                SizedBox(width: 8),
+                Text('Owner Mode Access', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Enter your 4-digit Owner Master PIN to return to Shop Owner mode.',
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: pinController,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  maxLength: 4,
+                  obscureText: true,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 24, letterSpacing: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                  decoration: InputDecoration(
+                    counterText: '',
+                    hintText: '••••',
+                    hintStyle: const TextStyle(color: AppTheme.textMuted, letterSpacing: 12),
+                    filled: true,
+                    fillColor: AppTheme.surfaceLight,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.border)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.primary, width: 2)),
+                    errorText: errorMessage,
+                  ),
+                  onSubmitted: (val) {
+                    if (widget.repository.unlockOwnerModeWithPin(val)) {
+                      Navigator.of(dialogCtx).pop(true);
+                    } else {
+                      setDialogState(() {
+                        errorMessage = 'Incorrect PIN. Default is 1234.';
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Default PIN is 1234. Change anytime in Owner Security.',
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogCtx).pop(false),
+                child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () {
+                  if (widget.repository.unlockOwnerModeWithPin(pinController.text)) {
+                    Navigator.of(dialogCtx).pop(true);
+                  } else {
+                    setDialogState(() {
+                      errorMessage = 'Incorrect PIN. Default is 1234.';
+                    });
+                  }
+                },
+                child: const Text('Unlock Owner Mode', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (unlocked == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Switched to Shop Owner Mode.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      setState(() {});
+    }
+  }
+
+  Future<void> _showChangeOwnerPinDialog() async {
+    final currentPinController = TextEditingController();
+    final newPinController = TextEditingController();
+    final confirmPinController = TextEditingController();
+    int selectedMinutes = widget.repository.ownerAutoLockMinutes;
+    String? errorMessage;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) {
+          return AlertDialog(
+            backgroundColor: AppTheme.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: AppTheme.border),
+            ),
+            title: const Row(
+              children: [
+                Icon(Icons.lock_person_rounded, color: AppTheme.primary, size: 20),
+                SizedBox(width: 8),
+                Text('Owner Security & Privacy', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Protect your financial figures, payout accounts, and business controls when leaving devices on the shop floor.',
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Current Owner PIN', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: currentPinController,
+                    keyboardType: TextInputType.number,
+                    maxLength: 4,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      counterText: '',
+                      hintText: 'Enter current PIN (Default: 1234)',
+                      filled: true,
+                      fillColor: AppTheme.surfaceLight,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.border)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.primary)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('New 4-Digit PIN', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: newPinController,
+                    keyboardType: TextInputType.number,
+                    maxLength: 4,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      counterText: '',
+                      hintText: '4-digit numbers only',
+                      filled: true,
+                      fillColor: AppTheme.surfaceLight,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.border)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.primary)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Confirm New PIN', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: confirmPinController,
+                    keyboardType: TextInputType.number,
+                    maxLength: 4,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      counterText: '',
+                      hintText: 'Re-enter 4-digit PIN',
+                      filled: true,
+                      fillColor: AppTheme.surfaceLight,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.border)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.primary)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Auto-Lock on Inactivity', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<int>(
+                    initialValue: selectedMinutes,
+                    dropdownColor: AppTheme.surface,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: AppTheme.surfaceLight,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.border)),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 0, child: Text('Disabled (Manual lock only)', style: TextStyle(color: Colors.white, fontSize: 13))),
+                      DropdownMenuItem(value: 2, child: Text('2 minutes of inactivity', style: TextStyle(color: Colors.white, fontSize: 13))),
+                      DropdownMenuItem(value: 5, child: Text('5 minutes of inactivity (Recommended)', style: TextStyle(color: Colors.white, fontSize: 13))),
+                      DropdownMenuItem(value: 15, child: Text('15 minutes of inactivity', style: TextStyle(color: Colors.white, fontSize: 13))),
+                      DropdownMenuItem(value: 30, child: Text('30 minutes of inactivity', style: TextStyle(color: Colors.white, fontSize: 13))),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setDialogState(() => selectedMinutes = val);
+                      }
+                    },
+                  ),
+                  if (errorMessage != null) ...[
+                    const SizedBox(height: 10),
+                    Text(errorMessage!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogCtx).pop(),
+                child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () async {
+                  final cur = currentPinController.text.trim();
+                  final n = newPinController.text.trim();
+                  final conf = confirmPinController.text.trim();
+
+                  if (n.isNotEmpty || conf.isNotEmpty) {
+                    if (n.length != 4 || int.tryParse(n) == null) {
+                      setDialogState(() => errorMessage = 'New PIN must be exactly 4 digits.');
+                      return;
+                    }
+                    if (n != conf) {
+                      setDialogState(() => errorMessage = 'New PIN and confirmation do not match.');
+                      return;
+                    }
+                    final ok = await widget.repository.setOwnerPin(currentPin: cur, newPin: n);
+                    if (!ok) {
+                      setDialogState(() => errorMessage = 'Current PIN is incorrect.');
+                      return;
+                    }
+                  }
+
+                  await widget.repository.setOwnerAutoLockMinutes(selectedMinutes);
+                  _startAutoLockTimer();
+                  if (dialogCtx.mounted) {
+                    Navigator.of(dialogCtx).pop();
+                  }
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Owner security settings updated.')),
+                    );
+                    setState(() {});
+                  }
+                },
+                child: const Text('Save Security Settings', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildOwnerSecurityCard(BuildContext context) {
+    final repo = widget.repository;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceLight,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.primary.withAlpha(100)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.shield_rounded, size: 18, color: AppTheme.primary),
+                  SizedBox(width: 8),
+                  Text('OWNER SECURITY & SHOP PRIVACY', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.8)),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withAlpha(30),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  repo.hasCustomOwnerPin ? 'Custom PIN Set' : 'Default PIN (1234)',
+                  style: const TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Keep your gross shop revenue, bank payout details, and owner permissions shielded from team members on shared shop workstations.',
+            style: TextStyle(fontSize: 12, color: AppTheme.textSecondary, height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Auto-Lock Inactivity Timer', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                    const SizedBox(height: 2),
+                    Text(
+                      repo.ownerAutoLockMinutes > 0 ? '${repo.ownerAutoLockMinutes} minutes' : 'Disabled (Manual only)',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: AppTheme.border),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                ),
+                icon: const Icon(Icons.settings_rounded, size: 14),
+                label: const Text('Change PIN / Timer', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                onPressed: () => _showChangeOwnerPinDialog(),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                ),
+                icon: const Icon(Icons.lock_rounded, size: 14),
+                label: const Text('Lock View', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                onPressed: () {
+                  repo.lockOwnerView();
+                  setState(() {});
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOwnerLockShield(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.background,
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 420),
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: AppTheme.primary.withAlpha(100), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(180),
+                  blurRadius: 30,
+                  offset: const Offset(0, 10),
+                ),
+                BoxShadow(
+                  color: AppTheme.primary.withAlpha(30),
+                  blurRadius: 40,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: _OwnerLockShieldContent(
+              repository: widget.repository,
+              onUnlocked: () => setState(() {}),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -7164,80 +8003,354 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   // ==========================================
   @override
   Widget build(BuildContext context) {
+    if (widget.repository.isOwnerLocked && !widget.repository.isStaffSession) {
+      return _buildOwnerLockShield(context);
+    }
+
     final visibleHubs = _visibleHubSections;
     if (!visibleHubs.contains(_selectedHub)) {
       _selectedHub = visibleHubs.first;
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isDesktop = constraints.maxWidth >= 768;
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => _resetAutoLockTimer(),
+      onPointerMove: (_) => _resetAutoLockTimer(),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isDesktop = constraints.maxWidth >= 768;
 
-        // Desktop / Large Screen: Multi-column side-by-side view with Focus Mode collapse
-        if (isDesktop) {
-          final pane1Width = constraints.maxWidth < 900
-              ? 180.0
-              : constraints.maxWidth < 1100
-                  ? 210.0
-                  : 240.0;
-          final pane2Width = constraints.maxWidth < 900
-              ? 230.0
-              : constraints.maxWidth < 1100
-                  ? 260.0
-                  : 300.0;
+          // Desktop / Large Screen: Multi-column side-by-side view with Focus Mode collapse
+          if (isDesktop) {
+            final pane1Width = constraints.maxWidth < 900
+                ? 180.0
+                : constraints.maxWidth < 1100
+                    ? 210.0
+                    : 240.0;
+            final pane2Width = constraints.maxWidth < 900
+                ? 230.0
+                : constraints.maxWidth < 1100
+                    ? 260.0
+                    : 300.0;
 
-          return Scaffold(
-            backgroundColor: AppTheme.background,
-            body: Row(
-              children: [
-                if (!_isFocusMode) ...[
-                  // Pane 1: Studio Hub
-                  SizedBox(
-                    width: pane1Width,
-                    child: _buildPane1(context, isMobile: false),
-                  ),
-                  const VerticalDivider(width: 1, color: AppTheme.border),
-
-                  // Pane 2: Subcategory / Item List
-                  SizedBox(
-                    width: pane2Width,
-                    child: _buildPane2(context, isMobile: false),
-                  ),
-                  const VerticalDivider(width: 1, color: AppTheme.border),
-                ],
-
-                // Pane 3: Workspace Canvas / Inspector (Expanded for 100% full screen focus)
-                Expanded(
-                  child: _buildPane3(context, isMobile: false),
-                ),
-              ],
-            ),
-          );
-        }
-
-        // Mobile / Small Screen: Drill-down navigation stack with back buttons
-        return PopScope(
-          canPop: _mobileStep == 0,
-          onPopInvokedWithResult: (didPop, result) {
-            if (!didPop && _mobileStep > 0) {
-              setState(() => _mobileStep--);
-            }
-          },
-          child: Scaffold(
-            backgroundColor: AppTheme.background,
-            body: SafeArea(
-              child: IndexedStack(
-                index: _mobileStep,
+            return Scaffold(
+              backgroundColor: AppTheme.background,
+              body: Row(
                 children: [
-                  _buildPane1(context, isMobile: true),
-                  _buildPane2(context, isMobile: true),
-                  _buildPane3(context, isMobile: true),
+                  if (!_isFocusMode) ...[
+                    // Pane 1: Studio Hub
+                    SizedBox(
+                      width: pane1Width,
+                      child: _buildPane1(context, isMobile: false),
+                    ),
+                    const VerticalDivider(width: 1, color: AppTheme.border),
+
+                    // Pane 2: Subcategory / Item List
+                    SizedBox(
+                      width: pane2Width,
+                      child: _buildPane2(context, isMobile: false),
+                    ),
+                    const VerticalDivider(width: 1, color: AppTheme.border),
+                  ],
+
+                  // Pane 3: Workspace Canvas / Inspector (Expanded for 100% full screen focus)
+                  Expanded(
+                    child: _buildPane3(context, isMobile: false),
+                  ),
                 ],
               ),
+            );
+          }
+
+          // Mobile / Small Screen: Drill-down navigation stack with back buttons
+          return PopScope(
+            canPop: _mobileStep == 0,
+            onPopInvokedWithResult: (didPop, result) {
+              if (!didPop && _mobileStep > 0) {
+                setState(() => _mobileStep--);
+              }
+            },
+            child: Scaffold(
+              backgroundColor: AppTheme.background,
+              body: SafeArea(
+                child: IndexedStack(
+                  index: _mobileStep,
+                  children: [
+                    _buildPane1(context, isMobile: true),
+                    _buildPane2(context, isMobile: true),
+                    _buildPane3(context, isMobile: true),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _OwnerLockShieldContent extends StatefulWidget {
+  final JobRepository repository;
+  final VoidCallback onUnlocked;
+
+  const _OwnerLockShieldContent({
+    required this.repository,
+    required this.onUnlocked,
+  });
+
+  @override
+  State<_OwnerLockShieldContent> createState() => _OwnerLockShieldContentState();
+}
+
+class _OwnerLockShieldContentState extends State<_OwnerLockShieldContent> {
+  final _pinController = TextEditingController();
+  final _focusNode = FocusNode();
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pinController.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _verifyPin(String pin) {
+    if (widget.repository.unlockOwnerView(pin)) {
+      widget.onUnlocked();
+    } else {
+      setState(() {
+        _errorMessage = 'Incorrect PIN. Try 1234 or your custom PIN.';
+        _pinController.clear();
+      });
+      _focusNode.requestFocus();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = widget.repository.currentUser;
+    final pin = _pinController.text;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 68,
+          height: 68,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppTheme.primary.withAlpha(30),
+            border: Border.all(color: AppTheme.primary, width: 2),
+            boxShadow: [
+              BoxShadow(color: AppTheme.primary.withAlpha(50), blurRadius: 16),
+            ],
+          ),
+          child: const Icon(Icons.shield_rounded, size: 36, color: AppTheme.primary),
+        ),
+        const SizedBox(height: 18),
+        const Text(
+          'Owner Mode Locked',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+            letterSpacing: 0.5,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Financial figures, gross revenue, and business administration are shielded from staff peek.',
+          style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary, height: 1.4),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 24),
+
+        // PIN Indicator Dots
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(4, (index) {
+            final isFilled = index < pin.length;
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 8),
+              width: 16,
+              height: 16,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isFilled ? AppTheme.primary : AppTheme.surfaceLight,
+                border: Border.all(
+                  color: isFilled ? AppTheme.primary : AppTheme.border,
+                  width: 1.5,
+                ),
+                boxShadow: isFilled
+                    ? [BoxShadow(color: AppTheme.primary.withAlpha(120), blurRadius: 8)]
+                    : null,
+              ),
+            );
+          }),
+        ),
+        const SizedBox(height: 16),
+
+        // Text field for numeric input
+        SizedBox(
+          width: 220,
+          child: TextField(
+            controller: _pinController,
+            focusNode: _focusNode,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            maxLength: 4,
+            obscureText: true,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 22, letterSpacing: 10, fontWeight: FontWeight.bold, color: Colors.white),
+            decoration: InputDecoration(
+              counterText: '',
+              hintText: 'Enter 4-digit PIN',
+              hintStyle: const TextStyle(fontSize: 12, letterSpacing: 0, color: AppTheme.textMuted),
+              filled: true,
+              fillColor: AppTheme.surfaceLight,
+              contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.border)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primary, width: 2)),
+            ),
+            onChanged: (val) {
+              setState(() {
+                _errorMessage = null;
+              });
+              if (val.length == 4) {
+                _verifyPin(val);
+              }
+            },
+            onSubmitted: (val) => _verifyPin(val),
+          ),
+        ),
+
+        if (_errorMessage != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            _errorMessage!,
+            style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+        ],
+
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            icon: const Icon(Icons.lock_open_rounded, size: 16),
+            label: const Text('Unlock Owner Mode', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            onPressed: () => _verifyPin(_pinController.text),
+          ),
+        ),
+
+        const SizedBox(height: 20),
+        const Row(
+          children: [
+            Expanded(child: Divider(color: AppTheme.border)),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 10),
+              child: Text('OR SWITCH OPERATING MODE', style: TextStyle(fontSize: 9.5, color: AppTheme.textMuted, fontWeight: FontWeight.bold)),
+            ),
+            Expanded(child: Divider(color: AppTheme.border)),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        if (user.teamMembers.isNotEmpty) ...[
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.amber,
+                side: BorderSide(color: Colors.amber.withAlpha(120)),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.badge_outlined, size: 16),
+              label: const Text('Switch to Staff / Kiosk Mode', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              onPressed: () => _showStaffPicker(context),
             ),
           ),
-        );
-      },
+          const SizedBox(height: 8),
+        ],
+
+        SizedBox(
+          width: double.infinity,
+          child: TextButton.icon(
+            style: TextButton.styleFrom(
+              foregroundColor: AppTheme.textSecondary,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+            ),
+            icon: const Icon(Icons.directions_car_rounded, size: 15),
+            label: const Text('Switch to Client Garage', style: TextStyle(fontSize: 12)),
+            onPressed: () => widget.repository.toggleHostMode(targetRole: UserRole.client),
+          ),
+        ),
+
+        const SizedBox(height: 8),
+        const Text(
+          'Default PIN is 1234. Change anytime in Owner Security.',
+          style: TextStyle(fontSize: 10.5, color: AppTheme.textMuted),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  void _showStaffPicker(BuildContext context) {
+    final members = widget.repository.currentUser.teamMembers;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Select Team Member', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+              const SizedBox(height: 4),
+              const Text('Switch into restricted staff view to log tasks and check schedules.', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+              const SizedBox(height: 12),
+              ...members.map((m) => ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: AppTheme.primary.withAlpha(30),
+                  child: Text(m.name.isNotEmpty ? m.name[0] : 'S', style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold)),
+                ),
+                title: Text(m.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                subtitle: Text(m.roleTitle, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                trailing: const Icon(Icons.chevron_right, color: AppTheme.textMuted),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  widget.repository.setActiveTeamMember(m.id);
+                  widget.onUnlocked();
+                },
+              )),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

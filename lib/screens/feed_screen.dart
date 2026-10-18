@@ -6,6 +6,7 @@ import '../services/job_repository.dart';
 import '../widgets/job_recipe_card.dart';
 import 'booking_flow_screen.dart';
 import 'public_studio_screen.dart';
+import 'auth_modal.dart';
 
 class FeedScreen extends StatefulWidget {
   final JobRepository repository;
@@ -28,6 +29,25 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   void _openBookingForDetailer(BuildContext context, UserProfile detailer) {
+    if (!widget.repository.isLoggedIn) {
+      AuthModal.show(
+        context,
+        repository: widget.repository,
+        onSuccess: () {
+          if (context.mounted) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => BookingFlowScreen(
+                  detailer: detailer,
+                  repository: widget.repository,
+                ),
+              ),
+            );
+          }
+        },
+      );
+      return;
+    }
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => BookingFlowScreen(

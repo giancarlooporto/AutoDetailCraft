@@ -151,6 +151,15 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
       return;
     }
 
+    final emailText = _emailCtrl.text.trim();
+    final hasEmail = emailText.isNotEmpty;
+    final passText = _passwordCtrl.text.trim();
+    final inviteToken = hasEmail
+        ? 'inv_${DateTime.now().millisecondsSinceEpoch}_${name.replaceAll(RegExp(r'\s+'), '').toLowerCase()}'
+        : null;
+    final inviteStatus = hasEmail ? (passText.isNotEmpty ? 'accepted' : 'pending') : 'none';
+    final inviteSentAt = hasEmail ? DateTime.now() : null;
+
     final newMember = TeamMember(
       id: 'team_${DateTime.now().millisecondsSinceEpoch}',
       name: name,
@@ -165,25 +174,43 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
       canViewPricing: _canViewPricing,
       canManageTeam: _canManageTeam,
       canViewAllTeamCalendar: _canViewAllTeamCalendar,
-      email: _emailCtrl.text.trim().isNotEmpty ? _emailCtrl.text.trim() : null,
+      email: hasEmail ? emailText : null,
       pin: _pinCtrl.text.trim().isNotEmpty ? _pinCtrl.text.trim() : null,
-      password: _passwordCtrl.text.trim().isNotEmpty ? _passwordCtrl.text.trim() : null,
+      password: passText.isNotEmpty ? passText : null,
+      inviteToken: inviteToken,
+      inviteStatus: inviteStatus,
+      inviteSentAt: inviteSentAt,
     );
 
+    final messenger = ScaffoldMessenger.of(context);
     widget.repository.addTeamMember(newMember);
     widget.onMemberAdded?.call(newMember);
     Navigator.of(context).pop();
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
       SnackBar(
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: const BorderSide(color: AppTheme.primary, width: 1.5),
+        ),
         content: Row(
           children: [
-            const Icon(Icons.check_circle_rounded, color: AppTheme.primary),
-            const SizedBox(width: 8),
-            Text('$name added to your company roster!'),
+            const Icon(Icons.mark_email_read_rounded, color: AppTheme.primary, size: 22),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                hasEmail
+                    ? 'Added $name! Invitation link dispatched to $emailText for password setup.'
+                    : 'Added $name to your company roster!',
+                style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white, fontSize: 13),
+              ),
+            ),
           ],
         ),
-        backgroundColor: AppTheme.surface,
       ),
     );
   }
@@ -415,13 +442,74 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
               TextField(
                 controller: _emailCtrl,
                 keyboardType: TextInputType.emailAddress,
+                onChanged: (_) => setState(() {}),
                 decoration: const InputDecoration(
-                  labelText: 'Staff Work Email (Optional)',
+                  labelText: 'Staff Work Email (For Invitation & Password Setup)',
                   hintText: 'staff@studio.com',
                   prefixIcon: Icon(Icons.alternate_email_rounded, size: 18),
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
+
+              // Prominent Email Invitation Explanation Banner
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withAlpha(20),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _emailCtrl.text.trim().isNotEmpty
+                        ? AppTheme.primary
+                        : AppTheme.primary.withAlpha(90),
+                    width: 1.2,
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      _emailCtrl.text.trim().isNotEmpty
+                          ? Icons.mark_email_read_rounded
+                          : Icons.auto_awesome_rounded,
+                      size: 18,
+                      color: AppTheme.primary,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _emailCtrl.text.trim().isNotEmpty
+                                ? 'AUTOMATIC INVITATION WILL BE DISPATCHED'
+                                : 'AUTOMATIC INVITATION & PASSWORD SETUP',
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w900,
+                              color: AppTheme.primary,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            _emailCtrl.text.trim().isNotEmpty
+                                ? 'Adding "${_emailCtrl.text.trim()}" will automatically generate a secure password setup link and dispatch an invitation email upon clicking "Add to Company".'
+                                : 'Adding a work email will automatically generate and dispatch an invitation link for this staff member to set their personal password.',
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              color: Colors.white,
+                              height: 1.35,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
 
               // Staff Password (Optional)
               TextField(

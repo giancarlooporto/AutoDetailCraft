@@ -6,6 +6,7 @@ import '../models/booking_models.dart';
 import '../models/team_member.dart';
 import '../models/calendar_availability_block.dart';
 import '../services/job_repository.dart';
+import 'auth_modal.dart';
 
 class BookingFlowScreen extends StatefulWidget {
   final UserProfile detailer;
@@ -200,6 +201,17 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         ),
       );
       setState(() => _currentStep = 1);
+      return;
+    }
+
+    if (!widget.repository.isLoggedIn) {
+      AuthModal.show(
+        context,
+        repository: widget.repository,
+        onSuccess: () {
+          if (mounted) _confirmAndSubmitBooking();
+        },
+      );
       return;
     }
 

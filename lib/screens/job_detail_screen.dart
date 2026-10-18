@@ -244,6 +244,16 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
   void _openBookingFlow() {
     if (widget.repository == null) return;
+    if (!widget.repository!.isLoggedIn) {
+      AuthModal.show(
+        context,
+        repository: widget.repository!,
+        onSuccess: () {
+          if (mounted) _openBookingFlow();
+        },
+      );
+      return;
+    }
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => BookingFlowScreen(

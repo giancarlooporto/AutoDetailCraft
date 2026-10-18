@@ -25,6 +25,9 @@ class TeamMember {
   final String? email; // Staff member email
   final String? pin; // 4-digit quick staff PIN (e.g. "1234")
   final String? password; // Staff password (optional fallback)
+  final String? inviteToken; // Secure invitation link token
+  final String inviteStatus; // 'none', 'pending', 'accepted'
+  final DateTime? inviteSentAt; // Dispatched timestamp
 
   static const List<String> allHubSections = [
     'portfolio',
@@ -61,6 +64,9 @@ class TeamMember {
     this.email,
     this.pin,
     this.password,
+    this.inviteToken,
+    this.inviteStatus = 'none',
+    this.inviteSentAt,
   });
 
   bool authenticateWithPin(String inputPin) {
@@ -92,6 +98,17 @@ class TeamMember {
   bool get allowsTeamManagement => isFounder || canManageTeam;
   bool get allowsAllCalendarView => isFounder || canViewAllTeamCalendar;
 
+  bool get isInvitePending =>
+      email != null &&
+      email!.trim().isNotEmpty &&
+      (inviteStatus == 'pending' || (password == null && inviteStatus != 'accepted'));
+
+  bool get isStaffAccountActive =>
+      (password != null && password!.trim().isNotEmpty) || inviteStatus == 'accepted';
+
+  String getInviteLink({String? studioId}) =>
+      'https://autodetailcraft.web.app/invite?token=${inviteToken ?? id}&email=${Uri.encodeComponent(email ?? '')}';
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -114,6 +131,9 @@ class TeamMember {
       if (email != null) 'email': email,
       if (pin != null) 'pin': pin,
       if (password != null) 'password': password,
+      if (inviteToken != null) 'inviteToken': inviteToken,
+      'inviteStatus': inviteStatus,
+      if (inviteSentAt != null) 'inviteSentAt': inviteSentAt!.toIso8601String(),
     };
   }
 
@@ -149,6 +169,12 @@ class TeamMember {
       email: json['email'] as String?,
       pin: json['pin'] as String?,
       password: json['password'] as String?,
+      inviteToken: (json['inviteToken'] ?? json['invite_token']) as String?,
+      inviteStatus: (json['inviteStatus'] ?? json['invite_status']) as String? ??
+          (json['password'] != null ? 'accepted' : (json['email'] != null ? 'pending' : 'none')),
+      inviteSentAt: (json['inviteSentAt'] ?? json['invite_sent_at']) != null
+          ? DateTime.tryParse((json['inviteSentAt'] ?? json['invite_sent_at']) as String)
+          : null,
     );
   }
 
@@ -173,6 +199,9 @@ class TeamMember {
     String? email,
     String? pin,
     String? password,
+    String? inviteToken,
+    String? inviteStatus,
+    DateTime? inviteSentAt,
   }) {
     return TeamMember(
       id: id ?? this.id,
@@ -193,6 +222,9 @@ class TeamMember {
       email: email ?? this.email,
       pin: pin ?? this.pin,
       password: password ?? this.password,
+      inviteToken: inviteToken ?? this.inviteToken,
+      inviteStatus: inviteStatus ?? this.inviteStatus,
+      inviteSentAt: inviteSentAt ?? this.inviteSentAt,
     );
   }
 }

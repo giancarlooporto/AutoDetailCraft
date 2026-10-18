@@ -31,6 +31,9 @@ class JobRepository extends ChangeNotifier {
   List<ShiftRequest> _shiftRequests = [];
   String? _activeTeamMemberId; // null or 'founder' = shop owner (Founder)
   bool _isStaffSession = false; // true = authenticated via staff PIN or staff credentials directly
+  String _ownerPin = '1234';
+  bool _isOwnerLocked = false;
+  int _ownerAutoLockMinutes = 5;
 
   String _selectedServiceType = 'All Services';
   String _selectedLocationCity = 'All Locations';
@@ -82,6 +85,11 @@ class JobRepository extends ChangeNotifier {
   TeamMember? get activeTeamMember =>
       isViewingAsTeamMember ? _currentUser.teamMembers.where((m) => m.id == _activeTeamMemberId).firstOrNull : null;
 
+  String get ownerPin => _ownerPin;
+  bool get isOwnerLocked => _isOwnerLocked;
+  int get ownerAutoLockMinutes => _ownerAutoLockMinutes;
+  bool get hasCustomOwnerPin => _ownerPin != '1234';
+
   Future<void> init() async {
     if (_isInitialized) return;
     if (_isInitializing) {
@@ -106,24 +114,15 @@ class JobRepository extends ChangeNotifier {
       final isGuest = await LocalStorageService.loadIsGuest();
       final savedUser = await LocalStorageService.loadCurrentUser();
       final savedWorkbenchMode = await LocalStorageService.loadWorkbenchMode();
+      final isStaffSession = await LocalStorageService.loadIsStaffSession();
+      final activeStaffId = await LocalStorageService.loadActiveTeamMemberId();
 
-      if (!isGuest && savedUser != null) {
-        _currentUser = savedUser;
-        _isLoggedIn = true;
-      } else if (savedUser != null) {
-        // Offline/guest session found with customized profile/garage
-        _currentUser = savedUser;
-        // If user has configured studio workbench mode or has configured studio/garage packages/vehicles,
-        // keep the user session accessible so they are not locked out on browser refresh.
-        if (savedWorkbenchMode == 'studio' ||
-            savedUser.servicePackages.isNotEmpty ||
-            savedUser.myGarage.isNotEmpty) {
-          _isLoggedIn = true;
-        } else {
-          _isLoggedIn = false;
-        }
-      } else if (savedWorkbenchMode == 'studio') {
-        // Explicit studio workbench mode configured
+      if (isStaffSession && activeStaffId != null) {
+        // Staff direct session
+        _isStaffSession = true;
+        _activeTeamMemberId = activeStaffId;
+        _currentUser = savedUser ?? MockDataService.youUser;
+        _currentUser = _currentUser.copyWith(role: UserRole.detailer);
         _isLoggedIn = true;
       } else if (SupabaseAuthService.isLoggedIn) {
         // Supabase persistent session found
@@ -139,20 +138,30 @@ class JobRepository extends ChangeNotifier {
         );
         _isLoggedIn = true;
         await LocalStorageService.saveIsGuest(false);
+      } else if (!isGuest && savedUser != null) {
+        _currentUser = savedUser;
+        _isLoggedIn = true;
       } else {
+        // Strict guest visitor mode
         _isLoggedIn = false;
+        _currentUser = MockDataService.youUser.copyWith(role: UserRole.client);
+        await LocalStorageService.saveIsGuest(true);
       }
 
-      // Apply explicit workbench mode if persisted ('studio' vs 'garage')
-      if (savedWorkbenchMode == 'studio') {
-        _currentUser = _currentUser.copyWith(
-          role: UserRole.detailer,
-          isVerifiedHost: true,
-        );
-      } else if (savedWorkbenchMode == 'garage') {
-        _currentUser = _currentUser.copyWith(
-          role: UserRole.client,
-        );
+      // Apply explicit workbench mode if logged in ('studio' vs 'garage')
+      if (_isLoggedIn) {
+        if (savedWorkbenchMode == 'studio') {
+          _currentUser = _currentUser.copyWith(
+            role: UserRole.detailer,
+            isVerifiedHost: true,
+          );
+        } else if (savedWorkbenchMode == 'garage') {
+          _currentUser = _currentUser.copyWith(
+            role: UserRole.client,
+          );
+        }
+      } else {
+        _currentUser = _currentUser.copyWith(role: UserRole.client);
       }
 
       // 2b. Hydrate dedicated service packages from local storage first
@@ -183,9 +192,6 @@ class JobRepository extends ChangeNotifier {
         initialGarage = [];
       }
       _currentUser = _currentUser.copyWith(myGarage: initialGarage);
-      if (initialGarage.isNotEmpty) {
-        _isLoggedIn = true;
-      }
 
       // 2d. Hydrate dedicated team members from local storage first
       final dedicatedTeam = await LocalStorageService.loadTeamMembers();
@@ -200,9 +206,6 @@ class JobRepository extends ChangeNotifier {
         await LocalStorageService.saveTeamMembers(initialTeam);
       }
       _currentUser = _currentUser.copyWith(teamMembers: initialTeam);
-      if (initialTeam.isNotEmpty) {
-        _isLoggedIn = true;
-      }
 
       // 2e. Hydrate dedicated inventory items from local storage first
       final dedicatedInventory = await LocalStorageService.loadInventoryItems();
@@ -284,6 +287,12 @@ class JobRepository extends ChangeNotifier {
         _isLoggedIn = true;
         _currentUser = _currentUser.copyWith(role: UserRole.detailer);
       }
+
+      // 2k. Hydrate owner PIN and lock state
+      final savedOwnerPin = await LocalStorageService.loadOwnerPin();
+      _ownerPin = savedOwnerPin ?? _currentUser.ownerPin;
+      _ownerAutoLockMinutes = await LocalStorageService.loadOwnerAutoLockMinutes();
+      _isOwnerLocked = await LocalStorageService.loadIsOwnerLocked();
 
       // 4. Load custom recipe presets from local cache
       _customPresets = await LocalStorageService.loadCustomPresets();
@@ -572,6 +581,13 @@ class JobRepository extends ChangeNotifier {
     // 1. Fetch latest profile state from cloud FIRST
     // This ensures cloud garage, team, bio, packages are loaded onto this device
     await _refreshProfileFromCloud(user.id);
+
+    // Ensure non-detailers land strictly in Client Mode
+    if (_currentUser.role != UserRole.detailer) {
+      _currentUser = _currentUser.copyWith(role: UserRole.client);
+      await LocalStorageService.saveWorkbenchMode('garage');
+    }
+
     await LocalStorageService.saveCurrentUser(_currentUser);
 
     // 2. Refresh jobs from cloud
@@ -1045,6 +1061,7 @@ class JobRepository extends ChangeNotifier {
     LocalStorageService.saveWorkbenchMode(isNowHost ? 'studio' : 'garage');
     if (isNowHost) {
       _isLoggedIn = true;
+      LocalStorageService.saveIsGuest(false);
     }
     _persistUser();
     notifyListeners();
@@ -2472,7 +2489,66 @@ class JobRepository extends ChangeNotifier {
       return;
     }
     _activeTeamMemberId = (memberId == null || memberId.isEmpty || memberId == 'founder') ? null : memberId;
+    if (_activeTeamMemberId != null) {
+      _isOwnerLocked = false;
+      LocalStorageService.saveIsOwnerLocked(false);
+    }
     LocalStorageService.saveActiveTeamMemberId(_activeTeamMemberId);
+    notifyListeners();
+  }
+
+  bool verifyOwnerPin(String pin) {
+    return pin.trim() == _ownerPin.trim();
+  }
+
+  Future<bool> setOwnerPin({required String currentPin, required String newPin}) async {
+    final cleanCurrent = currentPin.trim();
+    final cleanNew = newPin.trim();
+    if (!verifyOwnerPin(cleanCurrent)) {
+      return false;
+    }
+    if (cleanNew.length != 4 || int.tryParse(cleanNew) == null) {
+      return false;
+    }
+    _ownerPin = cleanNew;
+    _currentUser = _currentUser.copyWith(ownerPin: cleanNew);
+    await LocalStorageService.saveOwnerPin(cleanNew);
+    _persistUser();
+    notifyListeners();
+    return true;
+  }
+
+  void lockOwnerView() {
+    _isOwnerLocked = true;
+    LocalStorageService.saveIsOwnerLocked(true);
+    notifyListeners();
+  }
+
+  bool unlockOwnerView(String pin) {
+    if (verifyOwnerPin(pin)) {
+      _isOwnerLocked = false;
+      LocalStorageService.saveIsOwnerLocked(false);
+      notifyListeners();
+      return true;
+    }
+    return false;
+  }
+
+  bool unlockOwnerModeWithPin(String pin) {
+    if (verifyOwnerPin(pin)) {
+      _isOwnerLocked = false;
+      _activeTeamMemberId = null;
+      LocalStorageService.saveIsOwnerLocked(false);
+      LocalStorageService.saveActiveTeamMemberId(null);
+      notifyListeners();
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> setOwnerAutoLockMinutes(int minutes) async {
+    _ownerAutoLockMinutes = minutes;
+    await LocalStorageService.saveOwnerAutoLockMinutes(minutes);
     notifyListeners();
   }
 
@@ -2582,6 +2658,7 @@ class JobRepository extends ChangeNotifier {
     // Successful staff authentication
     _activeTeamMemberId = matchedMember.id;
     _isStaffSession = true;
+    _isOwnerLocked = false;
     _isLoggedIn = true;
     _currentUser = _currentUser.copyWith(role: UserRole.detailer);
 
@@ -2593,6 +2670,113 @@ class JobRepository extends ChangeNotifier {
 
     notifyListeners();
     return (success: true, error: null, member: matchedMember);
+  }
+
+  Future<void> sendStaffInvite(TeamMember member) async {
+    final token = (member.inviteToken != null && member.inviteToken!.trim().isNotEmpty)
+        ? member.inviteToken!
+        : 'inv_${DateTime.now().millisecondsSinceEpoch}_${member.name.replaceAll(RegExp(r'\s+'), '').toLowerCase()}';
+    final updated = member.copyWith(
+      inviteToken: token,
+      inviteStatus: 'pending',
+      inviteSentAt: DateTime.now(),
+    );
+    updateTeamMember(updated);
+  }
+
+  TeamMember? findMemberByInviteToken(String token) {
+    final clean = token.trim();
+    if (clean.isEmpty) return null;
+    return _currentUser.teamMembers
+        .where((m) => m.inviteToken == clean || m.id == clean)
+        .firstOrNull;
+  }
+
+  Future<({bool success, String? error, TeamMember? member})> acceptStaffInvite({
+    required String token,
+    required String password,
+  }) async {
+    final cleanToken = token.trim();
+    final cleanPass = password.trim();
+
+    if (cleanToken.isEmpty) {
+      return (success: false, error: 'Invitation token is missing or invalid.', member: null);
+    }
+    if (cleanPass.length < 6) {
+      return (success: false, error: 'Password must be at least 6 characters.', member: null);
+    }
+
+    // 1. Search in _currentUser.teamMembers
+    TeamMember? matchedMember = _currentUser.teamMembers
+        .where((m) => m.inviteToken == cleanToken || m.id == cleanToken)
+        .firstOrNull;
+
+    // 2. Search in local storage team members
+    if (matchedMember == null) {
+      final cachedMembers = await LocalStorageService.loadTeamMembers();
+      matchedMember = cachedMembers
+          .where((m) => m.inviteToken == cleanToken || m.id == cleanToken)
+          .firstOrNull;
+      if (matchedMember != null) {
+        final exists = _currentUser.teamMembers.any((m) => m.id == matchedMember!.id);
+        if (!exists) {
+          _currentUser = _currentUser.copyWith(teamMembers: [..._currentUser.teamMembers, matchedMember]);
+        }
+      }
+    }
+
+    // 3. Search in cloud Supabase team members
+    if (matchedMember == null) {
+      try {
+        final cloudRes = await SupabaseDbService.findStaffMemberByInviteToken(cleanToken);
+        if (cloudRes != null) {
+          matchedMember = cloudRes.member;
+          final studioProfile = await SupabaseDbService.fetchUserProfile(cloudRes.studioId);
+          if (studioProfile != null) {
+            _currentUser = studioProfile;
+          } else {
+            _currentUser = _currentUser.copyWith(
+              id: cloudRes.studioId,
+              role: UserRole.detailer,
+              teamMembers: [matchedMember],
+            );
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) print('[JobRepository] Cloud token lookup error: $e');
+      }
+    }
+
+    if (matchedMember == null) {
+      return (
+        success: false,
+        error: 'Invalid or expired invitation link. Please request a new invite from your shop owner.',
+        member: null,
+      );
+    }
+
+    // Update member password and accept status
+    final updatedMember = matchedMember.copyWith(
+      password: cleanPass,
+      inviteStatus: 'accepted',
+    );
+    updateTeamMember(updatedMember);
+
+    // Automatically log in as the staff member into My Studio
+    _activeTeamMemberId = updatedMember.id;
+    _isStaffSession = true;
+    _isOwnerLocked = false;
+    _isLoggedIn = true;
+    _currentUser = _currentUser.copyWith(role: UserRole.detailer);
+
+    await LocalStorageService.saveIsStaffSession(true);
+    await LocalStorageService.saveActiveTeamMemberId(updatedMember.id);
+    await LocalStorageService.saveWorkbenchMode('studio');
+    await LocalStorageService.saveIsGuest(false);
+    _persistUser();
+
+    notifyListeners();
+    return (success: true, error: null, member: updatedMember);
   }
 
   Future<void> submitShiftRequest(ShiftRequest req) async {

@@ -6,12 +6,14 @@ import '../services/supabase_auth_service.dart';
 class AuthModal extends StatefulWidget {
   final JobRepository repository;
   final bool initialIsSignUp;
+  final String? initialInviteToken;
   final VoidCallback? onSuccess;
 
   const AuthModal({
     super.key,
     required this.repository,
     this.initialIsSignUp = false,
+    this.initialInviteToken,
     this.onSuccess,
   });
 
@@ -19,6 +21,7 @@ class AuthModal extends StatefulWidget {
     BuildContext context, {
     required JobRepository repository,
     bool initialIsSignUp = false,
+    String? initialInviteToken,
     VoidCallback? onSuccess,
   }) {
     return showModalBottomSheet(
@@ -28,6 +31,7 @@ class AuthModal extends StatefulWidget {
       builder: (ctx) => AuthModal(
         repository: repository,
         initialIsSignUp: initialIsSignUp,
+        initialInviteToken: initialInviteToken,
         onSuccess: onSuccess,
       ),
     );
@@ -57,10 +61,21 @@ class _AuthModalState extends State<AuthModal> {
   final TextEditingController _staffEmailCtrl = TextEditingController();
   final TextEditingController _staffPassCtrl = TextEditingController();
 
+  // Staff Invite Activation State (Step 3)
+  bool _isInviteMode = false;
+  bool _obscureInvitePass = true;
+  final TextEditingController _inviteTokenCtrl = TextEditingController();
+  final TextEditingController _invitePassCtrl = TextEditingController();
+  final TextEditingController _inviteConfirmCtrl = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     _isSignUp = widget.initialIsSignUp;
+    if (widget.initialInviteToken != null && widget.initialInviteToken!.isNotEmpty) {
+      _isInviteMode = true;
+      _inviteTokenCtrl.text = widget.initialInviteToken!;
+    }
   }
 
   @override
@@ -72,7 +87,63 @@ class _AuthModalState extends State<AuthModal> {
     _staffPinCtrl.dispose();
     _staffEmailCtrl.dispose();
     _staffPassCtrl.dispose();
+    _inviteTokenCtrl.dispose();
+    _invitePassCtrl.dispose();
+    _inviteConfirmCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _submitAcceptInvite() async {
+    final token = _inviteTokenCtrl.text.trim();
+    final pass = _invitePassCtrl.text.trim();
+    final confirm = _inviteConfirmCtrl.text.trim();
+
+    if (token.isEmpty) {
+      setState(() => _errorMessage = 'Please enter your invitation token or link.');
+      return;
+    }
+    if (pass.length < 6) {
+      setState(() => _errorMessage = 'Password must be at least 6 characters.');
+      return;
+    }
+    if (pass != confirm) {
+      setState(() => _errorMessage = 'Passwords do not match.');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final res = await widget.repository.acceptStaffInvite(
+      token: token,
+      password: pass,
+    );
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (res.success && res.member != null) {
+      Navigator.of(context).pop();
+      widget.onSuccess?.call();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_rounded, color: AppTheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('Staff password set! Welcome to the studio, ${res.member!.name}!'),
+              ),
+            ],
+          ),
+          backgroundColor: AppTheme.surface,
+        ),
+      );
+    } else {
+      setState(() => _errorMessage = res.error ?? 'Failed to activate staff invitation.');
+    }
   }
 
   Future<void> _submitStaffLogin() async {
@@ -165,9 +236,9 @@ class _AuthModalState extends State<AuthModal> {
       );
 
       if (!mounted) return;
-      setState(() => _isLoading = false);
 
       if (res.success && res.profile != null) {
+        setState(() => _isLoading = false);
         widget.repository.loginUser(res.profile!);
         Navigator.of(context).pop();
         widget.onSuccess?.call();
@@ -184,7 +255,35 @@ class _AuthModalState extends State<AuthModal> {
           ),
         );
       } else {
-        setState(() => _errorMessage = res.error ?? 'Invalid email or password.');
+        // Fallback: check if this matches staff member credentials across company roster
+        final staffRes = await widget.repository.loginStaffMember(
+          email: email,
+          password: password,
+        );
+
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+
+        if (staffRes.success && staffRes.member != null) {
+          Navigator.of(context).pop();
+          widget.onSuccess?.call();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle_rounded, color: AppTheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('Welcome back, ${staffRes.member!.name}! (${staffRes.member!.roleTitle})'),
+                  ),
+                ],
+              ),
+              backgroundColor: AppTheme.surface,
+            ),
+          );
+        } else {
+          setState(() => _errorMessage = res.error ?? 'Invalid email or password.');
+        }
       }
     }
   }
@@ -259,92 +358,145 @@ class _AuthModalState extends State<AuthModal> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-
-              // Mode Selector: Owner & Client vs Staff Member
-              Container(
-                decoration: BoxDecoration(
-                  color: AppTheme.surfaceLight,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppTheme.border),
-                ),
-                padding: const EdgeInsets.all(3),
-                child: Row(
+              if (_isInviteMode) ...[
+                // Staff Invite Header
+                Row(
                   children: [
-                    Expanded(
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: () {
-                          setState(() {
-                            _isStaffMode = false;
-                            _errorMessage = null;
-                          });
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          decoration: BoxDecoration(
-                            color: !_isStaffMode ? AppTheme.surface : Colors.transparent,
-                            borderRadius: BorderRadius.circular(8),
-                            border: !_isStaffMode ? Border.all(color: AppTheme.primary.withAlpha(120)) : null,
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.person_rounded, size: 15, color: !_isStaffMode ? AppTheme.primary : AppTheme.textMuted),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Owner / Client',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: !_isStaffMode ? Colors.white : AppTheme.textMuted,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withAlpha(25),
+                        shape: BoxShape.circle,
                       ),
+                      child: const Icon(Icons.key_rounded, color: AppTheme.primary, size: 22),
                     ),
-                    Expanded(
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: () {
-                          setState(() {
-                            _isStaffMode = true;
-                            _errorMessage = null;
-                          });
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          decoration: BoxDecoration(
-                            color: _isStaffMode ? AppTheme.surface : Colors.transparent,
-                            borderRadius: BorderRadius.circular(8),
-                            border: _isStaffMode ? Border.all(color: Colors.amber.withAlpha(120)) : null,
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Staff Invitation Setup',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
                           ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.badge_rounded, size: 15, color: _isStaffMode ? Colors.amber : AppTheme.textMuted),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Staff Member',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: _isStaffMode ? Colors.white : AppTheme.textMuted,
-                                ),
-                              ),
-                            ],
+                          Text(
+                            'Set your personal password to activate your staff account',
+                            style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                           ),
-                        ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 18),
+                const SizedBox(height: 16),
 
-              if (_isStaffMode) ...[
+                // Error Banner
+                if (_errorMessage != null) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withAlpha(25),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.redAccent.withAlpha(100)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline_rounded, size: 18, color: Colors.redAccent),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+
+                // Invitation Token
+                TextFormField(
+                  controller: _inviteTokenCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Invitation Token / Link Key',
+                    hintText: 'inv_...',
+                    prefixIcon: Icon(Icons.vpn_key_rounded, size: 18),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // New Password
+                TextFormField(
+                  controller: _invitePassCtrl,
+                  obscureText: _obscureInvitePass,
+                  decoration: InputDecoration(
+                    labelText: 'Personal Password (min 6 chars)',
+                    hintText: '••••••••',
+                    prefixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscureInvitePass ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                        size: 18,
+                        color: AppTheme.textMuted,
+                      ),
+                      onPressed: () => setState(() => _obscureInvitePass = !_obscureInvitePass),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Confirm Password
+                TextFormField(
+                  controller: _inviteConfirmCtrl,
+                  obscureText: _obscureInvitePass,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirm Password',
+                    hintText: '••••••••',
+                    prefixIcon: Icon(Icons.lock_outline_rounded, size: 18),
+                  ),
+                  onFieldSubmitted: (_) => _submitAcceptInvite(),
+                ),
+                const SizedBox(height: 20),
+
+                // Submit Accept Invite Button
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: _isLoading ? null : _submitAcceptInvite,
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                        )
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.check_circle_rounded, size: 18),
+                            SizedBox(width: 8),
+                            Text(
+                              'Save Password & Enter Studio',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            ),
+                          ],
+                        ),
+                ),
+                const SizedBox(height: 14),
+                Center(
+                  child: TextButton(
+                    onPressed: () => setState(() {
+                      _isInviteMode = false;
+                      _errorMessage = null;
+                    }),
+                    child: const Text('Back to Client Sign In', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                  ),
+                ),
+              ] else if (_isStaffMode) ...[
                 // Staff Header
                 Row(
                   children: [
@@ -544,9 +696,25 @@ class _AuthModalState extends State<AuthModal> {
                 ),
                 const SizedBox(height: 14),
                 Center(
-                  child: TextButton(
-                    onPressed: () => setState(() => _isStaffMode = false),
-                    child: const Text('Back to Studio Owner / Client Sign In', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    children: [
+                      TextButton(
+                        onPressed: () => setState(() => _isStaffMode = false),
+                        child: const Text('Back to Client Sign In', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                      ),
+                      const Text('•', style: TextStyle(color: AppTheme.textMuted)),
+                      TextButton(
+                        onPressed: () => setState(() {
+                          _isStaffMode = false;
+                          _isInviteMode = true;
+                          _errorMessage = null;
+                        }),
+                        child: const Text('Have an Invite Link / Token?', style: TextStyle(color: AppTheme.primary, fontSize: 12)),
+                      ),
+                    ],
                   ),
                 ),
               ] else ...[
@@ -734,6 +902,41 @@ class _AuthModalState extends State<AuthModal> {
                           fontSize: 13,
                         ),
                       ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Column(
+                  children: [
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppTheme.textMuted,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      ),
+                      icon: const Icon(Icons.badge_outlined, size: 15),
+                      label: const Text('Shop Staff Member? Sign in with Quick PIN', style: TextStyle(fontSize: 12)),
+                      onPressed: () {
+                        setState(() {
+                          _isStaffMode = true;
+                          _isInviteMode = false;
+                          _errorMessage = null;
+                        });
+                      },
+                    ),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppTheme.textMuted,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      ),
+                      icon: const Icon(Icons.vpn_key_outlined, size: 14),
+                      label: const Text('Have a Staff Invite Link / Token?', style: TextStyle(fontSize: 11.5)),
+                      onPressed: () {
+                        setState(() {
+                          _isInviteMode = true;
+                          _isStaffMode = false;
+                          _errorMessage = null;
+                        });
+                      },
                     ),
                   ],
                 ),

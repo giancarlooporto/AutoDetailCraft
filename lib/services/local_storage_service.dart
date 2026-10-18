@@ -43,6 +43,9 @@ class LocalStorageService {
   static const String _studioHubSectionKey = 'adc_studio_hub_section_v1';
   static const String _inventoryCategoryFilterKey = 'adc_inventory_category_filter_v1';
   static const String _selectedInventoryIdKey = 'adc_selected_inventory_id_v1';
+  static const String _ownerPinKey = 'adc_owner_pin_v1';
+  static const String _isOwnerLockedKey = 'adc_is_owner_locked_v1';
+  static const String _ownerAutoLockMinutesKey = 'adc_owner_auto_lock_minutes_v1';
 
   // Site Access Gate
   static Future<bool> isSiteUnlocked() async {
@@ -85,6 +88,7 @@ class LocalStorageService {
       await prefs.setBool(_isGuestKey, true);
       await prefs.remove(_activeTeamMemberIdKey);
       await prefs.remove(_isStaffSessionKey);
+      await prefs.remove(_isOwnerLockedKey);
     } catch (_) {}
   }
 
@@ -664,6 +668,59 @@ class LocalStorageService {
       return prefs.getBool(_isStaffSessionKey) ?? false;
     } catch (_) {
       return false;
+    }
+  }
+
+  // Owner Master PIN & Security Lock
+  static Future<void> saveOwnerPin(String pin) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_ownerPinKey, pin);
+    } catch (_) {}
+  }
+
+  static Future<String?> loadOwnerPin() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_ownerPinKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> saveIsOwnerLocked(bool isLocked) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!isLocked) {
+        await prefs.remove(_isOwnerLockedKey);
+      } else {
+        await prefs.setBool(_isOwnerLockedKey, true);
+      }
+    } catch (_) {}
+  }
+
+  static Future<bool> loadIsOwnerLocked() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_isOwnerLockedKey) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> saveOwnerAutoLockMinutes(int minutes) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_ownerAutoLockMinutesKey, minutes);
+    } catch (_) {}
+  }
+
+  static Future<int> loadOwnerAutoLockMinutes() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_ownerAutoLockMinutesKey) ?? 5; // Default 5 minutes auto-lock
+    } catch (_) {
+      return 5;
     }
   }
 

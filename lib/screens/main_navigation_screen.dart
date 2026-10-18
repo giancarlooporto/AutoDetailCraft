@@ -60,15 +60,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         final rawIndex = widget.repository.activeTabIndex;
         final currentIndex = rawIndex.clamp(0, 3);
 
-        final isGuest = widget.repository.isGuestMode;
         final isDetailer = widget.repository.currentUser.role == UserRole.detailer;
-        final studioLabel = isGuest ? 'Account' : (isDetailer ? 'My Studio' : 'My Garage');
-        final studioIcon = isGuest
-            ? Icons.person_outline_rounded
-            : (isDetailer ? Icons.storefront_outlined : Icons.garage_outlined);
-        final studioSelectedIcon = isGuest
-            ? Icons.person_rounded
-            : (isDetailer ? Icons.storefront_rounded : Icons.garage_rounded);
+        final studioLabel = isDetailer ? 'My Studio' : 'My Garage';
+        final studioIcon = isDetailer ? Icons.storefront_outlined : Icons.garage_outlined;
+        final studioSelectedIcon = isDetailer ? Icons.storefront_rounded : Icons.garage_rounded;
 
         final unread = widget.repository.totalUnreadMessages;
 

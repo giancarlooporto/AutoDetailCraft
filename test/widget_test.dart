@@ -4133,10 +4133,13 @@ void main() {
     // Verify request submitted to repo
     expect(repo.pendingShiftRequests.length, equals(1));
 
-    // 3. Switch back to Owner
+    // 3. Switch back to Owner via Owner PIN
     await tester.tap(find.text('Back to Owner'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    expect(find.text('Owner Mode Access'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).last, '1234');
+    await tester.tap(find.text('Unlock Owner Mode'));
+    await tester.pumpAndSettle();
 
     // VERIFY: Owner sees "INCOMING SHIFT REQUESTS" with Elena's request!
     expect(find.text('INCOMING SHIFT REQUESTS'), findsWidgets);
@@ -4337,12 +4340,11 @@ void main() {
     await tester.tap(find.text('Open Login'));
     await tester.pumpAndSettle();
 
-    // Verify Mode Selector: Owner / Client vs Staff Member
-    expect(find.text('Owner / Client'), findsOneWidget);
-    expect(find.text('Staff Member'), findsOneWidget);
+    // Verify Staff Member Mode link
+    expect(find.text('Shop Staff Member? Sign in with Quick PIN'), findsOneWidget);
 
     // Switch to Staff Member Mode
-    await tester.tap(find.text('Staff Member'));
+    await tester.tap(find.text('Shop Staff Member? Sign in with Quick PIN'));
     await tester.pumpAndSettle();
 
     expect(find.text('Staff Member Sign In'), findsOneWidget);
@@ -4361,6 +4363,379 @@ void main() {
     expect(onSuccessCalled, isTrue);
     expect(repo.isStaffSession, isTrue);
     expect(repo.activeTeamMemberId, equals('staff_sarah'));
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('Step 1: Strict guest mode protection, email auth gate, client mode, and become a detailer transition', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    addTearDown(() {
+      debugNetworkImageHttpClientProvider = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+
+    final repo = JobRepository();
+    await repo.init();
+
+    // 1. Verify default new visitor state
+    expect(repo.isLoggedIn, isFalse);
+    expect(repo.isGuestMode, isTrue);
+    expect(repo.currentUser.role, equals(UserRole.client));
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: MainNavigationScreen(repository: repo),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 2. Explore tab is open and accessible
+    expect(find.text('AutoDetailCraft'), findsWidgets);
+    expect(find.text('Explore'), findsWidgets);
+
+    // Attempting to book from Explore opens AuthModal for guest
+    expect(find.widgetWithText(ElevatedButton, 'Book'), findsWidgets);
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Book').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byType(AuthModal), findsOneWidget);
+    expect(find.text('Welcome Back'), findsOneWidget);
+    expect(find.text('Sign In'), findsWidgets);
+    expect(find.text('Shop Staff Member? Sign in with Quick PIN'), findsOneWidget);
+
+    // Close AuthModal
+    Navigator.of(tester.element(find.byType(AuthModal))).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // 3. Check Bookings tab shows guest view
+    repo.setActiveTab(1);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('View & Manage Detailing Bookings'), findsOneWidget);
+    expect(find.text('Sign In to View Bookings'), findsOneWidget);
+
+    // 4. Check Messages tab shows guest view
+    repo.setActiveTab(2);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Sign in to message detailers'), findsOneWidget);
+    expect(find.text('Sign In or Register'), findsOneWidget);
+
+    // 5. Check My Garage tab shows guest view
+    repo.setActiveTab(3);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Welcome to AutoDetailCraft'), findsOneWidget);
+    expect(find.text('Sign In to My Garage'), findsOneWidget);
+
+    // 6. Log in as a user -> enters in Client Mode
+    final clientUser = UserProfile(
+      id: 'usr_client_01',
+      username: 'car_enthusiast',
+      displayName: 'Alex Rivers',
+      businessName: '',
+      avatarUrl: '',
+      location: 'Dallas, TX',
+      bio: 'Lover of GT3s',
+      role: UserRole.client,
+    );
+    await repo.loginUser(clientUser);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(repo.isLoggedIn, isTrue);
+    expect(repo.currentUser.role, equals(UserRole.client));
+    expect(repo.workbenchMode, equals('garage'));
+    expect(find.text('Alex Rivers'), findsOneWidget);
+    expect(find.byKey(const Key('become_a_detailer_btn')), findsOneWidget);
+    expect(find.text('Become a Detailer'), findsOneWidget);
+
+    // 7. Click "Become a Detailer" -> transitions directly to Detailer Mode with all features open
+    await tester.tap(find.byKey(const Key('become_a_detailer_btn')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(repo.currentUser.role, equals(UserRole.detailer));
+    expect(repo.workbenchMode, equals('studio'));
+    expect(find.text('STUDIO WORKBENCH HUB'), findsOneWidget);
+    expect(find.text('Switch to Client Mode'), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('Step 2: Owner Master PIN lock, privacy shield, auto-lock settings, and staff kiosk transition', (tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    SharedPreferences.setMockInitialValues({});
+
+    final repo = JobRepository();
+    final staff = TeamMember(
+      id: 'staff_leo',
+      name: 'Leo Ortiz',
+      roleTitle: 'Apprentice Detailer',
+      avatarUrl: '',
+      pin: '5555',
+    );
+    repo.addTeamMember(staff);
+    repo.isLoggedIn = true;
+    repo.isDetailerWorkbenchMode = true;
+    repo.updateCurrentUser(repo.currentUser.copyWith(
+      role: UserRole.detailer,
+      teamMembers: [staff],
+    ));
+
+    // 1. Verify initial PIN and lock state
+    expect(repo.ownerPin, equals('1234'));
+    expect(repo.isOwnerLocked, isFalse);
+    expect(repo.verifyOwnerPin('1234'), isTrue);
+    expect(repo.verifyOwnerPin('0000'), isFalse);
+
+    // 2. Change Owner PIN
+    final changeFail = await repo.setOwnerPin(currentPin: '0000', newPin: '9876');
+    expect(changeFail, isFalse);
+    expect(repo.ownerPin, equals('1234'));
+
+    final changeSuccess = await repo.setOwnerPin(currentPin: '1234', newPin: '9876');
+    expect(changeSuccess, isTrue);
+    expect(repo.ownerPin, equals('9876'));
+    expect(repo.hasCustomOwnerPin, isTrue);
+
+    // 3. Pump DetailerWorkbenchView in desktop mode
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: DetailerWorkbenchView(repository: repo),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Verify Owner Mode banner is present
+    expect(find.text('Owner Mode'), findsOneWidget);
+
+    // 4. Tap Lock Owner View button
+    await tester.tap(find.byTooltip('Lock Owner View (Shield Financials)'));
+    await tester.pumpAndSettle();
+
+    expect(repo.isOwnerLocked, isTrue);
+
+    // VERIFY: Owner Privacy Shield is active
+    expect(find.text('Owner Mode Locked'), findsOneWidget);
+    expect(find.textContaining('Financial figures, gross revenue, and business administration are shielded'), findsOneWidget);
+    expect(find.text('Unlock Owner Mode'), findsOneWidget);
+
+    // 5. Test unlocking with wrong PIN
+    await tester.enterText(find.byType(TextField).last, '1111');
+    await tester.tap(find.text('Unlock Owner Mode'));
+    await tester.pumpAndSettle();
+
+    expect(repo.isOwnerLocked, isTrue);
+    expect(find.textContaining('Incorrect PIN'), findsOneWidget);
+
+    // 6. Test unlocking with correct custom PIN (9876)
+    await tester.enterText(find.byType(TextField).last, '9876');
+    await tester.tap(find.text('Unlock Owner Mode'));
+    await tester.pumpAndSettle();
+
+    expect(repo.isOwnerLocked, isFalse);
+    expect(find.text('Owner Mode'), findsOneWidget);
+
+    // 7. Test locking again and switching to Staff Kiosk Mode
+    repo.lockOwnerView();
+    await tester.pumpAndSettle();
+    expect(find.text('Owner Mode Locked'), findsOneWidget);
+
+    // Tap "Switch to Staff / Kiosk Mode"
+    await tester.tap(find.text('Switch to Staff / Kiosk Mode'));
+    await tester.pumpAndSettle();
+
+    // Pick Leo Ortiz
+    expect(find.text('Select Team Member'), findsOneWidget);
+    await tester.tap(find.text('Leo Ortiz'));
+    await tester.pumpAndSettle();
+
+    // Verify now in Staff View
+    expect(repo.isViewingAsTeamMember, isTrue);
+    expect(repo.activeTeamMemberId, equals('staff_leo'));
+    expect(find.text('Back to Owner'), findsOneWidget);
+
+    // 8. Tapping "Back to Owner" requires Master PIN
+    await tester.tap(find.text('Back to Owner'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Owner Mode Access'), findsOneWidget);
+
+    // Enter wrong PIN
+    await tester.enterText(find.byType(TextField).last, '0000');
+    await tester.tap(find.text('Unlock Owner Mode'));
+    await tester.pumpAndSettle();
+
+    expect(repo.isViewingAsTeamMember, isTrue); // Still locked in staff view!
+
+    // Enter correct PIN (9876)
+    await tester.enterText(find.byType(TextField).last, '9876');
+    await tester.tap(find.text('Unlock Owner Mode'));
+    await tester.pumpAndSettle();
+
+    expect(repo.isViewingAsTeamMember, isFalse); // Successfully restored Owner Mode!
+    expect(find.text('Owner Mode'), findsOneWidget);
+
+    debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('Step 3: Automated staff email invitations, password setup, and governed studio access', (tester) async {
+    debugNetworkImageHttpClientProvider = () => _MockHttpClient();
+    SharedPreferences.setMockInitialValues({});
+
+    final repo = JobRepository();
+    repo.isLoggedIn = true;
+    repo.isDetailerWorkbenchMode = true;
+
+    // 1. Add staff member with email (auto-generates invitation token and pending status)
+    final newStaff = TeamMember(
+      id: 'staff_mateo',
+      name: 'Mateo Silva',
+      roleTitle: 'PPF Specialist',
+      avatarUrl: '',
+      email: 'mateo@autodetailcraft.com',
+      pin: '4321',
+      inviteToken: 'inv_token_mateo_123',
+      inviteStatus: 'pending',
+      inviteSentAt: DateTime.now(),
+      allowedHubSections: ['portfolio', 'inventory', 'calendar'],
+      canEditInventory: false,
+      canViewPricing: false,
+      canManageTeam: false,
+    );
+    repo.addTeamMember(newStaff);
+
+    expect(newStaff.isInvitePending, isTrue);
+    expect(newStaff.isStaffAccountActive, isFalse);
+    expect(newStaff.getInviteLink(), contains('token=inv_token_mateo_123'));
+    expect(newStaff.getInviteLink(), contains('email=mateo%40autodetailcraft.com'));
+
+    // 2. Render DetailerWorkbenchView in desktop mode to inspect My Teams pane
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: DetailerWorkbenchView(repository: repo),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Navigate to 'My Teams' section
+    await tester.tap(find.text('My Teams'));
+    await tester.pumpAndSettle();
+
+    // Select Mateo Silva
+    await tester.tap(find.text('Mateo Silva').first);
+    await tester.pumpAndSettle();
+
+    // Verify Pending Invitation badge & actions are rendered
+    expect(find.text('STAFF CREDENTIALS'), findsOneWidget);
+    expect(find.text('Staff Password Setup Pending'), findsOneWidget);
+    expect(find.text('Copy Invite Link'), findsOneWidget);
+    expect(find.text('Set Password Now'), findsOneWidget);
+    expect(find.text('Resend Invite'), findsOneWidget);
+
+    // 3. Test "Set Password Now" dialog
+    await tester.tap(find.text('Set Password Now'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Set Password for Mateo'), findsOneWidget);
+    expect(find.text('Save & Activate'), findsOneWidget);
+
+    // Enter short password (< 6 chars) -> error
+    final textFields = find.byType(TextField);
+    await tester.enterText(textFields.at(textFields.evaluate().length - 2), '123');
+    await tester.enterText(textFields.last, '123');
+    await tester.tap(find.text('Save & Activate'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Password must be at least 6 characters.'), findsOneWidget);
+
+    // Enter valid password and confirm
+    await tester.enterText(textFields.at(textFields.evaluate().length - 2), 'securePass123');
+    await tester.enterText(textFields.last, 'securePass123');
+    await tester.tap(find.text('Save & Activate'));
+    await tester.pumpAndSettle();
+
+    // Member is now activated
+    final updatedMateo = repo.currentUser.teamMembers.firstWhere((m) => m.id == 'staff_mateo');
+    expect(updatedMateo.isStaffAccountActive, isTrue);
+    expect(updatedMateo.inviteStatus, equals('accepted'));
+    expect(updatedMateo.password, equals('securePass123'));
+
+    // Verify staff member is now automatically logged in into their governed session
+    expect(repo.isStaffSession, isTrue);
+    expect(repo.activeTeamMemberId, equals('staff_mateo'));
+    expect(repo.isViewingAsTeamMember, isTrue);
+
+    // Verify governed permissions for Mateo
+    expect(repo.activeTeamMember?.allowsInventoryEdit, isFalse);
+    expect(repo.activeTeamMember?.allowsPricingView, isFalse);
+    expect(repo.activeTeamMember?.allowsTeamManagement, isFalse);
+    expect(repo.activeTeamMember?.isSectionAllowed('services'), isFalse);
+    expect(repo.activeTeamMember?.isSectionAllowed('teams'), isFalse);
+    expect(repo.activeTeamMember?.isSectionAllowed('portfolio'), isTrue);
+
+    // 4. Test staff member logging out and logging back in via email & password
+    await repo.logoutStaffMember();
+    expect(repo.isStaffSession, isFalse);
+    expect(repo.isLoggedIn, isFalse);
+
+    // Login with Mateo's email and new password via loginStaffMember
+    final loginRes = await repo.loginStaffMember(
+      email: 'mateo@autodetailcraft.com',
+      password: 'securePass123',
+    );
+    expect(loginRes.success, isTrue);
+    expect(loginRes.member?.id, equals('staff_mateo'));
+    expect(repo.isLoggedIn, isTrue);
+    expect(repo.isStaffSession, isTrue);
+    expect(repo.activeTeamMemberId, equals('staff_mateo'));
+    expect(repo.isDetailerWorkbenchMode, isTrue);
+
+    // 5. Test AuthModal invitation token mode
+    await repo.logoutStaffMember();
+    expect(repo.isLoggedIn, isFalse);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: Scaffold(
+        body: AuthModal(
+          repository: repo,
+          initialInviteToken: 'inv_token_mateo_123',
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Verify invitation mode UI is shown
+    expect(find.text('Staff Invitation Setup'), findsOneWidget);
+    expect(find.text('Save Password & Enter Studio'), findsOneWidget);
 
     debugNetworkImageHttpClientProvider = null;
   });

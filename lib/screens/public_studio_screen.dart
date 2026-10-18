@@ -39,6 +39,16 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
   }
 
   void _openBookingFlow() {
+    if (!widget.repository.isLoggedIn) {
+      AuthModal.show(
+        context,
+        repository: widget.repository,
+        onSuccess: () {
+          if (mounted) _openBookingFlow();
+        },
+      );
+      return;
+    }
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => BookingFlowScreen(

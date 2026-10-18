@@ -80,6 +80,11 @@ class SupabaseDbService {
           email: t['email'] as String?,
           pin: t['pin'] as String?,
           password: t['password'] as String?,
+          inviteToken: (t['invite_token'] ?? t['inviteToken']) as String?,
+          inviteStatus: (t['invite_status'] ?? t['inviteStatus']) as String? ?? 'none',
+          inviteSentAt: (t['invite_sent_at'] ?? t['inviteSentAt']) != null
+              ? DateTime.tryParse((t['invite_sent_at'] ?? t['inviteSentAt']) as String)
+              : null,
         );
       }).toList();
 
@@ -309,6 +314,9 @@ class SupabaseDbService {
       if (m.email != null) payload['email'] = m.email;
       if (m.pin != null) payload['pin'] = m.pin;
       if (m.password != null) payload['password'] = m.password;
+      if (m.inviteToken != null) payload['invite_token'] = m.inviteToken;
+      payload['invite_status'] = m.inviteStatus;
+      if (m.inviteSentAt != null) payload['invite_sent_at'] = m.inviteSentAt!.toIso8601String();
       if (m.allowedHubSections != null) {
         payload['allowed_hub_sections'] = m.allowedHubSections;
       }
@@ -383,6 +391,11 @@ class SupabaseDbService {
           email: t['email'] as String?,
           pin: t['pin'] as String?,
           password: t['password'] as String?,
+          inviteToken: (t['invite_token'] ?? t['inviteToken']) as String?,
+          inviteStatus: (t['invite_status'] ?? t['inviteStatus']) as String? ?? 'none',
+          inviteSentAt: (t['invite_sent_at'] ?? t['inviteSentAt']) != null
+              ? DateTime.tryParse((t['invite_sent_at'] ?? t['inviteSentAt']) as String)
+              : null,
         );
 
         if (pin != null && pin.trim().isNotEmpty) {
@@ -395,6 +408,75 @@ class SupabaseDbService {
       }
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error finding staff member: $e');
+    }
+    return null;
+  }
+
+  /// Find a staff member across studios by invite token for staff activation
+  static Future<({TeamMember member, String studioId})?> findStaffMemberByInviteToken(String token) async {
+    final client = _client;
+    if (client == null) return null;
+
+    try {
+      final cleanToken = token.trim();
+      final res = await client
+          .from('team_members')
+          .select()
+          .or('invite_token.eq.$cleanToken,id.eq.$cleanToken')
+          .limit(1);
+
+      if (res.isNotEmpty) {
+        final t = res.first;
+        final studioId = (t['studio_id'] ?? t['studioId']) as String?;
+        if (studioId == null || studioId.isEmpty) return null;
+
+        List<DayBusinessHours>? schedule;
+        final schedRaw = t['custom_weekly_schedule'] ?? t['customWeeklySchedule'];
+        if (schedRaw != null && schedRaw is List) {
+          try {
+            schedule = schedRaw
+                .map((item) => DayBusinessHours.fromJson(Map<String, dynamic>.from(item as Map)))
+                .toList();
+          } catch (_) {}
+        }
+
+        final sectionsRaw = t['allowed_hub_sections'] ?? t['allowedHubSections'];
+        List<String>? allowedSections;
+        if (sectionsRaw != null && sectionsRaw is List) {
+          try {
+            allowedSections = sectionsRaw.map((e) => e.toString()).toList();
+          } catch (_) {}
+        }
+
+        final member = TeamMember(
+          id: t['id'] as String,
+          name: t['name'] as String,
+          roleTitle: (t['role_title'] ?? t['roleTitle']) as String? ?? 'Detail Specialist',
+          avatarUrl: (t['avatar_url'] ?? t['avatarUrl']) as String? ?? '',
+          rating: (t['rating'] as num?)?.toDouble() ?? 5.0,
+          completedJobsCount: (t['completed_jobs_count'] ?? t['completedJobsCount']) as int? ?? 0,
+          isAvailable: (t['is_available'] ?? t['isAvailable']) as bool? ?? true,
+          isFounder: (t['is_founder'] ?? t['isFounder']) as bool? ?? false,
+          customWeeklySchedule: schedule,
+          allowedHubSections: allowedSections,
+          canEditInventory: (t['can_edit_inventory'] ?? t['canEditInventory']) as bool? ?? true,
+          canViewPricing: (t['can_view_pricing'] ?? t['canViewPricing']) as bool? ?? true,
+          canManageTeam: (t['can_manage_team'] ?? t['canManageTeam']) as bool? ?? false,
+          canViewAllTeamCalendar: (t['can_view_all_team_calendar'] ?? t['canViewAllTeamCalendar']) as bool? ?? true,
+          email: t['email'] as String?,
+          pin: t['pin'] as String?,
+          password: t['password'] as String?,
+          inviteToken: (t['invite_token'] ?? t['inviteToken']) as String?,
+          inviteStatus: (t['invite_status'] ?? t['inviteStatus']) as String? ?? 'none',
+          inviteSentAt: (t['invite_sent_at'] ?? t['inviteSentAt']) != null
+              ? DateTime.tryParse((t['invite_sent_at'] ?? t['inviteSentAt']) as String)
+              : null,
+        );
+
+        return (member: member, studioId: studioId);
+      }
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error finding staff by token: $e');
     }
     return null;
   }

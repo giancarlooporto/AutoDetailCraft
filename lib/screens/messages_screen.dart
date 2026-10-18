@@ -76,7 +76,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
                   // Body
                   Expanded(
-                    child: isGuest && conversations.isEmpty
+                    child: (!widget.repository.isLoggedIn || isGuest)
                         ? _buildGuestEmpty()
                         : _loading
                             ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))

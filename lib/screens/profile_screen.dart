@@ -251,7 +251,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
               icon: const Icon(Icons.login_rounded, size: 18),
-              label: const Text('Sign In to My Studio / Garage', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              label: const Text('Sign In to My Garage', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
               onPressed: () => AuthModal.show(context, repository: widget.repository, initialIsSignUp: false),
             ),
             const SizedBox(height: 12),
@@ -280,27 +280,26 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     return ListenableBuilder(
       listenable: widget.repository,
       builder: (context, _) {
+        final isLoggedIn = widget.repository.isLoggedIn;
+        if (!isLoggedIn) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('My Garage', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              backgroundColor: AppTheme.background,
+              elevation: 0,
+            ),
+            body: _buildGuestView(),
+          );
+        }
+
         final user = widget.repository.currentUser;
         final isDetailer = widget.repository.isDetailerWorkbenchMode ||
             user.role == UserRole.detailer ||
             widget.repository.workbenchMode == 'studio';
 
         // If in detailer studio workbench mode, render DetailerWorkbenchView directly
-        // without blocking behind guest view.
         if (isDetailer) {
           return DetailerWorkbenchView(repository: widget.repository);
-        }
-
-        final isLoggedIn = widget.repository.isLoggedIn;
-        if (!isLoggedIn) {
-          return Scaffold(
-            appBar: AppBar(
-              title: const Text('My Studio & Garage', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              backgroundColor: AppTheme.background,
-              elevation: 0,
-            ),
-            body: _buildGuestView(),
-          );
         }
 
         final savedJobs = widget.repository.savedJobs;

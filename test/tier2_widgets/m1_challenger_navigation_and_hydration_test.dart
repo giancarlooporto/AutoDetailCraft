@@ -196,7 +196,7 @@ void main() {
         }
       });
 
-      testWidgets('2.1b: Adversarial test: User in My Studio even with isLoggedIn == false mounts DetailerWorkbenchView directly', (WidgetTester tester) async {
+      testWidgets('2.1b: Adversarial test: User in My Studio with isLoggedIn == false is strictly guarded behind guest view', (WidgetTester tester) async {
         tester.view.physicalSize = const Size(1280, 900);
         tester.view.devicePixelRatio = 1.0;
         setupMockImageHttpClient();
@@ -217,10 +217,10 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          // Verification: Even if unauthenticated, being in studio mode mounts DetailerWorkbenchView directly
-          expect(find.byType(DetailerWorkbenchView), findsOneWidget);
-          expect(find.text('Welcome to AutoDetailCraft'), findsNothing);
-          expect(find.text('Sign In to My Studio / Garage'), findsNothing);
+          // Verification: Unauthenticated visitors are strictly isolated behind guest view
+          expect(find.byType(DetailerWorkbenchView), findsNothing);
+          expect(find.text('Welcome to AutoDetailCraft'), findsOneWidget);
+          expect(find.text('Sign In to My Garage'), findsOneWidget);
         } finally {
           tearDownMockImageHttpClient();
           tester.view.resetPhysicalSize();
@@ -228,7 +228,7 @@ void main() {
         }
       });
 
-      testWidgets('2.2: User with bookings: BookingsListScreen renders appointments cleanly even if unauthenticated', (WidgetTester tester) async {
+      testWidgets('2.2: User with bookings: BookingsListScreen strictly guards appointments if unauthenticated', (WidgetTester tester) async {
         tester.view.physicalSize = const Size(1280, 900);
         tester.view.devicePixelRatio = 1.0;
         setupMockImageHttpClient();
@@ -281,17 +281,10 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          // Verification: Appointment details render cleanly
-          expect(find.text('Titanium Multi-Stage Coating'), findsOneWidget);
-          expect(find.text('2024 Porsche 911 GT3 RS'), findsOneWidget);
-          expect(find.text('Apex Precision Detailing'), findsOneWidget);
-          expect(find.text('10:00 AM - 2:00 PM'), findsOneWidget);
-          expect(find.text('\$1650'), findsOneWidget);
-          expect(find.text(BookingStatus.confirmed.label), findsOneWidget);
-
-          // Verification: Guest lockout view is NOT rendered
-          expect(find.text('View & Manage Detailing Bookings'), findsNothing);
-          expect(find.text('Sign In to View Bookings'), findsNothing);
+          // Verification: Unauthenticated users are strictly guarded and see the guest bookings view
+          expect(find.text('View & Manage Detailing Bookings'), findsOneWidget);
+          expect(find.text('Sign In to View Bookings'), findsOneWidget);
+          expect(find.text('Titanium Multi-Stage Coating'), findsNothing);
         } finally {
           tearDownMockImageHttpClient();
           tester.view.resetPhysicalSize();
@@ -321,11 +314,11 @@ void main() {
 
           // Verification: Guest welcome view renders
           expect(find.text('Welcome to AutoDetailCraft'), findsOneWidget);
-          final signInBtn = find.text('Sign In to My Studio / Garage');
+          final signInBtn = find.text('Sign In to My Garage');
           expect(signInBtn, findsOneWidget);
           expect(find.text('Create New Account'), findsOneWidget);
 
-          // Verification: Tapping 'Sign In to My Studio / Garage' opens AuthModal
+          // Verification: Tapping 'Sign In to My Garage' opens AuthModal
           await tester.tap(signInBtn);
           await tester.pumpAndSettle();
 
