@@ -179,6 +179,52 @@ class SupabaseAuthService {
     }
   }
 
+  /// Send Staff Invitation & Password Setup Email via Supabase Built-in Auth Emailer
+  static Future<({bool success, String? error})> sendStaffInvitationEmail({
+    required String email,
+    required String staffName,
+    required String studioName,
+    required String inviteToken,
+    required String inviteUrl,
+  }) async {
+    final client = _client;
+    if (client == null) {
+      return (success: false, error: 'Backend not ready.');
+    }
+    final cleanEmail = email.trim();
+    if (cleanEmail.isEmpty) {
+      return (success: false, error: 'Email is empty.');
+    }
+
+    try {
+      await client.auth.signInWithOtp(
+        email: cleanEmail,
+        shouldCreateUser: true,
+        emailRedirectTo: inviteUrl,
+        data: {
+          'display_name': staffName.trim(),
+          'staff_invite_token': inviteToken,
+          'studio_name': studioName.trim(),
+          'role': 'staff',
+        },
+      );
+      if (kDebugMode) {
+        print('[SupabaseAuthService] Dispatched staff invitation email to $cleanEmail -> $inviteUrl');
+      }
+      return (success: true, error: null);
+    } on AuthException catch (e) {
+      if (kDebugMode) {
+        print('[SupabaseAuthService] sendStaffInvitationEmail AuthException: ${e.message}');
+      }
+      return (success: false, error: e.message);
+    } catch (e) {
+      if (kDebugMode) {
+        print('[SupabaseAuthService] sendStaffInvitationEmail error: $e');
+      }
+      return (success: false, error: e.toString());
+    }
+  }
+
   /// Sign Out
   static Future<void> signOut() async {
     try {

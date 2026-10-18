@@ -10,6 +10,7 @@ import 'bookings_list_screen.dart';
 import 'messages_screen.dart';
 import 'profile_screen.dart';
 import 'update_password_dialog.dart';
+import 'auth_modal.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   final JobRepository repository;
@@ -22,11 +23,31 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   StreamSubscription<AuthState>? _authSubscription;
+  bool _handledInitialInviteLink = false;
 
   @override
   void initState() {
     super.initState();
     _listenToAuthRecovery();
+    _checkInitialStaffInviteUrl();
+  }
+
+  void _checkInitialStaffInviteUrl() {
+    try {
+      final token = Uri.base.queryParameters['token'] ?? Uri.base.queryParameters['invite'];
+      if (token != null && token.trim().isNotEmpty && !_handledInitialInviteLink) {
+        _handledInitialInviteLink = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            AuthModal.show(
+              context,
+              repository: widget.repository,
+              initialInviteToken: token.trim(),
+            );
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   void _listenToAuthRecovery() {
@@ -40,6 +61,24 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 UpdatePasswordDialog.show(context);
               }
             });
+          } else if (event == AuthChangeEvent.signedIn) {
+            final metaToken = data.session?.user.userMetadata?['staff_invite_token'] as String?;
+            final urlToken = Uri.base.queryParameters['token'] ?? Uri.base.queryParameters['invite'];
+            final inviteToken = (urlToken != null && urlToken.trim().isNotEmpty)
+                ? urlToken.trim()
+                : metaToken?.trim();
+            if (inviteToken != null && inviteToken.isNotEmpty && !_handledInitialInviteLink) {
+              _handledInitialInviteLink = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  AuthModal.show(
+                    context,
+                    repository: widget.repository,
+                    initialInviteToken: inviteToken,
+                  );
+                }
+              });
+            }
           }
         });
       }

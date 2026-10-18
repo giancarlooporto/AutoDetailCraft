@@ -1140,6 +1140,22 @@ class JobRepository extends ChangeNotifier {
     if (_isLoggedIn) {
       SupabaseDbService.saveTeamMember(_currentUser.id, member);
     }
+    if (member.email != null &&
+        member.email!.trim().isNotEmpty &&
+        member.inviteStatus == 'pending') {
+      final token = (member.inviteToken != null && member.inviteToken!.trim().isNotEmpty)
+          ? member.inviteToken!
+          : member.id;
+      SupabaseAuthService.sendStaffInvitationEmail(
+        email: member.email!.trim(),
+        staffName: member.name,
+        studioName: _currentUser.businessName.isNotEmpty
+            ? _currentUser.businessName
+            : _currentUser.displayName,
+        inviteToken: token,
+        inviteUrl: member.getInviteLink(studioId: _currentUser.id),
+      );
+    }
     notifyListeners();
   }
 
@@ -2817,7 +2833,7 @@ class JobRepository extends ChangeNotifier {
     return (success: true, error: null, member: matchedMember);
   }
 
-  Future<void> sendStaffInvite(TeamMember member) async {
+  Future<({bool success, String? error})> sendStaffInvite(TeamMember member) async {
     final token = (member.inviteToken != null && member.inviteToken!.trim().isNotEmpty)
         ? member.inviteToken!
         : 'inv_${DateTime.now().millisecondsSinceEpoch}_${member.name.replaceAll(RegExp(r'\s+'), '').toLowerCase()}';
@@ -2827,6 +2843,19 @@ class JobRepository extends ChangeNotifier {
       inviteSentAt: DateTime.now(),
     );
     updateTeamMember(updated);
+
+    if (updated.email != null && updated.email!.trim().isNotEmpty) {
+      return await SupabaseAuthService.sendStaffInvitationEmail(
+        email: updated.email!.trim(),
+        staffName: updated.name,
+        studioName: _currentUser.businessName.isNotEmpty
+            ? _currentUser.businessName
+            : _currentUser.displayName,
+        inviteToken: token,
+        inviteUrl: updated.getInviteLink(studioId: _currentUser.id),
+      );
+    }
+    return (success: true, error: null);
   }
 
   TeamMember? findMemberByInviteToken(String token) {
