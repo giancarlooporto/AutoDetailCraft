@@ -290,21 +290,25 @@ class SupabaseDbService {
     }
   }
 
-  /// Upsert a team member to Supabase
+  /// Upsert a team member to Supabase (with automatic fallback if extended columns aren't migrated yet)
   static Future<void> saveTeamMember(String studioId, TeamMember m) async {
     final client = _client;
     if (client == null) return;
 
+    final basePayload = <String, dynamic>{
+      'id': m.id,
+      'studio_id': studioId,
+      'name': m.name,
+      'role_title': m.roleTitle,
+      'avatar_url': m.avatarUrl,
+      'rating': m.rating,
+      'completed_jobs_count': m.completedJobsCount,
+      'is_available': m.isAvailable,
+    };
+
     try {
       final payload = <String, dynamic>{
-        'id': m.id,
-        'studio_id': studioId,
-        'name': m.name,
-        'role_title': m.roleTitle,
-        'avatar_url': m.avatarUrl,
-        'rating': m.rating,
-        'completed_jobs_count': m.completedJobsCount,
-        'is_available': m.isAvailable,
+        ...basePayload,
         'is_founder': m.isFounder,
         'can_edit_inventory': m.canEditInventory,
         'can_view_pricing': m.canViewPricing,
@@ -326,7 +330,14 @@ class SupabaseDbService {
       }
       await client.from('team_members').upsert(payload);
     } catch (e) {
-      if (kDebugMode) print('[SupabaseDbService] Error saving team member: $e');
+      if (kDebugMode) {
+        print('[SupabaseDbService] Extended saveTeamMember failed ($e), falling back to base columns.');
+      }
+      try {
+        await client.from('team_members').upsert(basePayload);
+      } catch (e2) {
+        if (kDebugMode) print('[SupabaseDbService] Base saveTeamMember error: $e2');
+      }
     }
   }
 
@@ -417,19 +428,33 @@ class SupabaseDbService {
     final client = _client;
     if (client == null) return null;
 
+    final cleanToken = token.trim();
+    List<dynamic> res = const [];
+
     try {
-      final cleanToken = token.trim();
-      final res = await client
+      res = await client
           .from('team_members')
           .select()
           .or('invite_token.eq.$cleanToken,id.eq.$cleanToken')
           .limit(1);
+    } catch (_) {
+      try {
+        final memberIdParam = Uri.base.queryParameters['memberId'];
+        final lookupId = (memberIdParam != null && memberIdParam.isNotEmpty) ? memberIdParam : cleanToken;
+        res = await client
+            .from('team_members')
+            .select()
+            .eq('id', lookupId)
+            .limit(1);
+      } catch (e) {
+        if (kDebugMode) print('[SupabaseDbService] Fallback token lookup error: $e');
+      }
+    }
 
-      if (res.isNotEmpty) {
-        final t = res.first;
-        final studioId = (t['studio_id'] ?? t['studioId']) as String?;
-        if (studioId == null || studioId.isEmpty) return null;
-
+    if (res.isNotEmpty) {
+      final t = res.first;
+      final studioId = (t['studio_id'] ?? t['studioId']) as String?;
+      if (studioId != null && studioId.isNotEmpty) {
         List<DayBusinessHours>? schedule;
         final schedRaw = t['custom_weekly_schedule'] ?? t['customWeeklySchedule'];
         if (schedRaw != null && schedRaw is List) {
@@ -466,8 +491,8 @@ class SupabaseDbService {
           email: t['email'] as String?,
           pin: t['pin'] as String?,
           password: t['password'] as String?,
-          inviteToken: (t['invite_token'] ?? t['inviteToken']) as String?,
-          inviteStatus: (t['invite_status'] ?? t['inviteStatus']) as String? ?? 'none',
+          inviteToken: (t['invite_token'] ?? t['inviteToken']) as String? ?? cleanToken,
+          inviteStatus: (t['invite_status'] ?? t['inviteStatus']) as String? ?? 'pending',
           inviteSentAt: (t['invite_sent_at'] ?? t['inviteSentAt']) != null
               ? DateTime.tryParse((t['invite_sent_at'] ?? t['inviteSentAt']) as String)
               : null,
@@ -475,8 +500,6 @@ class SupabaseDbService {
 
         return (member: member, studioId: studioId);
       }
-    } catch (e) {
-      if (kDebugMode) print('[SupabaseDbService] Error finding staff by token: $e');
     }
     return null;
   }
