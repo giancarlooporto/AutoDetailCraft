@@ -746,7 +746,18 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                         children: [
                           Opacity(
                             opacity: isOff ? 0.5 : 1.0,
-                            child: CircleAvatar(radius: 12, backgroundImage: NetworkImage(m.avatarUrl)),
+                            child: CircleAvatar(
+                              radius: 12,
+                              backgroundColor: AppTheme.surfaceLight,
+                              backgroundImage: m.localAvatarBytes != null
+                                  ? MemoryImage(m.localAvatarBytes!) as ImageProvider
+                                  : (m.avatarUrl.trim().isNotEmpty
+                                      ? NetworkImage(m.avatarUrl.trim())
+                                      : null),
+                              child: (m.localAvatarBytes == null && m.avatarUrl.trim().isEmpty)
+                                  ? const Icon(Icons.person_rounded, size: 14, color: AppTheme.textMuted)
+                                  : null,
+                            ),
                           ),
                           const SizedBox(width: 6),
                           Text(

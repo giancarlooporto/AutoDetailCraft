@@ -37,9 +37,7 @@ class AddTeamMemberDialog extends StatefulWidget {
 class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
   final TextEditingController _nameCtrl = TextEditingController();
   final TextEditingController _roleCtrl = TextEditingController(text: 'Lead Paint Correction Specialist');
-  final TextEditingController _avatarUrlCtrl = TextEditingController(
-    text: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
-  );
+  final TextEditingController _avatarUrlCtrl = TextEditingController();
   final TextEditingController _emailCtrl = TextEditingController();
   final TextEditingController _pinCtrl = TextEditingController();
   final TextEditingController _passwordCtrl = TextEditingController();
@@ -125,9 +123,7 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
   void _submit() {
     final name = _nameCtrl.text.trim();
     final role = _roleCtrl.text.trim();
-    final url = _avatarUrlCtrl.text.trim().isNotEmpty
-        ? _avatarUrlCtrl.text.trim()
-        : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80';
+    final url = _avatarUrlCtrl.text.trim();
 
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -282,11 +278,15 @@ class _AddTeamMemberDialogState extends State<AddTeamMemberDialog> {
                       ),
                       child: CircleAvatar(
                         radius: 38,
+                        backgroundColor: AppTheme.surfaceLight,
                         backgroundImage: _uploadedAvatarBytes != null
                             ? MemoryImage(_uploadedAvatarBytes!) as ImageProvider
                             : (_avatarUrlCtrl.text.trim().isNotEmpty
                                 ? NetworkImage(_avatarUrlCtrl.text.trim()) as ImageProvider
-                                : const NetworkImage('https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80')),
+                                : null),
+                        child: (_uploadedAvatarBytes == null && _avatarUrlCtrl.text.trim().isEmpty)
+                            ? const Icon(Icons.person_rounded, size: 38, color: AppTheme.textMuted)
+                            : null,
                       ),
                     ),
                     InkWell(

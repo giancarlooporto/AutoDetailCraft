@@ -303,11 +303,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         AddTeamMemberDialog.show(
           context,
           repository: widget.repository,
-          onMemberAdded: (newMember) {
-            setState(() {
-              _selectedTeamMemberId = newMember.id;
-              if (isMobile) _mobileStep = 2;
-            });
+          onMemberAdded: (_) {
+            setState(() {});
           },
         );
         break;
@@ -1338,9 +1335,15 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 leading: CircleAvatar(
                   radius: 18,
+                  backgroundColor: AppTheme.surfaceLight,
                   backgroundImage: member.localAvatarBytes != null
                       ? MemoryImage(member.localAvatarBytes!) as ImageProvider
-                      : NetworkImage(member.avatarUrl),
+                      : (member.avatarUrl.trim().isNotEmpty
+                          ? NetworkImage(member.avatarUrl.trim())
+                          : null),
+                  child: (member.localAvatarBytes == null && member.avatarUrl.trim().isEmpty)
+                      ? const Icon(Icons.person_rounded, size: 18, color: AppTheme.textMuted)
+                      : null,
                 ),
                 title: Row(
                   children: [
@@ -1815,6 +1818,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               ...staff.map((m) => _buildDropdownSelectedRow(
                 id: m.id,
                 label: m.isFounder ? 'Founder (You)' : m.name,
+                icon: Icons.person_rounded,
                 avatarUrl: m.avatarUrl,
               )),
             ];
@@ -1837,6 +1841,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 child: _buildDropdownItemRow(
                   id: m.id,
                   label: m.isFounder ? 'Founder (You)' : m.name,
+                  icon: Icons.person_rounded,
                   avatarUrl: m.avatarUrl,
                   subtitle: m.roleTitle,
                   badgeText: m.isFounder ? 'Shop Owner' : null,
@@ -3179,9 +3184,15 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           children: [
             CircleAvatar(
               radius: 34,
+              backgroundColor: AppTheme.surfaceLight,
               backgroundImage: member.localAvatarBytes != null
                   ? MemoryImage(member.localAvatarBytes!) as ImageProvider
-                  : NetworkImage(member.avatarUrl),
+                  : (member.avatarUrl.trim().isNotEmpty
+                      ? NetworkImage(member.avatarUrl.trim())
+                      : null),
+              child: (member.localAvatarBytes == null && member.avatarUrl.trim().isEmpty)
+                  ? const Icon(Icons.person_rounded, size: 34, color: AppTheme.textMuted)
+                  : null,
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -6932,8 +6943,13 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 children: [
                   CircleAvatar(
                     radius: 14,
-                    backgroundImage: m.avatarUrl.isNotEmpty ? NetworkImage(m.avatarUrl) : null,
-                    child: m.avatarUrl.isEmpty ? Text(m.name.substring(0, 1)) : null,
+                    backgroundColor: AppTheme.surfaceLight,
+                    backgroundImage: m.localAvatarBytes != null
+                        ? MemoryImage(m.localAvatarBytes!) as ImageProvider
+                        : (m.avatarUrl.trim().isNotEmpty ? NetworkImage(m.avatarUrl.trim()) : null),
+                    child: (m.localAvatarBytes == null && m.avatarUrl.trim().isEmpty)
+                        ? const Icon(Icons.person_rounded, size: 15, color: AppTheme.textMuted)
+                        : null,
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -8534,14 +8550,18 @@ class _OwnerLockShieldContentState extends State<_OwnerLockShieldContent> {
                               backgroundColor: isSelected
                                   ? AppTheme.primary
                                   : AppTheme.primary.withAlpha(30),
-                              child: Text(
-                                m.name.isNotEmpty ? m.name[0].toUpperCase() : 'T',
-                                style: TextStyle(
-                                  fontSize: widget.isCompactPhone ? 11 : 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: isSelected ? Colors.black : AppTheme.primary,
-                                ),
-                              ),
+                              backgroundImage: m.localAvatarBytes != null
+                                  ? MemoryImage(m.localAvatarBytes!) as ImageProvider
+                                  : (m.avatarUrl.trim().isNotEmpty
+                                      ? NetworkImage(m.avatarUrl.trim())
+                                      : null),
+                              child: (m.localAvatarBytes == null && m.avatarUrl.trim().isEmpty)
+                                  ? Icon(
+                                      Icons.person_rounded,
+                                      size: widget.isCompactPhone ? 14 : 16,
+                                      color: isSelected ? Colors.black : AppTheme.primary,
+                                    )
+                                  : null,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
