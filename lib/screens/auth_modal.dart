@@ -211,7 +211,8 @@ class _AuthModalState extends State<AuthModal> {
       setState(() => _isLoading = false);
 
       if (res.success && res.profile != null) {
-        widget.repository.loginUser(res.profile!);
+        await widget.repository.loginUser(res.profile!);
+        if (!mounted) return;
         Navigator.of(context).pop();
         widget.onSuccess?.call();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -238,8 +239,9 @@ class _AuthModalState extends State<AuthModal> {
       if (!mounted) return;
 
       if (res.success && res.profile != null) {
+        await widget.repository.loginUser(res.profile!);
+        if (!mounted) return;
         setState(() => _isLoading = false);
-        widget.repository.loginUser(res.profile!);
         Navigator.of(context).pop();
         widget.onSuccess?.call();
         ScaffoldMessenger.of(context).showSnackBar(

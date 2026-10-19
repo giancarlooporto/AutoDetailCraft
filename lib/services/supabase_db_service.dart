@@ -608,22 +608,27 @@ class SupabaseDbService {
     if (client == null) return;
 
     try {
+      final effectiveAuthorId = client.auth.currentUser?.id ?? job.author.id;
+      final jobToSave = job.author.id != effectiveAuthorId
+          ? job.copyWith(author: job.author.copyWith(id: effectiveAuthorId))
+          : job;
+
       await client.from('jobs').upsert({
-        'id': job.id,
-        'author_id': job.author.id,
-        'title': job.title,
-        'description': job.description,
-        'vehicle_year': job.vehicleYear,
-        'vehicle_make': job.vehicleMake,
-        'vehicle_model': job.vehicleModel,
-        'paint_color': job.paintColorName,
-        'service_type': job.serviceType,
-        'before_image_url': job.beforeImageUrl,
-        'after_image_url': job.afterImageUrl,
-        'raw_data': job.toJson(),
+        'id': jobToSave.id,
+        'author_id': effectiveAuthorId,
+        'title': jobToSave.title,
+        'description': jobToSave.description,
+        'vehicle_year': jobToSave.vehicleYear,
+        'vehicle_make': jobToSave.vehicleMake,
+        'vehicle_model': jobToSave.vehicleModel,
+        'paint_color': jobToSave.paintColorName,
+        'service_type': jobToSave.serviceType,
+        'before_image_url': jobToSave.beforeImageUrl,
+        'after_image_url': jobToSave.afterImageUrl,
+        'raw_data': jobToSave.toJson(),
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
-      if (kDebugMode) print('[SupabaseDbService] Job saved to Supabase: ${job.id}');
+      if (kDebugMode) print('[SupabaseDbService] Job saved to Supabase: ${jobToSave.id} (author: $effectiveAuthorId)');
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error saving job to Supabase: $e');
     }

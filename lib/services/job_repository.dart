@@ -592,9 +592,14 @@ class JobRepository extends ChangeNotifier {
               likesCount: existing.likesCount > cJob.likesCount ? existing.likesCount : cJob.likesCount,
               comments: mergedComments,
             );
-            LocalStorageService.saveJobCommentsOverride(cJob.id, mergedComments);
           } else {
-            jobMap[cJob.id] = cJob;
+            // If the job belongs to the current user (e.g. published on another device),
+            // attribute it directly to _currentUser so it appears in My Studio portfolio immediately
+            if (cJob.author.id == _currentUser.id || cJob.author.username == _currentUser.username) {
+              jobMap[cJob.id] = cJob.copyWith(author: _currentUser);
+            } else {
+              jobMap[cJob.id] = cJob;
+            }
           }
         }
         _jobs = jobMap.values.toList();
@@ -659,8 +664,17 @@ class JobRepository extends ChangeNotifier {
       refreshOwnerPinStatus(),
     ]);
 
-    // Ensure non-detailers land strictly in Client Mode
-    if (_currentUser.role != UserRole.detailer) {
+    if (_currentUser.ownerPinHash != null && _currentUser.ownerPinHash!.isNotEmpty) {
+      _ownerPinHash = _currentUser.ownerPinHash;
+      await LocalStorageService.saveOwnerPinHash(_ownerPinHash);
+    }
+
+    // Keep detailer or superAdmin in studio workbench mode
+    final isDetailerOrAdmin = _currentUser.role == UserRole.detailer || _currentUser.role == UserRole.superAdmin;
+    if (isDetailerOrAdmin) {
+      _currentUser = _currentUser.copyWith(role: UserRole.detailer, isVerifiedHost: true);
+      await LocalStorageService.saveWorkbenchMode('studio');
+    } else {
       _currentUser = _currentUser.copyWith(role: UserRole.client);
       await LocalStorageService.saveWorkbenchMode('garage');
     }
@@ -2615,6 +2629,9 @@ class JobRepository extends ChangeNotifier {
     _currentUser = _currentUser.copyWith(ownerPinHash: _ownerPinHash);
     await LocalStorageService.saveOwnerPinHash(_ownerPinHash);
     _persistUser();
+    if (_isLoggedIn) {
+      await SupabaseDbService.saveUserProfile(_currentUser);
+    }
   }
 
   Future<void> _registerPinFailure({DateTime? serverLockedUntil}) async {
