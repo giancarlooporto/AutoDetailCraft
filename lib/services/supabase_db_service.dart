@@ -229,6 +229,7 @@ class SupabaseDbService {
         'cover_url': user.coverUrl,
         'location': user.location,
         'service_radius': encodedRadius,
+        'owner_pin_hash': user.ownerPinHash,
         'bio': user.bio,
         'phone': user.phone,
         'instagram_handle': user.instagramHandle,
@@ -400,6 +401,9 @@ class SupabaseDbService {
         'can_view_all_team_calendar': m.canViewAllTeamCalendar,
         'invite_status': m.inviteStatus,
       };
+      if (m.pin != null && m.pin!.trim().isNotEmpty) {
+        fullPayload['pin'] = m.pin!.trim();
+      }
       if (m.email != null) fullPayload['email'] = m.email;
       if (m.inviteSentAt != null) {
         fullPayload['invite_sent_at'] = m.inviteSentAt!.toIso8601String();
