@@ -27,7 +27,8 @@ enum StudioHubSection {
   inventory('Inventory', 'INVENTORY', 'Hardware, chemicals, recipe', Icons.inventory_2_rounded),
   calendar('Calendar', 'CALENDAR', 'Bookings & host schedule', Icons.calendar_month_rounded),
   teams('My Teams', 'MY TEAMS', 'Staff roles & technicians', Icons.groups_rounded),
-  savedRecipes('Saved Recipes', 'SAVED RECIPES', 'Technical playbook', Icons.bookmark_rounded);
+  savedRecipes('Saved Recipes', 'SAVED RECIPES', 'Technical playbook', Icons.bookmark_rounded),
+  settings('Settings', 'SETTINGS', 'Shop mode, profile & account', Icons.settings_rounded);
 
   final String title;
   final String tag;
@@ -84,6 +85,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
   StudioHubSection _selectedHub = StudioHubSection.portfolio;
   String _inventoryCategoryFilter = 'HARDWARE'; // HARDWARE, CHEMICALS, RECIPE
+  String _selectedSettingsCategory = 'SHOP_MODE'; // SHOP_MODE, STUDIO_PROFILE, ACCOUNT
 
   // Selected item IDs or indices
   String? _selectedInventoryId;
@@ -120,18 +122,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   }
 
   void _startAutoLockTimer() {
+    // Admin mode never auto-locks (switching to Shop locks immediately).
     _autoLockTimer?.cancel();
-    final minutes = widget.repository.ownerAutoLockMinutes;
-    if (minutes <= 0) return;
-    _autoLockTimer = Timer(Duration(minutes: minutes), () {
-      if (mounted &&
-          !widget.repository.isOwnerLocked &&
-          !widget.repository.isViewingAsTeamMember &&
-          !widget.repository.isStaffSession &&
-          widget.repository.isDetailerWorkbenchMode) {
-        widget.repository.lockOwnerView();
-      }
-    });
   }
 
   Future<void> _lockOwnerViewOrSetupPin() async {
@@ -144,9 +136,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   }
 
   void _resetAutoLockTimer() {
-    if (widget.repository.ownerAutoLockMinutes > 0) {
-      _startAutoLockTimer();
-    }
+    _autoLockTimer?.cancel();
   }
 
   Future<void> _loadSavedHubSection() async {
@@ -253,6 +243,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         return _selectedServicePackageId != null && user.servicePackages.any((p) => p.id == _selectedServicePackageId);
       case StudioHubSection.savedRecipes:
         return widget.repository.savedJobs.isNotEmpty;
+      case StudioHubSection.settings:
+        return false;
     }
   }
 
@@ -357,6 +349,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         break;
       case StudioHubSection.savedRecipes:
         widget.repository.setActiveTab(0);
+        break;
+      case StudioHubSection.settings:
         break;
     }
   }
@@ -486,6 +480,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         );
         break;
       case StudioHubSection.savedRecipes:
+      case StudioHubSection.settings:
         break;
     }
   }
@@ -548,6 +543,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         deleteAction = () => widget.repository.deleteJob(job.id);
         break;
       case StudioHubSection.savedRecipes:
+      case StudioHubSection.settings:
         return;
     }
 
@@ -701,7 +697,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       color: AppTheme.surface,
       child: Column(
         children: [
-          // Studio Profile Header Card
+          // Studio Profile Header Card (Clicking studio name/profile opens Public Storefront)
           Container(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
             decoration: BoxDecoration(
@@ -711,93 +707,66 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundImage: user.localAvatarBytes != null
-                          ? MemoryImage(user.localAvatarBytes!) as ImageProvider
-                          : NetworkImage(user.avatarUrl),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    key: const ValueKey('studio_header_storefront_btn'),
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => PublicStudioScreen(
+                            detailer: user,
+                            repository: widget.repository,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                      child: Row(
                         children: [
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  user.businessName.isNotEmpty ? user.businessName : user.displayName,
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                          CircleAvatar(
+                            radius: 22,
+                            backgroundImage: user.localAvatarBytes != null
+                                ? MemoryImage(user.localAvatarBytes!) as ImageProvider
+                                : NetworkImage(user.avatarUrl),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        user.businessName.isNotEmpty ? user.businessName : user.displayName,
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (user.isVerifiedHost) ...[
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.verified_rounded, size: 14, color: AppTheme.primary),
+                                    ],
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  user.location.isNotEmpty ? user.location : 'Studio OS',
+                                  style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted),
+                                  maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
-                              ),
-                              if (user.isVerifiedHost) ...[
-                                const SizedBox(width: 4),
-                                const Icon(Icons.verified_rounded, size: 14, color: AppTheme.primary),
                               ],
-                            ],
+                            ),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            user.location.isNotEmpty ? user.location : 'Studio OS',
-                            style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          const Icon(Icons.open_in_new_rounded, size: 14, color: AppTheme.textMuted),
                         ],
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                // Quick Mode Switch & Storefront Actions
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.primary,
-                          side: const BorderSide(color: AppTheme.primary, width: 1),
-                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        icon: const Icon(Icons.directions_car_rounded, size: 14),
-                        label: const Text('Switch to Client Mode', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                        onPressed: () => widget.repository.toggleHostMode(targetRole: UserRole.client),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      icon: const Icon(Icons.visibility_outlined, size: 18, color: AppTheme.textSecondary),
-                      tooltip: 'View Public Storefront',
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => PublicStudioScreen(
-                              detailer: user,
-                              repository: widget.repository,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 4),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      icon: const Icon(Icons.edit_outlined, size: 18, color: AppTheme.textSecondary),
-                      tooltip: 'Edit Profile & Settings',
-                      onPressed: () => EditProfileDialog.show(context, repository: widget.repository),
-                    ),
-                  ],
+                  ),
                 ),
                 _buildActiveIdentityBanner(context),
               ],
@@ -856,6 +825,64 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               ],
             ),
           ),
+
+          // Pinned at the very bottom-left of Pane 1: Settings
+          Container(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
+            decoration: const BoxDecoration(
+              color: AppTheme.surface,
+              border: Border(top: BorderSide(color: AppTheme.border)),
+            ),
+            child: Container(
+              decoration: BoxDecoration(
+                color: _selectedHub == StudioHubSection.settings
+                    ? AppTheme.primary.withAlpha(25)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: _selectedHub == StudioHubSection.settings
+                      ? AppTheme.primary.withAlpha(120)
+                      : Colors.transparent,
+                  width: 1,
+                ),
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: ListTile(
+                  key: const ValueKey('pane1_settings_btn'),
+                  dense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                  leading: Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: _selectedHub == StudioHubSection.settings ? AppTheme.primary : AppTheme.surfaceLight,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.settings_rounded,
+                      color: _selectedHub == StudioHubSection.settings ? Colors.black : AppTheme.textSecondary,
+                      size: 16,
+                    ),
+                  ),
+                  title: Text(
+                    'Settings',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: _selectedHub == StudioHubSection.settings ? FontWeight.bold : FontWeight.w600,
+                      color: _selectedHub == StudioHubSection.settings ? Colors.white : AppTheme.textPrimary,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Shop mode, profile & account',
+                    style: TextStyle(fontSize: 10, color: AppTheme.textMuted),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () => _selectHub(StudioHubSection.settings, isMobile: isMobile),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -880,6 +907,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         return user.teamMembers.length + 1; // Founder + staff
       case StudioHubSection.inventory:
         return invCount;
+      case StudioHubSection.settings:
+        return 3;
     }
   }
 
@@ -1066,7 +1095,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           ],
 
           // Bottom: [ + ADD ] button to add new team, portfolio, or service (Inventory add button transferred to Pane 3, Calendar has settings)
-          if (_selectedHub != StudioHubSection.savedRecipes && _selectedHub != StudioHubSection.inventory && _selectedHub != StudioHubSection.calendar) ...[
+          if (_selectedHub != StudioHubSection.savedRecipes &&
+              _selectedHub != StudioHubSection.inventory &&
+              _selectedHub != StudioHubSection.calendar &&
+              _selectedHub != StudioHubSection.settings) ...[
             if ((_selectedHub != StudioHubSection.teams || _canManageTeam) &&
                 (_selectedHub != StudioHubSection.services || _canViewPricing)) ...[
               Container(
@@ -1112,6 +1144,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         return 'Active studio service menus';
       case StudioHubSection.savedRecipes:
         return 'Bookmarked community builds';
+      case StudioHubSection.settings:
+        return 'Configure studio & account options';
     }
   }
 
@@ -1235,6 +1269,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         return _buildServicesList(isMobile: isMobile);
       case StudioHubSection.savedRecipes:
         return _buildSavedRecipesList(isMobile: isMobile);
+      case StudioHubSection.settings:
+        return _buildSettingsPane2(context, isMobile: isMobile);
     }
   }
 
@@ -2445,7 +2481,419 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         return _buildServiceInspector(context, isMobile: isMobile);
       case StudioHubSection.savedRecipes:
         return _buildSavedRecipesInspector(context);
+      case StudioHubSection.settings:
+        return _buildSettingsInspector(context, isMobile: isMobile);
     }
+  }
+
+  // --- SETTINGS (PANE 2 & PANE 3) ---
+  Widget _buildSettingsPane2(BuildContext context, {bool isMobile = false}) {
+    final options = [
+      (
+        id: 'SHOP_MODE',
+        title: 'Shop Mode',
+        subtitle: 'Working with a team & Shop / Admin lock',
+        icon: Icons.storefront_rounded,
+      ),
+      (
+        id: 'STUDIO_PROFILE',
+        title: 'Studio Profile',
+        subtitle: 'Edit studio name, bio, location & photos',
+        icon: Icons.badge_outlined,
+      ),
+      (
+        id: 'ACCOUNT',
+        title: 'Account & Mode',
+        subtitle: 'Switch to Client Mode & Log Out',
+        icon: Icons.manage_accounts_rounded,
+      ),
+    ];
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(12),
+      itemCount: options.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (ctx, idx) {
+        final opt = options[idx];
+        final isSelected = _selectedSettingsCategory == opt.id;
+        return Container(
+          decoration: BoxDecoration(
+            color: isSelected ? AppTheme.primary.withAlpha(25) : AppTheme.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? AppTheme.primary : AppTheme.border,
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              key: ValueKey('settings_option_${opt.id.toLowerCase()}'),
+              borderRadius: BorderRadius.circular(10),
+              onTap: () {
+                setState(() {
+                  _selectedSettingsCategory = opt.id;
+                  if (isMobile) _mobileStep = 2;
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppTheme.primary : AppTheme.surfaceLight,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        opt.icon,
+                        size: 18,
+                        color: isSelected ? Colors.black : AppTheme.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            opt.title,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: isSelected ? Colors.white : AppTheme.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            opt.subtitle,
+                            style: const TextStyle(fontSize: 10, color: AppTheme.textMuted),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: AppTheme.textMuted),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSettingsInspector(BuildContext context, {bool isMobile = false}) {
+    final repo = widget.repository;
+    final user = repo.currentUser;
+
+    if (_selectedSettingsCategory == 'STUDIO_PROFILE') {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppTheme.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 26,
+                  backgroundImage: user.localAvatarBytes != null
+                      ? MemoryImage(user.localAvatarBytes!) as ImageProvider
+                      : NetworkImage(user.avatarUrl),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        user.businessName.isNotEmpty ? user.businessName : user.displayName,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        user.location.isNotEmpty ? user.location : 'No location set',
+                        style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              user.bio.isNotEmpty ? user.bio : 'No studio bio added yet.',
+              style: const TextStyle(fontSize: 12.5, color: AppTheme.textSecondary, height: 1.4),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.edit_outlined, size: 16),
+              label: const Text('Edit Studio Profile & Location', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              onPressed: () => EditProfileDialog.show(context, repository: repo),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_selectedSettingsCategory == 'ACCOUNT') {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.directions_car_rounded, color: AppTheme.primary, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'Client Mode (My Garage)',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Switch from your Detailer Studio Workbench to your personal Client Garage view.',
+                  style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary, height: 1.4),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  key: const ValueKey('settings_switch_client_mode_btn'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.primary,
+                    side: const BorderSide(color: AppTheme.primary, width: 1.2),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.directions_car_rounded, size: 16),
+                  label: const Text('Switch to Client Mode', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  onPressed: () => repo.toggleHostMode(targetRole: UserRole.client),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.redAccent.withAlpha(80)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.logout_rounded, color: Colors.redAccent, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'Account Session',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Sign out of your studio account on this browser.',
+                  style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary, height: 1.4),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  key: const ValueKey('settings_logout_btn'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.logout_rounded, size: 16),
+                  label: const Text('Log Out', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  onPressed: () async {
+                    final sm = ScaffoldMessenger.of(context);
+                    await repo.logoutUser();
+                    if (mounted) {
+                      sm.showSnackBar(
+                        const SnackBar(
+                          content: Text('You have been logged out.'),
+                          backgroundColor: AppTheme.surface,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Default: SHOP_MODE ("Working with a Team?" toggle + Admin PIN settings + Switch to Client Mode)
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.primary.withAlpha(100)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Working with a Team?',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'When enabled, displays the Shop / Admin switch in Pane 1 so you can lock the studio into Shop mode for your team. When off, you work solo in Admin mode with no lock button.',
+                          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary, height: 1.4),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Switch(
+                    key: const ValueKey('working_with_team_switch'),
+                    value: repo.workingWithTeam,
+                    activeThumbColor: AppTheme.primary,
+                    onChanged: (val) async {
+                      await repo.setWorkingWithTeam(val);
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              const Divider(color: AppTheme.border, height: 1),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Admin 4-Digit Security PIN',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        repo.hasOwnerPin ? 'PIN Secured' : 'No PIN created yet',
+                        style: const TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
+                      ),
+                    ],
+                  ),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.primary,
+                      side: const BorderSide(color: AppTheme.primary),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    icon: const Icon(Icons.lock_person_rounded, size: 15),
+                    label: Text(
+                      repo.hasOwnerPin ? 'Change Admin PIN' : 'Create Admin PIN',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: _showChangeOwnerPinDialog,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Client Mode (My Garage)',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Switch to your personal vehicle garage or log out of your account.',
+                      style: TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.primary,
+                  side: const BorderSide(color: AppTheme.primary),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.directions_car_rounded, size: 15),
+                label: const Text('Switch to Client Mode', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                onPressed: () => repo.toggleHostMode(targetRole: UserRole.client),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.redAccent,
+                  side: const BorderSide(color: Colors.redAccent),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.logout_rounded, size: 15),
+                label: const Text('Log Out', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                onPressed: () async {
+                  await repo.logoutUser();
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   // --- INVENTORY ITEMS (PANE 3) ---
@@ -4606,19 +5054,21 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   }
 
   Widget _buildActiveIdentityBanner(BuildContext context) {
-    final user = widget.repository.currentUser;
     final isViewingStaff = widget.repository.isViewingAsTeamMember;
     final activeMember = widget.repository.activeTeamMember;
     final isStaffSession = widget.repository.isStaffSession;
 
+    // 1. When a staff member is logged in / viewing: show "Admin" button that opens the lock/login modal
     if (isViewingStaff && activeMember != null) {
       return Container(
-        margin: const EdgeInsets.only(top: 8),
+        margin: const EdgeInsets.only(top: 10),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
           color: isStaffSession ? const Color(0xFF00E676).withAlpha(15) : Colors.amber.withAlpha(20),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: isStaffSession ? const Color(0xFF00E676).withAlpha(100) : Colors.amber.withAlpha(100)),
+          border: Border.all(
+            color: isStaffSession ? const Color(0xFF00E676).withAlpha(100) : Colors.amber.withAlpha(100),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -4645,7 +5095,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -4657,38 +5107,63 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                InkWell(
-                  borderRadius: BorderRadius.circular(4),
-                  onTap: () {
-                    if (isStaffSession) {
+                if (isStaffSession) ...[
+                  InkWell(
+                    borderRadius: BorderRadius.circular(4),
+                    onTap: () {
                       widget.repository.logoutStaffMember();
+                      setState(() {});
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withAlpha(30),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.redAccent.withAlpha(120)),
+                      ),
+                      child: const Text(
+                        'Sign Out',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.redAccent,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                InkWell(
+                  key: const ValueKey('staff_return_to_admin_btn'),
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () {
+                    if (widget.repository.hasOwnerPin) {
+                      widget.repository.lockOwnerView();
                       setState(() {});
                     } else {
                       _promptUnlockOwner();
                     }
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: isStaffSession ? Colors.redAccent.withAlpha(30) : AppTheme.surfaceLight,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: isStaffSession ? Colors.redAccent.withAlpha(120) : AppTheme.border),
+                      color: AppTheme.primary.withAlpha(30),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: AppTheme.primary),
                     ),
-                    child: Row(
+                    child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        Icon(Icons.shield_rounded, size: 10, color: AppTheme.primary),
+                        SizedBox(width: 4),
                         Text(
-                          isStaffSession ? 'Sign Out' : 'Back to Owner',
+                          'Admin',
                           style: TextStyle(
-                            fontSize: 9.5,
+                            fontSize: 10,
                             fontWeight: FontWeight.bold,
-                            color: isStaffSession ? Colors.redAccent : AppTheme.primary,
+                            color: AppTheme.primary,
                           ),
                         ),
-                        if (!isStaffSession) ...[
-                          const SizedBox(width: 3),
-                          const Icon(Icons.lock_rounded, size: 9, color: AppTheme.primary),
-                        ],
                       ],
                     ),
                   ),
@@ -4700,77 +5175,77 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       );
     }
 
-    if (user.teamMembers.isEmpty) return const SizedBox.shrink();
+    // 2. When in Admin (Owner) mode: if "Working with a Team?" is OFF, hide the switch completely (working solo)
+    if (!widget.repository.workingWithTeam) {
+      return const SizedBox.shrink();
+    }
 
+    // 3. When "Working with a Team?" is ON: show the "Shop / Admin" switch
     return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceLight.withAlpha(50),
-        borderRadius: BorderRadius.circular(8),
+        color: AppTheme.surfaceLight.withAlpha(90),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         children: [
-          const Icon(Icons.shield_rounded, size: 13, color: AppTheme.primary),
-          const SizedBox(width: 4),
-          const Expanded(
-            child: Text(
-              'Owner Mode',
-              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.lock_outline_rounded, size: 14, color: AppTheme.primary),
-            tooltip: 'Lock Owner View (Shield Financials)',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            onPressed: _lockOwnerViewOrSetupPin,
-          ),
-          const SizedBox(width: 4),
-          PopupMenuButton<String>(
-            tooltip: 'Switch to Team Member View',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('Switch', style: TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.bold)),
-                Icon(Icons.arrow_drop_down, size: 14, color: AppTheme.primary),
-              ],
-            ),
-            onSelected: (val) {
-              if (val == 'pin_settings') {
-                _showChangeOwnerPinDialog();
-              } else if (val == 'founder') {
-                _promptUnlockOwner();
-              } else {
-                widget.repository.setActiveTeamMember(val);
-                setState(() {});
-              }
-            },
-            itemBuilder: (ctx) => [
-              const PopupMenuItem(
-                value: 'founder',
-                child: Text('Shop Owner (Founder)', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-              const PopupMenuItem(
-                value: 'pin_settings',
-                child: Row(
+          // SHOP option -> locks immediately into the Studio Kiosk Lock Modal
+          Expanded(
+            child: InkWell(
+              key: const ValueKey('switch_to_shop_mode_btn'),
+              borderRadius: BorderRadius.circular(7),
+              onTap: _lockOwnerViewOrSetupPin,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.password_rounded, size: 16, color: AppTheme.textSecondary),
-                    SizedBox(width: 8),
-                    Text('Owner PIN & Security'),
+                    Icon(Icons.lock_outline_rounded, size: 12, color: AppTheme.textSecondary),
+                    SizedBox(width: 4),
+                    Text(
+                      'Shop',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
                   ],
                 ),
               ),
-              const PopupMenuDivider(),
-              ...user.teamMembers.map((m) => PopupMenuItem(
-                value: m.id,
-                child: Text('View as ${m.name} (${m.roleTitle})'),
-              )),
-            ],
+            ),
+          ),
+          // ADMIN option -> currently active (never auto-locks)
+          Expanded(
+            child: Container(
+              key: const ValueKey('active_admin_mode_pill'),
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              decoration: BoxDecoration(
+                color: AppTheme.primary,
+                borderRadius: BorderRadius.circular(7),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.shield_rounded, size: 12, color: Colors.black),
+                  SizedBox(width: 4),
+                  Text(
+                    'Admin',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -8211,7 +8686,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     }
 
     final visibleHubs = _visibleHubSections;
-    if (!visibleHubs.contains(_selectedHub)) {
+    if (_selectedHub != StudioHubSection.settings && !visibleHubs.contains(_selectedHub)) {
       _selectedHub = visibleHubs.first;
     }
 

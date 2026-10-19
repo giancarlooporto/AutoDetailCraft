@@ -40,6 +40,7 @@ class JobRepository extends ChangeNotifier {
   static const Duration _ownerPinLockDuration = Duration(minutes: 15);
   bool _isOwnerLocked = false;
   int _ownerAutoLockMinutes = 5;
+  bool? _workingWithTeamOverride;
 
   String _selectedServiceType = 'All Services';
   String _selectedLocationCity = 'All Locations';
@@ -98,6 +99,20 @@ class JobRepository extends ChangeNotifier {
   DateTime? get ownerPinLockedUntil => _ownerPinLockedUntil;
   bool get isOwnerLocked => _isOwnerLocked;
   int get ownerAutoLockMinutes => _ownerAutoLockMinutes;
+
+  /// Whether "Working with a Team?" is enabled in Settings > Shop Mode.
+  /// Defaults to true if the owner has added team members, or respects explicit toggle.
+  bool get workingWithTeam => _workingWithTeamOverride ?? _currentUser.teamMembers.isNotEmpty;
+
+  Future<void> setWorkingWithTeam(bool value) async {
+    _workingWithTeamOverride = value;
+    await LocalStorageService.saveWorkingWithTeam(value);
+    if (!value) {
+      _isOwnerLocked = false;
+      await LocalStorageService.saveIsOwnerLocked(false);
+    }
+    notifyListeners();
+  }
 
   Future<void> init() async {
     if (_isInitialized) return;
@@ -303,6 +318,7 @@ class JobRepository extends ChangeNotifier {
       _ownerPinFails = lockout.$1;
       _ownerPinLockedUntil = lockout.$2;
       _ownerAutoLockMinutes = await LocalStorageService.loadOwnerAutoLockMinutes();
+      _workingWithTeamOverride = await LocalStorageService.loadWorkingWithTeam();
       _isOwnerLocked = await LocalStorageService.loadIsOwnerLocked();
       if (!hasOwnerPin) _isOwnerLocked = false; // can't be locked without a PIN
       unawaited(refreshOwnerPinStatus());

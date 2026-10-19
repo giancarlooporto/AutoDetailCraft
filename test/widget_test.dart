@@ -3725,7 +3725,10 @@ void main() {
     expect(repository.currentUser.role, UserRole.detailer);
     expect(find.byType(DetailerWorkbenchView), findsOneWidget);
 
-    // Switch back to Client Mode
+    // Switch back to Client Mode via Settings in Pane 1
+    await tester.tap(find.byKey(const ValueKey('pane1_settings_btn')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     final switchBackFinder = find.text('Switch to Client Mode');
     expect(switchBackFinder, findsOneWidget);
     await tester.tap(switchBackFinder);
@@ -3899,7 +3902,7 @@ void main() {
 
     // Verify now inside My Studio
     expect(find.text('STUDIO WORKBENCH HUB'), findsOneWidget);
-    expect(find.text('Switch to Client Mode'), findsOneWidget);
+    expect(find.byKey(const ValueKey('pane1_settings_btn')), findsOneWidget);
 
     // Step 3: Simulate browser refresh while inside My Studio
     final repo2 = JobRepository();
@@ -3913,10 +3916,13 @@ void main() {
 
     // VERIFY: Still inside My Studio! Did NOT reset to My Garage!
     expect(find.text('STUDIO WORKBENCH HUB'), findsOneWidget);
-    expect(find.text('Switch to Client Mode'), findsOneWidget);
+    expect(find.byKey(const ValueKey('pane1_settings_btn')), findsOneWidget);
     expect(find.text('Become a Detailer'), findsNothing);
 
-    // Step 4: Click "Switch to Client Mode" -> enters "My Garage"
+    // Step 4: Open Settings in Pane 1 and click "Switch to Client Mode" -> enters "My Garage"
+    await tester.tap(find.byKey(const ValueKey('pane1_settings_btn')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.text('Switch to Client Mode'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
@@ -4133,13 +4139,11 @@ void main() {
     // Verify request submitted to repo
     expect(repo.pendingShiftRequests.length, equals(1));
 
-    // 3. Switch back to Owner via Owner PIN
+    // 3. Switch back to Owner via Admin button -> opens Studio Lock Modal where 4th digit auto-unlocks Admin
     await repo.createOwnerPin(pin: '8426', confirm: '8426');
-    await tester.tap(find.text('Back to Owner'));
+    await tester.tap(find.byKey(const ValueKey('staff_return_to_admin_btn')));
     await tester.pumpAndSettle();
-    expect(find.text('Owner Mode Access'), findsOneWidget);
     await tester.enterText(find.byType(TextField).last, '8426');
-    await tester.tap(find.text('Unlock Owner Mode'));
     await tester.pumpAndSettle();
 
     // VERIFY: Owner sees "INCOMING SHIFT REQUESTS" with Elena's request!
@@ -4282,10 +4286,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    // VERIFY: Staff Session Banner is shown with [Sign Out] instead of [Back to Owner]
+    // VERIFY: Staff Session Banner is shown with [Sign Out] and [Admin]
     expect(find.text('Staff Session: Mateo Lopez'), findsOneWidget);
     expect(find.text('Sign Out'), findsOneWidget);
-    expect(find.text('Back to Owner'), findsNothing);
+    expect(find.byKey(const ValueKey('staff_return_to_admin_btn')), findsOneWidget);
 
     // VERIFY: Account switcher buttons are hidden
     expect(find.textContaining('Log in as'), findsNothing);
@@ -4469,7 +4473,7 @@ void main() {
     expect(repo.currentUser.role, equals(UserRole.detailer));
     expect(repo.workbenchMode, equals('studio'));
     expect(find.text('STUDIO WORKBENCH HUB'), findsOneWidget);
-    expect(find.text('Switch to Client Mode'), findsOneWidget);
+    expect(find.byKey(const ValueKey('pane1_settings_btn')), findsOneWidget);
 
     debugNetworkImageHttpClientProvider = null;
   });
@@ -4517,12 +4521,13 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    // Verify Owner Mode banner is present and no "Default PIN" text appears anywhere
-    expect(find.text('Owner Mode'), findsOneWidget);
+    // Verify Shop / Admin switch is present and no "Default PIN" text appears anywhere
+    expect(find.byKey(const ValueKey('switch_to_shop_mode_btn')), findsOneWidget);
+    expect(find.byKey(const ValueKey('active_admin_mode_pill')), findsOneWidget);
     expect(find.textContaining('Default PIN'), findsNothing);
 
-    // 3. Tap Lock Owner View button -> since no PIN exists yet, opens "Create Owner Master PIN" modal (2 inputs only)
-    await tester.tap(find.byTooltip('Lock Owner View (Shield Financials)'));
+    // 3. Tap Shop button -> since no PIN exists yet, opens "Create Owner Master PIN" modal (2 inputs only)
+    await tester.tap(find.byKey(const ValueKey('switch_to_shop_mode_btn')));
     await tester.pumpAndSettle();
 
     expect(find.text('Create Owner Master PIN'), findsOneWidget);
@@ -4583,7 +4588,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repo.isOwnerLocked, isFalse);
-    expect(find.text('Owner Mode'), findsOneWidget);
+    expect(find.byKey(const ValueKey('active_admin_mode_pill')), findsOneWidget);
 
     // 7. Test locking again and clicking Team member (Leo Ortiz) -> requires Leo's 4-digit PIN (5555)
     repo.lockOwnerView();
@@ -4607,32 +4612,30 @@ void main() {
     await tester.enterText(find.byType(TextField).last, '5555');
     await tester.pumpAndSettle();
 
-    // Verify now in Staff View as Leo Ortiz
+    // Verify now in Staff View as Leo Ortiz with "Admin" button
     expect(repo.isOwnerLocked, isFalse);
     expect(repo.isViewingAsTeamMember, isTrue);
     expect(repo.activeTeamMemberId, equals('staff_leo'));
-    expect(find.text('Back to Owner'), findsOneWidget);
+    expect(find.byKey(const ValueKey('staff_return_to_admin_btn')), findsOneWidget);
 
-    // 8. Tapping "Back to Owner" requires Master PIN
-    await tester.tap(find.text('Back to Owner'));
+    // 8. Tapping "Admin" opens the Studio Lock Modal where entering the 4-digit Admin PIN returns to Admin Mode
+    await tester.tap(find.byKey(const ValueKey('staff_return_to_admin_btn')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Owner Mode Access'), findsOneWidget);
+    expect(repo.isOwnerLocked, isTrue);
 
     // Enter wrong PIN
     await tester.enterText(find.byType(TextField).last, '0000');
-    await tester.tap(find.text('Unlock Owner Mode'));
     await tester.pumpAndSettle();
 
-    expect(repo.isViewingAsTeamMember, isTrue); // Still locked in staff view!
+    expect(repo.isOwnerLocked, isTrue); // Still locked!
 
     // Enter correct PIN (9876)
     await tester.enterText(find.byType(TextField).last, '9876');
-    await tester.tap(find.text('Unlock Owner Mode'));
     await tester.pumpAndSettle();
 
-    expect(repo.isViewingAsTeamMember, isFalse); // Successfully restored Owner Mode!
-    expect(find.text('Owner Mode'), findsOneWidget);
+    expect(repo.isViewingAsTeamMember, isFalse); // Successfully restored Admin Mode!
+    expect(find.byKey(const ValueKey('active_admin_mode_pill')), findsOneWidget);
 
     debugNetworkImageHttpClientProvider = null;
   });

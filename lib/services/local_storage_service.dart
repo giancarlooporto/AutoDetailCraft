@@ -758,6 +758,24 @@ class LocalStorageService {
     }
   }
 
+  static const String _workingWithTeamKey = 'adc_working_with_team_v1';
+
+  static Future<void> saveWorkingWithTeam(bool workingWithTeam) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_workingWithTeamKey, workingWithTeam);
+    } catch (_) {}
+  }
+
+  static Future<bool?> loadWorkingWithTeam() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_workingWithTeamKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
   // Save Job Comments Override with dual-key synchronization (adc_job_comments_v1 and adc_mock_job_overrides_v1)
   static Future<void> saveJobCommentsOverride(String jobId, List<JobComment> comments) async {
     try {
