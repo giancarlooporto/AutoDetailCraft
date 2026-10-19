@@ -101,8 +101,9 @@ class JobRepository extends ChangeNotifier {
   int get ownerAutoLockMinutes => _ownerAutoLockMinutes;
 
   /// Whether "Working with a Team?" is enabled in Settings > Shop.
-  /// Defaults to false (solo user by default) unless explicitly enabled.
-  bool get workingWithTeam => _workingWithTeamOverride ?? false;
+  /// For new users with no team members, defaults to false (solo).
+  /// Once a user enables it or has team members, it stays on across logins and devices.
+  bool get workingWithTeam => _workingWithTeamOverride ?? (_currentUser.teamMembers.isNotEmpty);
   set workingWithTeamOverride(bool? val) {
     _workingWithTeamOverride = val;
     notifyListeners();
