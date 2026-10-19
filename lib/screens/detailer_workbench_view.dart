@@ -211,6 +211,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     if (_selectedTeamMemberId != 'founder' && !user.teamMembers.any((m) => m.id == _selectedTeamMemberId)) {
       _selectedTeamMemberId = 'founder';
     }
+
+    if (widget.repository.isViewingAsTeamMember && _selectedHub == StudioHubSection.settings) {
+      _selectedHub = _visibleHubSections.first;
+    }
   }
 
   void _selectHub(StudioHubSection section, {bool isMobile = false}) {
@@ -825,63 +829,64 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             ),
           ),
 
-          // Pinned at the very bottom-left of Pane 1: Settings
-          Container(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
-            decoration: const BoxDecoration(
-              color: AppTheme.surface,
-              border: Border(top: BorderSide(color: AppTheme.border)),
-            ),
-            child: Container(
-              decoration: BoxDecoration(
-                color: _selectedHub == StudioHubSection.settings
-                    ? AppTheme.primary.withAlpha(25)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
+          // Pinned at the very bottom-left of Pane 1: Settings (Admin / Owner only)
+          if (!widget.repository.isViewingAsTeamMember)
+            Container(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
+              decoration: const BoxDecoration(
+                color: AppTheme.surface,
+                border: Border(top: BorderSide(color: AppTheme.border)),
+              ),
+              child: Container(
+                decoration: BoxDecoration(
                   color: _selectedHub == StudioHubSection.settings
-                      ? AppTheme.primary.withAlpha(120)
+                      ? AppTheme.primary.withAlpha(25)
                       : Colors.transparent,
-                  width: 1,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _selectedHub == StudioHubSection.settings
+                        ? AppTheme.primary.withAlpha(120)
+                        : Colors.transparent,
+                    width: 1,
+                  ),
                 ),
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: ListTile(
-                  key: const ValueKey('pane1_settings_btn'),
-                  dense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                  leading: Container(
-                    padding: const EdgeInsets.all(7),
-                    decoration: BoxDecoration(
-                      color: _selectedHub == StudioHubSection.settings ? AppTheme.primary : AppTheme.surfaceLight,
-                      borderRadius: BorderRadius.circular(8),
+                child: Material(
+                  color: Colors.transparent,
+                  child: ListTile(
+                    key: const ValueKey('pane1_settings_btn'),
+                    dense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                    leading: Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: _selectedHub == StudioHubSection.settings ? AppTheme.primary : AppTheme.surfaceLight,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.settings_rounded,
+                        color: _selectedHub == StudioHubSection.settings ? Colors.black : AppTheme.textSecondary,
+                        size: 16,
+                      ),
                     ),
-                    child: Icon(
-                      Icons.settings_rounded,
-                      color: _selectedHub == StudioHubSection.settings ? Colors.black : AppTheme.textSecondary,
-                      size: 16,
+                    title: Text(
+                      'Settings',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: _selectedHub == StudioHubSection.settings ? FontWeight.bold : FontWeight.w600,
+                        color: _selectedHub == StudioHubSection.settings ? Colors.white : AppTheme.textPrimary,
+                      ),
                     ),
-                  ),
-                  title: Text(
-                    'Settings',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: _selectedHub == StudioHubSection.settings ? FontWeight.bold : FontWeight.w600,
-                      color: _selectedHub == StudioHubSection.settings ? Colors.white : AppTheme.textPrimary,
+                    subtitle: const Text(
+                      'Shop, profile & account',
+                      style: TextStyle(fontSize: 10, color: AppTheme.textMuted),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
+                    onTap: () => _selectHub(StudioHubSection.settings, isMobile: isMobile),
                   ),
-                  subtitle: const Text(
-                    'Shop, profile & account',
-                    style: TextStyle(fontSize: 10, color: AppTheme.textMuted),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  onTap: () => _selectHub(StudioHubSection.settings, isMobile: isMobile),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -3557,8 +3562,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           _buildInfoSection(title: 'SERVICE RADIUS & LOCATIONS', content: '${user.location} • ${user.serviceRadius}', icon: Icons.location_on_outlined),
           const SizedBox(height: 14),
           _buildInfoSection(title: 'CONTACT & SOCIAL', content: 'Phone: ${user.phone.isNotEmpty ? user.phone : "Not provided"} • IG: ${user.instagramHandle}', icon: Icons.phone_outlined),
-          const SizedBox(height: 16),
-          _buildOwnerSecurityCard(context),
+          if (!widget.repository.isViewingAsTeamMember) ...[
+            const SizedBox(height: 16),
+            _buildOwnerSecurityCard(context),
+          ],
         ],
       );
     }
@@ -3642,28 +3649,24 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               label: Text(widget.repository.isViewingAsTeamMember ? 'Request Shift Change' : 'Edit Shift Schedule', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               onPressed: () => _showEditTeamMemberScheduleDialog(context, member),
             ),
-            if (!member.isFounder && !widget.repository.isStaffSession) ...[
+            if (!member.isFounder && !widget.repository.isViewingAsTeamMember) ...[
               const SizedBox(width: 8),
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: widget.repository.activeTeamMemberId == member.id ? Colors.amber : AppTheme.textSecondary,
-                  side: BorderSide(color: widget.repository.activeTeamMemberId == member.id ? Colors.amber : AppTheme.border),
+                  foregroundColor: AppTheme.textSecondary,
+                  side: const BorderSide(color: AppTheme.border),
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
-                icon: Icon(widget.repository.activeTeamMemberId == member.id ? Icons.check_circle_rounded : Icons.badge_outlined, size: 14),
+                icon: const Icon(Icons.badge_outlined, size: 14),
                 label: Text(
-                  widget.repository.activeTeamMemberId == member.id ? 'Active (Staff View)' : 'Log in as ${member.name.split(" ").first}',
+                  'Log in as ${member.name.split(" ").first}',
                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                 ),
                 onPressed: () {
-                  if (widget.repository.activeTeamMemberId == member.id) {
-                    widget.repository.setActiveTeamMember(null);
-                  } else {
-                    widget.repository.setActiveTeamMember(member.id);
-                    if (!member.isSectionAllowed(_selectedHub.name)) {
-                      _selectedHub = _visibleHubSections.first;
-                    }
+                  widget.repository.setActiveTeamMember(member.id);
+                  if (!member.isSectionAllowed(_selectedHub.name)) {
+                    _selectedHub = _visibleHubSections.first;
                   }
                   setState(() {});
                 },
@@ -3692,6 +3695,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     if (member.isFounder) return const SizedBox.shrink();
     final isOwner = !widget.repository.isViewingAsTeamMember;
     final canManage = isOwner || (widget.repository.activeTeamMember?.canManageTeam ?? false);
+    if (!canManage) return const SizedBox.shrink();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
