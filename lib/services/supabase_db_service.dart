@@ -109,6 +109,19 @@ class SupabaseDbService {
         parsedRole = UserRole.detailer;
       }
 
+      String? ownerPinHash = res['owner_pin_hash'] as String?;
+      if ((ownerPinHash == null || ownerPinHash.isEmpty) && res['service_radius'] is String) {
+        final sr = res['service_radius'] as String;
+        if (sr.contains('||pin:')) {
+          final parts = sr.split('||pin:');
+          ownerPinHash = parts.last.trim();
+        }
+      }
+      final cleanServiceRadius = ((res['service_radius'] as String?) ?? '25 miles • Mobile & Studio')
+          .split('||pin:')
+          .first
+          .trim();
+
       return UserProfile(
         id: res['id'] as String,
         role: parsedRole,
@@ -118,7 +131,7 @@ class SupabaseDbService {
         avatarUrl: res['avatar_url'] as String? ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80',
         coverUrl: res['cover_url'] as String? ?? 'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?w=1200&auto=format&fit=crop&q=80',
         location: res['location'] as String? ?? 'Austin, Texas',
-        serviceRadius: res['service_radius'] as String? ?? '25 miles • Mobile & Studio',
+        serviceRadius: cleanServiceRadius,
         bio: res['bio'] as String? ?? 'Car enthusiast & detailing craft connoisseur.',
         phone: res['phone'] as String? ?? '',
         instagramHandle: res['instagram_handle'] as String? ?? '@detailcraft',
@@ -133,6 +146,7 @@ class SupabaseDbService {
         totalJobsCount: res['total_jobs_count'] as int? ?? 0,
         averageRating: (res['rating'] as num?)?.toDouble() ?? 5.0,
         reviewCount: res['review_count'] as int? ?? 0,
+        ownerPinHash: ownerPinHash,
       );
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error fetching profile: $e');
@@ -154,6 +168,11 @@ class SupabaseDbService {
         roleStr = 'detailer';
       }
 
+      final cleanRadius = user.serviceRadius.split('||pin:').first.trim();
+      final encodedRadius = (user.ownerPinHash != null && user.ownerPinHash!.isNotEmpty)
+          ? '$cleanRadius||pin:${user.ownerPinHash}'
+          : cleanRadius;
+
       await client.from('profiles').upsert({
         'id': user.id,
         'display_name': user.displayName,
@@ -162,7 +181,7 @@ class SupabaseDbService {
         'avatar_url': user.avatarUrl,
         'cover_url': user.coverUrl,
         'location': user.location,
-        'service_radius': user.serviceRadius,
+        'service_radius': encodedRadius,
         'bio': user.bio,
         'phone': user.phone,
         'instagram_handle': user.instagramHandle,

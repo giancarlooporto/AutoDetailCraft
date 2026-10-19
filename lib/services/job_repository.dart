@@ -354,6 +354,7 @@ class JobRepository extends ChangeNotifier {
         try {
           await Future.wait([
             _refreshProfileFromCloud(_currentUser.id),
+            refreshOwnerPinStatus(),
             _refreshJobsFromCloud(),
             _refreshBookingsFromCloud(_currentUser.id),
             _refreshInteractionsFromCloud(_currentUser.id),
@@ -468,11 +469,25 @@ class JobRepository extends ChangeNotifier {
           resolvedTeam = teamMap.values.toList();
         }
 
+        // Resolve ownerPinHash across cloud, local storage, and current in-memory state
+        final localPinHash = await LocalStorageService.loadOwnerPinHash() ??
+            storedLocalUser?.ownerPinHash ??
+            _currentUser.ownerPinHash ??
+            _ownerPinHash;
+        final resolvedPinHash = (cloudProfile.ownerPinHash != null && cloudProfile.ownerPinHash!.isNotEmpty)
+            ? cloudProfile.ownerPinHash
+            : localPinHash;
+        if (resolvedPinHash != null && resolvedPinHash.isNotEmpty) {
+          _ownerPinHash = resolvedPinHash;
+          await LocalStorageService.saveOwnerPinHash(resolvedPinHash);
+        }
+
         final mode = await LocalStorageService.loadWorkbenchMode();
         var merged = cloudProfile.copyWith(
           servicePackages: resolvedPackages,
           myGarage: resolvedGarage,
           teamMembers: resolvedTeam,
+          ownerPinHash: resolvedPinHash,
         );
 
         if (mode == 'studio') {
@@ -498,7 +513,11 @@ class JobRepository extends ChangeNotifier {
           await LocalStorageService.saveTeamMembers(resolvedTeam);
         }
         if (userId != 'usr_you') {
-          if (resolvedPackages.length > cloudProfile.servicePackages.length) {
+          final needsProfileSync = resolvedPackages.length > cloudProfile.servicePackages.length ||
+              ((cloudProfile.ownerPinHash == null || cloudProfile.ownerPinHash!.isEmpty) &&
+                  resolvedPinHash != null &&
+                  resolvedPinHash.isNotEmpty);
+          if (needsProfileSync) {
             SupabaseDbService.saveUserProfile(merged);
           }
           // Push any locally added team members that were missing from Supabase up to the cloud
@@ -623,11 +642,18 @@ class JobRepository extends ChangeNotifier {
   Future<void> loginUser(UserProfile user) async {
     _currentUser = user;
     _isLoggedIn = true;
+    if (user.ownerPinHash != null && user.ownerPinHash!.isNotEmpty) {
+      _ownerPinHash = user.ownerPinHash;
+      await LocalStorageService.saveOwnerPinHash(_ownerPinHash);
+    }
     await LocalStorageService.saveIsGuest(false);
 
-    // 1. Fetch latest profile state from cloud FIRST
-    // This ensures cloud garage, team, bio, packages are loaded onto this device
-    await _refreshProfileFromCloud(user.id);
+    // 1. Fetch latest profile state and PIN status from cloud FIRST
+    // This ensures cloud garage, team, bio, packages, and Admin PIN are loaded onto this device
+    await Future.wait([
+      _refreshProfileFromCloud(user.id),
+      refreshOwnerPinStatus(),
+    ]);
 
     // Ensure non-detailers land strictly in Client Mode
     if (_currentUser.role != UserRole.detailer) {

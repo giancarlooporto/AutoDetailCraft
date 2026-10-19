@@ -54,13 +54,19 @@ class SupabaseAuthService {
       if (cloudProfile != null) {
         final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
         final localTeam = await LocalStorageService.loadTeamMembers();
+        final localPinHash = await LocalStorageService.loadOwnerPinHash() ?? existingLocalProfile?.ownerPinHash;
         final teamMap = <String, TeamMember>{
           if (existingLocalProfile != null)
             for (final m in existingLocalProfile.teamMembers) m.id: m,
           for (final m in localTeam) m.id: m,
           for (final m in cloudProfile.teamMembers) m.id: m,
         };
-        final merged = cloudProfile.copyWith(teamMembers: teamMap.values.toList());
+        final merged = cloudProfile.copyWith(
+          teamMembers: teamMap.values.toList(),
+          ownerPinHash: (cloudProfile.ownerPinHash != null && cloudProfile.ownerPinHash!.isNotEmpty)
+              ? cloudProfile.ownerPinHash
+              : localPinHash,
+        );
         await LocalStorageService.saveCurrentUser(merged);
         return (success: true, error: null, profile: merged);
       }
@@ -121,6 +127,7 @@ class SupabaseAuthService {
       final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
       final localTeam = await LocalStorageService.loadTeamMembers();
       final localGarage = await LocalStorageService.loadGarageVehicles();
+      final localPinHash = await LocalStorageService.loadOwnerPinHash() ?? existingLocalProfile?.ownerPinHash;
 
       if (cloudProfile != null) {
         final localPackages = await LocalStorageService.loadServicePackages();
@@ -157,11 +164,19 @@ class SupabaseAuthService {
           for (final v in cloudProfile.myGarage) v.id: v,
         };
 
+        final resolvedPinHash = (cloudProfile.ownerPinHash != null && cloudProfile.ownerPinHash!.isNotEmpty)
+            ? cloudProfile.ownerPinHash
+            : localPinHash;
+
         final merged = cloudProfile.copyWith(
           servicePackages: mergedPackages,
           teamMembers: teamMap.values.toList(),
           myGarage: garageMap.values.toList(),
+          ownerPinHash: resolvedPinHash,
         );
+        if (resolvedPinHash != null && resolvedPinHash.isNotEmpty) {
+          await LocalStorageService.saveOwnerPinHash(resolvedPinHash);
+        }
         await LocalStorageService.saveCurrentUser(merged);
         return (success: true, error: null, profile: merged);
       }
