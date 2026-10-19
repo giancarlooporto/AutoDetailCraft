@@ -28,7 +28,7 @@ enum StudioHubSection {
   calendar('Calendar', 'CALENDAR', 'Bookings & host schedule', Icons.calendar_month_rounded),
   teams('My Teams', 'MY TEAMS', 'Staff roles & technicians', Icons.groups_rounded),
   savedRecipes('Saved Recipes', 'SAVED RECIPES', 'Technical playbook', Icons.bookmark_rounded),
-  settings('Settings', 'SETTINGS', 'Shop mode, profile & account', Icons.settings_rounded);
+  settings('Settings', 'SETTINGS', 'Shop, profile & account', Icons.settings_rounded);
 
   final String title;
   final String tag;
@@ -762,7 +762,6 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                               ],
                             ),
                           ),
-                          const Icon(Icons.open_in_new_rounded, size: 14, color: AppTheme.textMuted),
                         ],
                       ),
                     ),
@@ -873,7 +872,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     ),
                   ),
                   subtitle: const Text(
-                    'Shop mode, profile & account',
+                    'Shop, profile & account',
                     style: TextStyle(fontSize: 10, color: AppTheme.textMuted),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -2491,7 +2490,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     final options = [
       (
         id: 'SHOP_MODE',
-        title: 'Shop Mode',
+        title: 'Shop',
         subtitle: 'Working with a team & Shop / Admin lock',
         icon: Icons.storefront_rounded,
       ),
@@ -2752,7 +2751,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       );
     }
 
-    // Default: SHOP_MODE ("Working with a Team?" toggle + Admin PIN settings + Switch to Client Mode)
+    // Default: SHOP_MODE ("Working with a Team?" toggle + Admin PIN settings)
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2832,62 +2831,6 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     onPressed: _showChangeOwnerPinDialog,
                   ),
                 ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppTheme.border),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Client Mode (My Garage)',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Switch to your personal vehicle garage or log out of your account.',
-                      style: TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppTheme.primary,
-                  side: const BorderSide(color: AppTheme.primary),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                icon: const Icon(Icons.directions_car_rounded, size: 15),
-                label: const Text('Switch to Client Mode', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                onPressed: () => repo.toggleHostMode(targetRole: UserRole.client),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.redAccent,
-                  side: const BorderSide(color: Colors.redAccent),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                icon: const Icon(Icons.logout_rounded, size: 15),
-                label: const Text('Log Out', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                onPressed: () async {
-                  await repo.logoutUser();
-                },
               ),
             ],
           ),
@@ -5137,12 +5080,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   key: const ValueKey('staff_return_to_admin_btn'),
                   borderRadius: BorderRadius.circular(6),
                   onTap: () {
-                    if (widget.repository.hasOwnerPin) {
-                      widget.repository.lockOwnerView();
-                      setState(() {});
-                    } else {
-                      _promptUnlockOwner();
-                    }
+                    widget.repository.lockOwnerView();
+                    setState(() {});
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -5154,10 +5093,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.shield_rounded, size: 10, color: AppTheme.primary),
+                        Icon(Icons.lock_rounded, size: 11, color: AppTheme.primary),
                         SizedBox(width: 4),
                         Text(
-                          'Admin',
+                          'Lock',
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
@@ -5250,131 +5189,6 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         ],
       ),
     );
-  }
-
-  Future<void> _promptUnlockOwner() async {
-    if (!widget.repository.hasOwnerPin) {
-      final created = await _showCreateOwnerPinDialog();
-      if (created && mounted) {
-        widget.repository.setActiveTeamMember('founder');
-        setState(() {});
-      }
-      return;
-    }
-    final pinController = TextEditingController();
-    String? errorMessage;
-    bool verifying = false;
-
-    final unlocked = await showDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (dialogCtx, setDialogState) {
-          return AlertDialog(
-            backgroundColor: AppTheme.surface,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: const BorderSide(color: AppTheme.border),
-            ),
-            title: const Row(
-              children: [
-                Icon(Icons.shield_rounded, color: AppTheme.primary, size: 20),
-                SizedBox(width: 8),
-                Text('Owner Mode Access', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Enter your 4-digit Owner Master PIN to return to Shop Owner mode.',
-                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: pinController,
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  maxLength: 4,
-                  obscureText: true,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 24, letterSpacing: 12, fontWeight: FontWeight.bold, color: Colors.white),
-                  decoration: InputDecoration(
-                    counterText: '',
-                    hintText: '••••',
-                    hintStyle: const TextStyle(color: AppTheme.textMuted, letterSpacing: 12),
-                    filled: true,
-                    fillColor: AppTheme.surfaceLight,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.border)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.primary, width: 2)),
-                    errorText: errorMessage,
-                  ),
-                  onSubmitted: (val) async {
-                    if (verifying) return;
-                    setDialogState(() => verifying = true);
-                    final res = await widget.repository.unlockOwnerModeWithPin(val);
-                    if (res.ok) {
-                      if (dialogCtx.mounted) Navigator.of(dialogCtx).pop(true);
-                    } else {
-                      setDialogState(() {
-                        verifying = false;
-                        errorMessage = res.message;
-                        pinController.clear();
-                      });
-                    }
-                  },
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  '5 failed attempts locks the PIN for 15 minutes.',
-                  style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogCtx).pop(false),
-                child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                onPressed: verifying
-                    ? null
-                    : () async {
-                        setDialogState(() => verifying = true);
-                        final res = await widget.repository.unlockOwnerModeWithPin(pinController.text);
-                        if (res.ok) {
-                          if (dialogCtx.mounted) Navigator.of(dialogCtx).pop(true);
-                        } else {
-                          setDialogState(() {
-                            verifying = false;
-                            errorMessage = res.message;
-                            pinController.clear();
-                          });
-                        }
-                      },
-                child: const Text('Unlock Owner Mode', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-
-    if (unlocked == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Switched to Shop Owner Mode.'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      setState(() {});
-    }
   }
 
   /// First-time Owner PIN setup: enter the PIN twice. No default PIN exists.

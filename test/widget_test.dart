@@ -3725,8 +3725,11 @@ void main() {
     expect(repository.currentUser.role, UserRole.detailer);
     expect(find.byType(DetailerWorkbenchView), findsOneWidget);
 
-    // Switch back to Client Mode via Settings in Pane 1
+    // Switch back to Client Mode via Settings -> Account & Mode
     await tester.tap(find.byKey(const ValueKey('pane1_settings_btn')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byKey(const ValueKey('settings_option_account')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     final switchBackFinder = find.text('Switch to Client Mode');
@@ -3919,8 +3922,11 @@ void main() {
     expect(find.byKey(const ValueKey('pane1_settings_btn')), findsOneWidget);
     expect(find.text('Become a Detailer'), findsNothing);
 
-    // Step 4: Open Settings in Pane 1 and click "Switch to Client Mode" -> enters "My Garage"
+    // Step 4: Open Settings -> Account & Mode and click "Switch to Client Mode" -> enters "My Garage"
     await tester.tap(find.byKey(const ValueKey('pane1_settings_btn')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byKey(const ValueKey('settings_option_account')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.text('Switch to Client Mode'));
