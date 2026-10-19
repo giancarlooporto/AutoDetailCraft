@@ -76,8 +76,13 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
   List<StudioHubSection> get _visibleHubSections {
     final activeMember = widget.repository.activeTeamMember;
-    if (activeMember == null) return _hardcodedHubSections;
-    final allowed = _hardcodedHubSections
+    List<StudioHubSection> available = List<StudioHubSection>.from(_hardcodedHubSections);
+    // When working solo (Working with a Team is OFF), the Teams hub section is not present
+    if (!widget.repository.workingWithTeam) {
+      available.remove(StudioHubSection.teams);
+    }
+    if (activeMember == null) return available;
+    final allowed = available
         .where((s) => activeMember.isSectionAllowed(s.name))
         .toList();
     return allowed.isNotEmpty ? allowed : [StudioHubSection.portfolio];
@@ -2783,7 +2788,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         ),
                         SizedBox(height: 4),
                         Text(
-                          'When enabled, displays the Shop / Admin switch in Pane 1 so you can lock the studio into Shop mode for your team. When off, you work solo in Admin mode with no lock button.',
+                          'When enabled, displays your Team section and the Shop lock button in Pane 1 so you can lock the studio for your staff. When off, you work solo with no lock button.',
                           style: TextStyle(fontSize: 12, color: AppTheme.textSecondary, height: 1.4),
                         ),
                       ],
@@ -2796,47 +2801,55 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     activeThumbColor: AppTheme.primary,
                     onChanged: (val) async {
                       await repo.setWorkingWithTeam(val);
-                      if (mounted) setState(() {});
+                      if (mounted) {
+                        setState(() {
+                          if (!val && _selectedHub == StudioHubSection.teams) {
+                            _selectedHub = StudioHubSection.portfolio;
+                          }
+                        });
+                      }
                     },
                   ),
                 ],
               ),
-              const SizedBox(height: 18),
-              const Divider(color: AppTheme.border, height: 1),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Admin 4-Digit Security PIN',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        repo.hasOwnerPin ? 'PIN Secured' : 'No PIN created yet',
-                        style: const TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
-                      ),
-                    ],
-                  ),
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.primary,
-                      side: const BorderSide(color: AppTheme.primary),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              if (repo.workingWithTeam) ...[
+                const SizedBox(height: 18),
+                const Divider(color: AppTheme.border, height: 1),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Admin 4-Digit Security PIN',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          repo.hasOwnerPin ? 'PIN Secured' : 'No PIN created yet',
+                          style: const TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
+                        ),
+                      ],
                     ),
-                    icon: const Icon(Icons.lock_person_rounded, size: 15),
-                    label: Text(
-                      repo.hasOwnerPin ? 'Change Admin PIN' : 'Create Admin PIN',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.primary,
+                        side: const BorderSide(color: AppTheme.primary),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: const Icon(Icons.lock_person_rounded, size: 15),
+                      label: Text(
+                        repo.hasOwnerPin ? 'Change Admin PIN' : 'Create Admin PIN',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                      onPressed: _showChangeOwnerPinDialog,
                     ),
-                    onPressed: _showChangeOwnerPinDialog,
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -5123,74 +5136,39 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       return const SizedBox.shrink();
     }
 
-    // 3. When "Working with a Team?" is ON: show the "Shop / Admin" switch
+    // 3. When "Working with a Team?" is ON: show the "Shop" lock button
     return Container(
       margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
+      child: Material(
         color: AppTheme.surfaceLight.withAlpha(90),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Row(
-        children: [
-          // SHOP option -> locks immediately into the Studio Kiosk Lock Modal
-          Expanded(
-            child: InkWell(
-              key: const ValueKey('switch_to_shop_mode_btn'),
-              borderRadius: BorderRadius.circular(7),
-              onTap: _lockOwnerViewOrSetupPin,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.transparent,
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.lock_outline_rounded, size: 12, color: AppTheme.textSecondary),
-                    SizedBox(width: 4),
-                    Text(
-                      'Shop',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          key: const ValueKey('switch_to_shop_mode_btn'),
+          borderRadius: BorderRadius.circular(8),
+          onTap: _lockOwnerViewOrSetupPin,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppTheme.border),
             ),
-          ),
-          // ADMIN option -> currently active (never auto-locks)
-          Expanded(
-            child: Container(
-              key: const ValueKey('active_admin_mode_pill'),
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              decoration: BoxDecoration(
-                color: AppTheme.primary,
-                borderRadius: BorderRadius.circular(7),
-              ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.shield_rounded, size: 12, color: Colors.black),
-                  SizedBox(width: 4),
-                  Text(
-                    'Admin',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
-                    ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.lock_outline_rounded, size: 13, color: AppTheme.primary),
+                SizedBox(width: 6),
+                Text(
+                  'Shop',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

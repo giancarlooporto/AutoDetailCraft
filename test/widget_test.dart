@@ -2109,7 +2109,9 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
+    SharedPreferences.setMockInitialValues({});
     final repository = JobRepository();
+    repository.workingWithTeamOverride = true;
     repository.isLoggedIn = true;
     if (repository.currentUser.role != UserRole.detailer) {
       repository.toggleHostMode();
@@ -3485,6 +3487,7 @@ void main() {
     });
 
     final repository = JobRepository();
+    repository.workingWithTeamOverride = true;
     if (repository.currentUser.role != UserRole.detailer) {
       repository.toggleHostMode();
     }
@@ -3540,6 +3543,7 @@ void main() {
     });
 
     final repository = JobRepository();
+    repository.workingWithTeamOverride = true;
     if (repository.currentUser.role != UserRole.detailer) {
       repository.toggleHostMode();
     }
@@ -4079,6 +4083,7 @@ void main() {
 
     final repo = JobRepository();
     await repo.init();
+    repo.workingWithTeamOverride = true;
     await LocalStorageService.saveWorkbenchMode('studio');
     await LocalStorageService.saveStudioHubSection('teams');
 
@@ -4178,6 +4183,7 @@ void main() {
     });
 
     final repo = JobRepository();
+    repo.workingWithTeamOverride = true;
     repo.setActiveTeamMember(null);
 
     // Ensure staff member exists
@@ -4497,6 +4503,7 @@ void main() {
       pin: '5555',
     );
     repo.addTeamMember(staff);
+    await repo.setWorkingWithTeam(true);
     repo.isLoggedIn = true;
     repo.isDetailerWorkbenchMode = true;
     repo.updateCurrentUser(repo.currentUser.copyWith(
@@ -4527,9 +4534,8 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    // Verify Shop / Admin switch is present and no "Default PIN" text appears anywhere
+    // Verify Shop button is present and no "Default PIN" text appears anywhere
     expect(find.byKey(const ValueKey('switch_to_shop_mode_btn')), findsOneWidget);
-    expect(find.byKey(const ValueKey('active_admin_mode_pill')), findsOneWidget);
     expect(find.textContaining('Default PIN'), findsNothing);
 
     // 3. Tap Shop button -> since no PIN exists yet, opens "Create Owner Master PIN" modal (2 inputs only)
@@ -4594,7 +4600,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repo.isOwnerLocked, isFalse);
-    expect(find.byKey(const ValueKey('active_admin_mode_pill')), findsOneWidget);
+    expect(find.byKey(const ValueKey('switch_to_shop_mode_btn')), findsOneWidget);
 
     // 7. Test locking again and clicking Team member (Leo Ortiz) -> requires Leo's 4-digit PIN (5555)
     repo.lockOwnerView();
@@ -4641,7 +4647,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repo.isViewingAsTeamMember, isFalse); // Successfully restored Admin Mode!
-    expect(find.byKey(const ValueKey('active_admin_mode_pill')), findsOneWidget);
+    expect(find.byKey(const ValueKey('switch_to_shop_mode_btn')), findsOneWidget);
 
     debugNetworkImageHttpClientProvider = null;
   });
@@ -4651,6 +4657,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
 
     final repo = JobRepository();
+    repo.workingWithTeamOverride = true;
     repo.isLoggedIn = true;
     repo.isDetailerWorkbenchMode = true;
 

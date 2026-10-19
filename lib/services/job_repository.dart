@@ -100,9 +100,13 @@ class JobRepository extends ChangeNotifier {
   bool get isOwnerLocked => _isOwnerLocked;
   int get ownerAutoLockMinutes => _ownerAutoLockMinutes;
 
-  /// Whether "Working with a Team?" is enabled in Settings > Shop Mode.
-  /// Defaults to true if the owner has added team members, or respects explicit toggle.
-  bool get workingWithTeam => _workingWithTeamOverride ?? _currentUser.teamMembers.isNotEmpty;
+  /// Whether "Working with a Team?" is enabled in Settings > Shop.
+  /// Defaults to false (solo user by default) unless explicitly enabled.
+  bool get workingWithTeam => _workingWithTeamOverride ?? false;
+  set workingWithTeamOverride(bool? val) {
+    _workingWithTeamOverride = val;
+    notifyListeners();
+  }
 
   Future<void> setWorkingWithTeam(bool value) async {
     _workingWithTeamOverride = value;
