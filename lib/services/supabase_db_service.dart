@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/message_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -110,17 +111,49 @@ class SupabaseDbService {
       }
 
       String? ownerPinHash = res['owner_pin_hash'] as String?;
-      if ((ownerPinHash == null || ownerPinHash.isEmpty) && res['service_radius'] is String) {
+      List<TeamMember> backupTeam = [];
+      if (res['service_radius'] is String) {
         final sr = res['service_radius'] as String;
-        if (sr.contains('||pin:')) {
-          final parts = sr.split('||pin:');
-          ownerPinHash = parts.last.trim();
+        if ((ownerPinHash == null || ownerPinHash.isEmpty) && sr.contains('||pin:')) {
+          final afterPin = sr.split('||pin:').last;
+          ownerPinHash = afterPin.split('||team:').first.trim();
+        }
+        if (sr.contains('||team:')) {
+          try {
+            final teamB64 = sr.split('||team:').last.trim();
+            final decodedJson = utf8.decode(base64Decode(teamB64));
+            final list = jsonDecode(decodedJson) as List<dynamic>;
+            backupTeam = list
+                .map((item) => TeamMember.fromJson(Map<String, dynamic>.from(item as Map)))
+                .toList();
+          } catch (_) {}
         }
       }
       final cleanServiceRadius = ((res['service_radius'] as String?) ?? '25 miles • Mobile & Studio')
           .split('||pin:')
           .first
+          .split('||team:')
+          .first
           .trim();
+
+      // Merge team_members table rows with backupTeam so no staff or PINs are lost across devices
+      final mergedTeamMap = <String, TeamMember>{
+        for (final bm in backupTeam) bm.id: bm,
+      };
+      for (final tm in team) {
+        final existing = mergedTeamMap[tm.id];
+        if (existing != null) {
+          mergedTeamMap[tm.id] = tm.copyWith(
+            pin: (tm.pin != null && tm.pin!.isNotEmpty) ? tm.pin : existing.pin,
+            email: (tm.email != null && tm.email!.isNotEmpty) ? tm.email : existing.email,
+            allowedHubSections: tm.allowedHubSections ?? existing.allowedHubSections,
+            customWeeklySchedule: tm.customWeeklySchedule ?? existing.customWeeklySchedule,
+          );
+        } else {
+          mergedTeamMap[tm.id] = tm;
+        }
+      }
+      final resolvedTeamList = mergedTeamMap.values.toList();
 
       return UserProfile(
         id: res['id'] as String,
@@ -142,7 +175,7 @@ class SupabaseDbService {
         servicePackages: packages,
         startingPrice: (res['starting_price'] as num?)?.toDouble() ?? 150.0,
         myGarage: garage,
-        teamMembers: team,
+        teamMembers: resolvedTeamList,
         totalJobsCount: res['total_jobs_count'] as int? ?? 0,
         averageRating: (res['rating'] as num?)?.toDouble() ?? 5.0,
         reviewCount: res['review_count'] as int? ?? 0,
@@ -168,10 +201,24 @@ class SupabaseDbService {
         roleStr = 'detailer';
       }
 
-      final cleanRadius = user.serviceRadius.split('||pin:').first.trim();
-      final encodedRadius = (user.ownerPinHash != null && user.ownerPinHash!.isNotEmpty)
-          ? '$cleanRadius||pin:${user.ownerPinHash}'
-          : cleanRadius;
+      final cleanRadius = user.serviceRadius
+          .split('||pin:')
+          .first
+          .split('||team:')
+          .first
+          .trim();
+      final StringBuffer radiusBuf = StringBuffer(cleanRadius);
+      if (user.ownerPinHash != null && user.ownerPinHash!.isNotEmpty) {
+        radiusBuf.write('||pin:${user.ownerPinHash}');
+      }
+      if (user.teamMembers.isNotEmpty) {
+        try {
+          final teamJson = jsonEncode(user.teamMembers.map((m) => m.toJson()).toList());
+          final teamB64 = base64Encode(utf8.encode(teamJson));
+          radiusBuf.write('||team:$teamB64');
+        } catch (_) {}
+      }
+      final encodedRadius = radiusBuf.toString();
 
       await client.from('profiles').upsert({
         'id': user.id,

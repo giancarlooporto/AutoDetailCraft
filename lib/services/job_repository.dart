@@ -450,6 +450,9 @@ class JobRepository extends ChangeNotifier {
             final local = teamMap[cm.id];
             if (local != null) {
               teamMap[cm.id] = cm.copyWith(
+                pin: (cm.pin != null && cm.pin!.isNotEmpty) ? cm.pin : local.pin,
+                email: (cm.email != null && cm.email!.isNotEmpty) ? cm.email : local.email,
+                allowedHubSections: cm.allowedHubSections ?? local.allowedHubSections,
                 customWeeklySchedule: cm.customWeeklySchedule ?? local.customWeeklySchedule,
                 localAvatarBytes: cm.localAvatarBytes ?? local.localAvatarBytes,
                 isFounder: cm.isFounder || local.isFounder,
@@ -514,6 +517,7 @@ class JobRepository extends ChangeNotifier {
         }
         if (userId != 'usr_you') {
           final needsProfileSync = resolvedPackages.length > cloudProfile.servicePackages.length ||
+              resolvedTeam.length > cloudProfile.teamMembers.length ||
               ((cloudProfile.ownerPinHash == null || cloudProfile.ownerPinHash!.isEmpty) &&
                   resolvedPinHash != null &&
                   resolvedPinHash.isNotEmpty);
@@ -2771,6 +2775,38 @@ class JobRepository extends ChangeNotifier {
     LocalStorageService.saveActiveTeamMemberId(member.id);
     notifyListeners();
     return true;
+  }
+
+  /// Verifies a team member's 4-digit PIN locally first, then falls back to server-side RPC (`verify_staff_pin_rpc`)
+  /// so staff PINs work on secondary devices even when `pin` is only stored in `staff_security` online.
+  Future<bool> unlockAsTeamMemberWithPinAsync(String memberId, String pin) async {
+    if (unlockAsTeamMemberWithPin(memberId, pin)) {
+      return true;
+    }
+    final cleanPin = pin.trim();
+    if (cleanPin.length != 4) return false;
+    final cloudRes = await SupabaseDbService.findStaffMember(
+      memberId: memberId,
+      pin: cleanPin,
+    );
+    if (cloudRes != null) {
+      // Cache the verified PIN locally on this device so subsequent unlocks are instant
+      final idx = _currentUser.teamMembers.indexWhere((m) => m.id == memberId);
+      if (idx != -1) {
+        final updatedList = List<TeamMember>.from(_currentUser.teamMembers);
+        updatedList[idx] = updatedList[idx].copyWith(pin: cleanPin);
+        _currentUser = _currentUser.copyWith(teamMembers: updatedList);
+        await LocalStorageService.saveTeamMembers(updatedList);
+        await LocalStorageService.saveCurrentUser(_currentUser);
+      }
+      _isOwnerLocked = false;
+      _activeTeamMemberId = memberId;
+      await LocalStorageService.saveIsOwnerLocked(false);
+      await LocalStorageService.saveActiveTeamMemberId(memberId);
+      notifyListeners();
+      return true;
+    }
+    return false;
   }
 
   Future<void> setOwnerAutoLockMinutes(int minutes) async {

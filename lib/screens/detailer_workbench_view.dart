@@ -8651,7 +8651,7 @@ class _OwnerLockShieldContentState extends State<_OwnerLockShieldContent> {
         _focusNode.requestFocus();
       }
     } else {
-      final ok = widget.repository.unlockAsTeamMemberWithPin(_selectedProfileId, pin);
+      final ok = await widget.repository.unlockAsTeamMemberWithPinAsync(_selectedProfileId, pin);
       if (!mounted) return;
       if (ok) {
         _verifying = false;
