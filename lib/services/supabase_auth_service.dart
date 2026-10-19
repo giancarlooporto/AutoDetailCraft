@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_profile.dart';
+import '../models/team_member.dart';
+import '../models/user_vehicle.dart';
 import 'mock_data_service.dart';
 import 'supabase_service.dart';
 import 'supabase_db_service.dart';
@@ -50,8 +52,17 @@ class SupabaseAuthService {
       // 1. First check if there is an existing cloud profile in Supabase Database
       final cloudProfile = await SupabaseDbService.fetchUserProfile(user.id);
       if (cloudProfile != null) {
-        await LocalStorageService.saveCurrentUser(cloudProfile);
-        return (success: true, error: null, profile: cloudProfile);
+        final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
+        final localTeam = await LocalStorageService.loadTeamMembers();
+        final teamMap = <String, TeamMember>{
+          if (existingLocalProfile != null)
+            for (final m in existingLocalProfile.teamMembers) m.id: m,
+          for (final m in localTeam) m.id: m,
+          for (final m in cloudProfile.teamMembers) m.id: m,
+        };
+        final merged = cloudProfile.copyWith(teamMembers: teamMap.values.toList());
+        await LocalStorageService.saveCurrentUser(merged);
+        return (success: true, error: null, profile: merged);
       }
 
       // 2. Check if there was already locally saved profile data for this user ID
@@ -107,21 +118,64 @@ class SupabaseAuthService {
 
       // 1. Query SupabaseDbService.fetchUserProfile(user.id) FIRST on sign-in before falling back
       final cloudProfile = await SupabaseDbService.fetchUserProfile(user.id);
+      final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
+      final localTeam = await LocalStorageService.loadTeamMembers();
+      final localGarage = await LocalStorageService.loadGarageVehicles();
+
       if (cloudProfile != null) {
         final localPackages = await LocalStorageService.loadServicePackages();
-        final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
         final mergedPackages = cloudProfile.servicePackages.isNotEmpty
             ? cloudProfile.servicePackages
-            : (localPackages.isNotEmpty ? localPackages : (existingLocalProfile?.servicePackages ?? MockDataService.standardPackages));
-        final merged = cloudProfile.copyWith(servicePackages: mergedPackages);
+            : (localPackages.isNotEmpty
+                ? localPackages
+                : (existingLocalProfile?.servicePackages ?? MockDataService.standardPackages));
+
+        // Non-destructive union merge of teamMembers across local profile, dedicated storage, and cloud
+        final teamMap = <String, TeamMember>{
+          if (existingLocalProfile != null)
+            for (final m in existingLocalProfile.teamMembers) m.id: m,
+          for (final m in localTeam) m.id: m,
+        };
+        for (final cm in cloudProfile.teamMembers) {
+          final local = teamMap[cm.id];
+          if (local != null) {
+            teamMap[cm.id] = cm.copyWith(
+              customWeeklySchedule: cm.customWeeklySchedule ?? local.customWeeklySchedule,
+              localAvatarBytes: cm.localAvatarBytes ?? local.localAvatarBytes,
+              isFounder: cm.isFounder || local.isFounder,
+            );
+          } else {
+            teamMap[cm.id] = cm;
+          }
+        }
+
+        // Non-destructive union merge of garage vehicles
+        final garageMap = <String, UserVehicle>{
+          if (existingLocalProfile != null)
+            for (final v in existingLocalProfile.myGarage) v.id: v,
+          for (final v in localGarage) v.id: v,
+          for (final v in cloudProfile.myGarage) v.id: v,
+        };
+
+        final merged = cloudProfile.copyWith(
+          servicePackages: mergedPackages,
+          teamMembers: teamMap.values.toList(),
+          myGarage: garageMap.values.toList(),
+        );
         await LocalStorageService.saveCurrentUser(merged);
         return (success: true, error: null, profile: merged);
       }
 
       // 2. Check if we have the user's saved garage, team, bio, location, etc. in local storage
-      final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
       if (existingLocalProfile != null) {
-        return (success: true, error: null, profile: existingLocalProfile);
+        final teamMap = <String, TeamMember>{
+          for (final m in existingLocalProfile.teamMembers) m.id: m,
+          for (final m in localTeam) m.id: m,
+        };
+        final mergedLocal = existingLocalProfile.copyWith(
+          teamMembers: teamMap.values.toList(),
+        );
+        return (success: true, error: null, profile: mergedLocal);
       }
 
       final displayName = (user.userMetadata?['display_name'] as String?) ?? email.split('@').first;

@@ -293,18 +293,40 @@ class SupabaseDbService {
   /// Upsert a team member to Supabase and sync hashed PIN/invite token via SECURITY DEFINER RPC
   static Future<void> saveTeamMember(String studioId, TeamMember m) async {
     final client = _client;
-    if (client == null) return;
+    if (client == null || studioId.isEmpty || studioId == 'usr_you') return;
 
     try {
-      final payload = <String, dynamic>{
-        'id': m.id,
-        'studio_id': studioId,
-        'name': m.name,
-        'role_title': m.roleTitle,
-        'avatar_url': m.avatarUrl,
-        'rating': m.rating,
-        'completed_jobs_count': m.completedJobsCount,
-        'is_available': m.isAvailable,
+      // Ensure parent studio profile row exists so the foreign key constraint on studio_id never fails
+      final existingProfile =
+          await client.from('profiles').select('id').eq('id', studioId).maybeSingle();
+      if (existingProfile == null) {
+        final authUser = client.auth.currentUser;
+        await client.from('profiles').upsert({
+          'id': studioId,
+          'display_name': (authUser?.userMetadata?['display_name'] as String?) ??
+              authUser?.email?.split('@').first ??
+              'Studio Owner',
+          'business_name': 'My Detailing Studio',
+          'role': 'detailer',
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        });
+      }
+    } catch (_) {}
+
+    final basePayload = <String, dynamic>{
+      'id': m.id,
+      'studio_id': studioId,
+      'name': m.name,
+      'role_title': m.roleTitle,
+      'avatar_url': m.avatarUrl,
+      'rating': m.rating,
+      'completed_jobs_count': m.completedJobsCount,
+      'is_available': m.isAvailable,
+    };
+
+    try {
+      final fullPayload = <String, dynamic>{
+        ...basePayload,
         'is_founder': m.isFounder,
         'can_edit_inventory': m.canEditInventory,
         'can_view_pricing': m.canViewPricing,
@@ -312,18 +334,33 @@ class SupabaseDbService {
         'can_view_all_team_calendar': m.canViewAllTeamCalendar,
         'invite_status': m.inviteStatus,
       };
-      if (m.email != null) payload['email'] = m.email;
-      if (m.inviteSentAt != null) payload['invite_sent_at'] = m.inviteSentAt!.toIso8601String();
+      if (m.email != null) fullPayload['email'] = m.email;
+      if (m.inviteSentAt != null) {
+        fullPayload['invite_sent_at'] = m.inviteSentAt!.toIso8601String();
+      }
       if (m.allowedHubSections != null) {
-        payload['allowed_hub_sections'] = m.allowedHubSections;
+        fullPayload['allowed_hub_sections'] = m.allowedHubSections;
       }
       if (m.customWeeklySchedule != null) {
-        payload['custom_weekly_schedule'] =
+        fullPayload['custom_weekly_schedule'] =
             m.customWeeklySchedule!.map((h) => h.toJson()).toList();
       }
-      await client.from('team_members').upsert(payload);
+      await client.from('team_members').upsert(fullPayload);
+    } catch (e) {
+      if (kDebugMode) {
+        print('[SupabaseDbService] Extended team_members upsert failed, falling back to base columns: $e');
+      }
+      try {
+        await client.from('team_members').upsert(basePayload);
+      } catch (fallbackErr) {
+        if (kDebugMode) {
+          print('[SupabaseDbService] Base team_members upsert failed: $fallbackErr');
+        }
+      }
+    }
 
-      // Sync PIN and invite token to server-side staff_security table (hashed via bcrypt/sha256)
+    // Sync PIN and invite token to server-side staff_security table (hashed via bcrypt/sha256)
+    try {
       if ((m.pin != null && m.pin!.trim().isNotEmpty) ||
           (m.inviteToken != null && m.inviteToken!.trim().isNotEmpty)) {
         await client.rpc('upsert_staff_security', params: {
@@ -336,7 +373,7 @@ class SupabaseDbService {
         });
       }
     } catch (e) {
-      if (kDebugMode) print('[SupabaseDbService] Error saving team member: $e');
+      if (kDebugMode) print('[SupabaseDbService] Error syncing staff_security RPC: $e');
     }
   }
 

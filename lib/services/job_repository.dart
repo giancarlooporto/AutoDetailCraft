@@ -418,10 +418,15 @@ class JobRepository extends ChangeNotifier {
               : await LocalStorageService.loadGarageVehicles();
         }
 
-        // Non-destructive union merge for team members: union by ID, preserving local custom staff and schedules
+        // Non-destructive union merge for team members: union by ID across local storage, in-memory profile, and cloud
+        final storedLocalTeam = await LocalStorageService.loadTeamMembers();
+        final storedLocalUser = await LocalStorageService.loadUserById(userId);
         List<TeamMember> resolvedTeam;
         if (cloudProfile.teamMembers.isNotEmpty) {
           final teamMap = <String, TeamMember>{
+            if (storedLocalUser != null)
+              for (final m in storedLocalUser.teamMembers) m.id: m,
+            for (final m in storedLocalTeam) m.id: m,
             for (final m in _currentUser.teamMembers) m.id: m,
           };
           for (final cm in cloudProfile.teamMembers) {
@@ -438,9 +443,13 @@ class JobRepository extends ChangeNotifier {
           }
           resolvedTeam = teamMap.values.toList();
         } else {
-          resolvedTeam = _currentUser.teamMembers.isNotEmpty
-              ? _currentUser.teamMembers
-              : await LocalStorageService.loadTeamMembers();
+          final teamMap = <String, TeamMember>{
+            if (storedLocalUser != null)
+              for (final m in storedLocalUser.teamMembers) m.id: m,
+            for (final m in storedLocalTeam) m.id: m,
+            for (final m in _currentUser.teamMembers) m.id: m,
+          };
+          resolvedTeam = teamMap.values.toList();
         }
 
         final mode = await LocalStorageService.loadWorkbenchMode();
@@ -472,8 +481,17 @@ class JobRepository extends ChangeNotifier {
         if (resolvedTeam.isNotEmpty) {
           await LocalStorageService.saveTeamMembers(resolvedTeam);
         }
-        if (resolvedPackages.length > cloudProfile.servicePackages.length && userId != 'usr_you') {
-          SupabaseDbService.saveUserProfile(merged);
+        if (userId != 'usr_you') {
+          if (resolvedPackages.length > cloudProfile.servicePackages.length) {
+            SupabaseDbService.saveUserProfile(merged);
+          }
+          // Push any locally added team members that were missing from Supabase up to the cloud
+          final cloudTeamIds = cloudProfile.teamMembers.map((m) => m.id).toSet();
+          for (final member in resolvedTeam) {
+            if (!cloudTeamIds.contains(member.id)) {
+              SupabaseDbService.saveTeamMember(userId, member);
+            }
+          }
         }
 
         // Non-destructive union merge for inventory items: union by ID, preserving local custom items and fill levels
@@ -1137,8 +1155,11 @@ class JobRepository extends ChangeNotifier {
     );
     LocalStorageService.saveTeamMembers(updatedMembers);
     _persistUser();
-    if (_isLoggedIn) {
-      SupabaseDbService.saveTeamMember(_currentUser.id, member);
+    final studioId = _currentUser.id != 'usr_you'
+        ? _currentUser.id
+        : (SupabaseAuthService.currentAuthUser?.id ?? _currentUser.id);
+    if ((_isLoggedIn || SupabaseAuthService.isLoggedIn) && studioId != 'usr_you') {
+      SupabaseDbService.saveTeamMember(studioId, member);
     }
     if (member.email != null &&
         member.email!.trim().isNotEmpty &&
@@ -1153,7 +1174,7 @@ class JobRepository extends ChangeNotifier {
             ? _currentUser.businessName
             : _currentUser.displayName,
         inviteToken: token,
-        inviteUrl: member.getInviteLink(studioId: _currentUser.id),
+        inviteUrl: member.getInviteLink(studioId: studioId),
       );
     }
     notifyListeners();
@@ -1166,7 +1187,7 @@ class JobRepository extends ChangeNotifier {
     );
     LocalStorageService.saveTeamMembers(updatedMembers);
     _persistUser();
-    if (_isLoggedIn) {
+    if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
       SupabaseDbService.deleteTeamMember(memberId);
     }
     notifyListeners();
@@ -1180,8 +1201,11 @@ class JobRepository extends ChangeNotifier {
       _currentUser = _currentUser.copyWith(teamMembers: list);
       LocalStorageService.saveTeamMembers(list);
       _persistUser();
-      if (_isLoggedIn) {
-        SupabaseDbService.saveTeamMember(_currentUser.id, updated);
+      final studioId = _currentUser.id != 'usr_you'
+          ? _currentUser.id
+          : (SupabaseAuthService.currentAuthUser?.id ?? _currentUser.id);
+      if ((_isLoggedIn || SupabaseAuthService.isLoggedIn) && studioId != 'usr_you') {
+        SupabaseDbService.saveTeamMember(studioId, updated);
       }
       notifyListeners();
     }
