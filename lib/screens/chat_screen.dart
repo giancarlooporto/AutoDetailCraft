@@ -12,12 +12,17 @@ class ChatScreen extends StatefulWidget {
   final String otherUserAvatar;
   final JobRepository repository;
 
+  final bool isEmbedded;
+  final VoidCallback? onBack;
+
   const ChatScreen({
     super.key,
     required this.conversationId,
     required this.otherUserName,
     required this.otherUserAvatar,
     required this.repository,
+    this.isEmbedded = false,
+    this.onBack,
   });
 
   static Future<void> open(
@@ -146,10 +151,18 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         backgroundColor: AppTheme.surface,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        automaticallyImplyLeading: !widget.isEmbedded,
+        leading: widget.isEmbedded
+            ? (widget.onBack != null
+                ? IconButton(
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    onPressed: widget.onBack,
+                  )
+                : null)
+            : IconButton(
+                icon: const Icon(Icons.arrow_back_rounded),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
         title: Row(
           children: [
             CircleAvatar(

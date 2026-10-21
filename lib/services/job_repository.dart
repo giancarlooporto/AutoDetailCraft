@@ -860,6 +860,15 @@ class JobRepository extends ChangeNotifier {
   List<DetailJob> get jobs => _jobs;
   List<DetailJob> get allJobs => _jobs;
   List<BookingAppointment> get bookings => _bookings;
+
+  // Studio Bookings: Only bookings placed by clients for this detailer's studio
+  List<BookingAppointment> get studioBookings =>
+      _bookings.where((b) => b.detailerId == _currentUser.id).toList();
+
+  // Client Bookings: Only personal bookings made by this user as a customer
+  List<BookingAppointment> get clientBookings =>
+      _bookings.where((b) => b.clientId == _currentUser.id || b.detailerId != _currentUser.id).toList();
+
   List<CalendarAvailabilityBlock> get availabilityBlocks => List.unmodifiable(_availabilityBlocks);
   DetailerCalendarPreferences get calendarPreferences => _calendarPreferences;
   
@@ -3217,6 +3226,30 @@ class JobRepository extends ChangeNotifier {
 
   int get totalUnreadMessages =>
       _conversations.fold(0, (sum, c) => sum + c.unreadCount);
+
+  // Studio Conversations: Client inquiries & chats addressed to this studio
+  List<Conversation> get studioConversations {
+    return _conversations.where((c) {
+      final otherId = c.participantA == _currentUser.id ? c.participantB : c.participantA;
+      final isOtherDetailer = _publicDetailers.any((d) => d.id == otherId && d.id != _currentUser.id);
+      return !isOtherDetailer;
+    }).toList();
+  }
+
+  // Client Conversations: Chats where this user contacted other detailers/shops
+  List<Conversation> get clientConversations {
+    return _conversations.where((c) {
+      final otherId = c.participantA == _currentUser.id ? c.participantB : c.participantA;
+      final isOtherDetailer = _publicDetailers.any((d) => d.id == otherId && d.id != _currentUser.id);
+      return isOtherDetailer;
+    }).toList();
+  }
+
+  int get studioUnreadMessages =>
+      studioConversations.fold(0, (sum, c) => sum + c.unreadCount);
+
+  int get clientUnreadMessages =>
+      clientConversations.fold(0, (sum, c) => sum + c.unreadCount);
 
   /// Loads conversations from local storage and Supabase, subscribing to realtime updates.
   Future<void> loadConversations() async {

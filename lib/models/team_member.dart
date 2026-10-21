@@ -34,6 +34,8 @@ class TeamMember {
     'services',
     'inventory',
     'calendar',
+    'booked',
+    'messages',
     'teams',
     'savedRecipes',
   ];
@@ -42,6 +44,8 @@ class TeamMember {
     'portfolio',
     'inventory',
     'calendar',
+    'booked',
+    'messages',
     'savedRecipes',
   ];
 

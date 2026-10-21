@@ -3500,13 +3500,15 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    // Verify Pane 1 items are in exact order B:
-    // Portfolio -> Services -> Inventory -> Calendar -> My Teams -> Saved Recipes
+    // Verify Pane 1 items are in exact order:
+    // Portfolio -> Services -> Inventory -> Calendar -> Booked -> Messages -> My Teams -> Saved Recipes
     final expectedTitles = [
       'Portfolio',
       'Services',
       'Inventory',
       'Calendar',
+      'Booked',
+      'Messages',
       'My Teams',
       'Saved Recipes',
     ];
@@ -3520,13 +3522,17 @@ void main() {
     final servicesTop = tester.getTopLeft(find.text('Services').first).dy;
     final inventoryTop = tester.getTopLeft(find.text('Inventory').first).dy;
     final calendarTop = tester.getTopLeft(find.text('Calendar').first).dy;
+    final bookedTop = tester.getTopLeft(find.text('Booked').first).dy;
+    final messagesTop = tester.getTopLeft(find.text('Messages').first).dy;
     final teamsTop = tester.getTopLeft(find.text('My Teams').first).dy;
     final savedRecipesTop = tester.getTopLeft(find.text('Saved Recipes').first).dy;
 
     expect(portfolioTop < servicesTop, isTrue);
     expect(servicesTop < inventoryTop, isTrue);
     expect(inventoryTop < calendarTop, isTrue);
-    expect(calendarTop < teamsTop, isTrue);
+    expect(calendarTop < bookedTop, isTrue);
+    expect(bookedTop < messagesTop, isTrue);
+    expect(messagesTop < teamsTop, isTrue);
     expect(teamsTop < savedRecipesTop, isTrue);
 
     debugNetworkImageHttpClientProvider = null;
@@ -4792,6 +4798,83 @@ void main() {
     expect(find.text('Save Password & Enter Studio'), findsOneWidget);
 
     debugNetworkImageHttpClientProvider = null;
+  });
+
+  testWidgets('Dedicated Studio Mode Booked & Messages separation and Calendar cancellation sync', (WidgetTester tester) async {
+    final repo = JobRepository();
+    final myId = repo.currentUser.id;
+
+    // 1. Add a client booking (where current user booked another detailer)
+    final clientBooking = BookingAppointment(
+      id: 'book_client_001',
+      clientId: myId,
+      detailerId: 'other_detailer_id',
+      detailerName: 'Apex Detail Studio',
+      detailerBusinessName: 'Apex Detail Studio',
+      detailerAvatar: '',
+      clientName: repo.currentUser.displayName,
+      clientPhone: '555-0100',
+      clientEmail: 'client@example.com',
+      vehicleYearMakeModel: '2023 Porsche 911 GT3',
+      vehicleSize: VehicleSize.coupeSedan,
+      package: repo.currentUser.servicePackages.first,
+      locationType: ServiceLocationType.shop,
+      clientAddress: 'Austin, TX',
+      scheduledDate: DateTime.now().add(const Duration(days: 2)),
+      scheduledTimeSlot: '09:00 AM - 12:00 PM',
+      totalPrice: 450,
+      depositAmount: 100,
+      status: BookingStatus.confirmed,
+    );
+
+    // 2. Add a studio booking (where a customer booked this studio)
+    final studioBooking = BookingAppointment(
+      id: 'book_studio_001',
+      clientId: 'customer_alex_123',
+      detailerId: myId,
+      detailerName: repo.currentUser.displayName,
+      detailerBusinessName: repo.currentUser.businessName,
+      detailerAvatar: '',
+      clientName: 'Alex Customer',
+      clientPhone: '555-0200',
+      clientEmail: 'alex@example.com',
+      vehicleYearMakeModel: '2022 BMW M3 Competition',
+      vehicleSize: VehicleSize.coupeSedan,
+      package: repo.currentUser.servicePackages.first,
+      locationType: ServiceLocationType.shop,
+      clientAddress: '123 Main St, Austin, TX',
+      scheduledDate: DateTime.now().add(const Duration(days: 3)),
+      scheduledTimeSlot: '01:00 PM - 04:00 PM',
+      totalPrice: 650,
+      depositAmount: 150,
+      status: BookingStatus.confirmed,
+    );
+
+    repo.addBooking(clientBooking);
+    repo.addBooking(studioBooking);
+
+    // Verify separation: clientBookings only has clientBooking; studioBookings only has studioBooking
+    expect(repo.clientBookings.any((b) => b.id == 'book_client_001'), isTrue);
+    expect(repo.clientBookings.any((b) => b.id == 'book_studio_001'), isFalse);
+
+    expect(repo.studioBookings.any((b) => b.id == 'book_studio_001'), isTrue);
+    expect(repo.studioBookings.any((b) => b.id == 'book_client_001'), isFalse);
+
+    // 3. Verify Calendar sync before and after cancellation
+    final bookedDate = DateTime.now().add(const Duration(days: 3));
+    final bookingsOnDateBefore = repo.getBookingsForDate(bookedDate, detailerId: myId);
+    expect(bookingsOnDateBefore.any((b) => b.id == 'book_studio_001'), isTrue);
+
+    // Cancel in Booked:
+    repo.cancelBooking('book_studio_001');
+
+    // Verify status changed
+    final updatedStudioBooking = repo.studioBookings.firstWhere((b) => b.id == 'book_studio_001');
+    expect(updatedStudioBooking.status, BookingStatus.cancelled);
+
+    // Verify booking is immediately removed from Calendar schedule
+    final bookingsOnDateAfter = repo.getBookingsForDate(bookedDate, detailerId: myId);
+    expect(bookingsOnDateAfter.any((b) => b.id == 'book_studio_001'), isFalse);
   });
 }
 

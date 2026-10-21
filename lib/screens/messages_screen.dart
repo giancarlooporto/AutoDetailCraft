@@ -44,7 +44,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
     return ListenableBuilder(
       listenable: widget.repository,
       builder: (context, _) {
-        final conversations = widget.repository.conversations;
+        // In Client Mode, strictly display only conversations with detailers
+        final conversations = widget.repository.clientConversations;
         final isGuest = widget.repository.isGuestMode;
 
         return Scaffold(

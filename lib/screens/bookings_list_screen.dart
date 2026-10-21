@@ -571,7 +571,8 @@ class BookingsListScreen extends StatelessWidget {
       listenable: repository,
       builder: (context, _) {
         final isLoggedIn = repository.isLoggedIn;
-        final allBookings = repository.bookings;
+        // In Client Mode, strictly display only personal bookings made by this user as a customer
+        final allBookings = repository.clientBookings;
 
         if (!isLoggedIn) {
           return Scaffold(

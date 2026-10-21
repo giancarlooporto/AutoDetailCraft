@@ -20,12 +20,15 @@ import 'calendar_preferences_dialog.dart';
 import '../models/calendar_availability_block.dart';
 import '../models/shift_request.dart';
 import '../services/local_storage_service.dart';
+import 'chat_screen.dart';
 
 enum StudioHubSection {
   portfolio('Portfolio', 'PORTFOLIO', 'Showcase builds & media', Icons.photo_library_rounded),
   services('Services', 'SERVICES', 'Packages & pricing menus', Icons.design_services_rounded),
   inventory('Inventory', 'INVENTORY', 'Hardware, chemicals, recipe', Icons.inventory_2_rounded),
   calendar('Calendar', 'CALENDAR', 'Bookings & host schedule', Icons.calendar_month_rounded),
+  booked('Booked', 'BOOKED', 'Client bookings & jobs', Icons.assignment_turned_in_rounded),
+  messages('Messages', 'MESSAGES', 'Client inquiries & chats', Icons.chat_bubble_rounded),
   teams('My Teams', 'MY TEAMS', 'Staff roles & technicians', Icons.groups_rounded),
   savedRecipes('Saved Recipes', 'SAVED RECIPES', 'Technical playbook', Icons.bookmark_rounded),
   settings('Settings', 'SETTINGS', 'Shop, profile & account', Icons.settings_rounded);
@@ -58,6 +61,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     StudioHubSection.services,
     StudioHubSection.inventory,
     StudioHubSection.calendar,
+    StudioHubSection.booked,
+    StudioHubSection.messages,
     StudioHubSection.teams,
     StudioHubSection.savedRecipes,
   ];
@@ -98,6 +103,9 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   String? _selectedServicePackageId;
   String? _selectedPortfolioJobId;
   String? _selectedSavedJobId;
+  String? _selectedStudioBookingId;
+  String? _selectedStudioConversationId;
+  String _studioBookingFilter = 'ALL';
   String? _returnToServicePackageId;
   String? _returnToServicePackageTitle;
 
@@ -217,6 +225,16 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       _selectedTeamMemberId = 'founder';
     }
 
+    final studioBookings = widget.repository.studioBookings;
+    if (_selectedStudioBookingId == null || !studioBookings.any((b) => b.id == _selectedStudioBookingId)) {
+      _selectedStudioBookingId = studioBookings.isNotEmpty ? studioBookings.first.id : null;
+    }
+
+    final studioConvs = widget.repository.studioConversations;
+    if (_selectedStudioConversationId == null || !studioConvs.any((c) => c.id == _selectedStudioConversationId)) {
+      _selectedStudioConversationId = studioConvs.isNotEmpty ? studioConvs.first.id : null;
+    }
+
     if (widget.repository.isViewingAsTeamMember && _selectedHub == StudioHubSection.settings) {
       _selectedHub = _visibleHubSections.first;
     }
@@ -242,6 +260,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     switch (_selectedHub) {
       case StudioHubSection.calendar:
         return true;
+      case StudioHubSection.booked:
+        return widget.repository.studioBookings.isNotEmpty;
+      case StudioHubSection.messages:
+        return widget.repository.studioConversations.isNotEmpty;
       case StudioHubSection.inventory:
         return widget.repository.inventoryItems.isNotEmpty;
       case StudioHubSection.teams:
@@ -356,6 +378,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           },
         );
         break;
+      case StudioHubSection.booked:
+      case StudioHubSection.messages:
       case StudioHubSection.savedRecipes:
         widget.repository.setActiveTab(0);
         break;
@@ -488,6 +512,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           onJobCreated: () => setState(() {}),
         );
         break;
+      case StudioHubSection.booked:
+      case StudioHubSection.messages:
       case StudioHubSection.savedRecipes:
       case StudioHubSection.settings:
         break;
@@ -501,6 +527,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
     switch (_selectedHub) {
       case StudioHubSection.calendar:
+      case StudioHubSection.booked:
+      case StudioHubSection.messages:
         return;
       case StudioHubSection.inventory:
         if (!_canEditInventory) return;
@@ -551,6 +579,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         itemTitle = job.vehicleFullName;
         deleteAction = () => widget.repository.deleteJob(job.id);
         break;
+      case StudioHubSection.booked:
+      case StudioHubSection.messages:
       case StudioHubSection.savedRecipes:
       case StudioHubSection.settings:
         return;
@@ -906,6 +936,12 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                  b.scheduledDate.month == _calendarDisplayMonth.month &&
                  b.status != BookingStatus.cancelled;
         }).length;
+      case StudioHubSection.booked:
+        return widget.repository.studioBookings.where((b) => b.status != BookingStatus.cancelled).length;
+      case StudioHubSection.messages:
+        return widget.repository.studioUnreadMessages > 0
+            ? widget.repository.studioUnreadMessages
+            : widget.repository.studioConversations.length;
       case StudioHubSection.portfolio:
         return myJobs;
       case StudioHubSection.savedRecipes:
@@ -1107,6 +1143,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           if (_selectedHub != StudioHubSection.savedRecipes &&
               _selectedHub != StudioHubSection.inventory &&
               _selectedHub != StudioHubSection.calendar &&
+              _selectedHub != StudioHubSection.booked &&
+              _selectedHub != StudioHubSection.messages &&
               _selectedHub != StudioHubSection.settings) ...[
             if ((_selectedHub != StudioHubSection.teams || _canManageTeam) &&
                 (_selectedHub != StudioHubSection.services || _canViewPricing)) ...[
@@ -1143,6 +1181,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     switch (_selectedHub) {
       case StudioHubSection.calendar:
         return 'Monthly availability & bookings';
+      case StudioHubSection.booked:
+        return 'Client appointments & job status';
+      case StudioHubSection.messages:
+        return 'Customer chats & inquiries';
       case StudioHubSection.inventory:
         return 'Polishers, chemicals, formulas';
       case StudioHubSection.teams:
@@ -1268,6 +1310,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     switch (_selectedHub) {
       case StudioHubSection.calendar:
         return _buildCalendarMonthPane2(context, isMobile: isMobile);
+      case StudioHubSection.booked:
+        return _buildStudioBookingsPane2(context, isMobile: isMobile);
+      case StudioHubSection.messages:
+        return _buildStudioMessagesPane2(context, isMobile: isMobile);
       case StudioHubSection.inventory:
         return const SizedBox.shrink();
       case StudioHubSection.teams:
@@ -2431,7 +2477,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     label: const Text('Operating Hours', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
                     onPressed: () => CalendarPreferencesDialog.show(context, repository: widget.repository),
                   ),
-                ] else if (_hasActiveItemToInspect() && _selectedHub != StudioHubSection.savedRecipes) ...[
+                ] else if (_hasActiveItemToInspect() &&
+                    _selectedHub != StudioHubSection.savedRecipes &&
+                    _selectedHub != StudioHubSection.booked &&
+                    _selectedHub != StudioHubSection.messages) ...[
                   if ((_selectedHub != StudioHubSection.teams || _canManageTeam) &&
                       (_selectedHub != StudioHubSection.services || _canViewPricing)) ...[
                     ElevatedButton.icon(
@@ -2466,10 +2515,12 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           Expanded(
             child: _selectedHub == StudioHubSection.inventory
                 ? _buildInventoryItemsPane3(isMobile: isMobile)
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(20),
-                    child: _buildInspectorBody(context, isMobile: isMobile),
-                  ),
+                : _selectedHub == StudioHubSection.messages
+                    ? _buildStudioMessagesInspector(context, isMobile: isMobile)
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.all(20),
+                        child: _buildInspectorBody(context, isMobile: isMobile),
+                      ),
           ),
         ],
       ),
@@ -2480,6 +2531,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     switch (_selectedHub) {
       case StudioHubSection.calendar:
         return _buildCalendarDayInspector(context, isMobile: isMobile);
+      case StudioHubSection.booked:
+        return _buildStudioBookingInspector(context, isMobile: isMobile);
+      case StudioHubSection.messages:
+        return _buildStudioMessagesInspector(context, isMobile: isMobile);
       case StudioHubSection.inventory:
         return const SizedBox.shrink();
       case StudioHubSection.teams:
@@ -2854,6 +2909,718 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           ),
         ),
       ],
+    );
+  }
+
+  // ==========================================
+  // PANE 2: STUDIO BOOKINGS LIST
+  // ==========================================
+  Widget _buildStudioBookingsPane2(BuildContext context, {bool isMobile = false}) {
+    final allStudioBookings = widget.repository.studioBookings;
+
+    List<BookingAppointment> filtered = allStudioBookings;
+    if (_studioBookingFilter == 'CONFIRMED') {
+      filtered = allStudioBookings.where((b) => b.status == BookingStatus.confirmed || b.status == BookingStatus.pending).toList();
+    } else if (_studioBookingFilter == 'IN_PROGRESS') {
+      filtered = allStudioBookings.where((b) => b.status == BookingStatus.inProgress).toList();
+    } else if (_studioBookingFilter == 'COMPLETED') {
+      filtered = allStudioBookings.where((b) => b.status == BookingStatus.completed).toList();
+    } else if (_studioBookingFilter == 'CANCELLED') {
+      filtered = allStudioBookings.where((b) => b.status == BookingStatus.cancelled).toList();
+    }
+
+    return Column(
+      children: [
+        // Filter Chips Row
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: const BoxDecoration(
+            color: AppTheme.surface,
+            border: Border(bottom: BorderSide(color: AppTheme.border)),
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildBookingFilterChip('ALL', 'All (${allStudioBookings.length})'),
+                const SizedBox(width: 6),
+                _buildBookingFilterChip('CONFIRMED', 'Upcoming'),
+                const SizedBox(width: 6),
+                _buildBookingFilterChip('IN_PROGRESS', 'In Progress'),
+                const SizedBox(width: 6),
+                _buildBookingFilterChip('COMPLETED', 'Done'),
+                const SizedBox(width: 6),
+                _buildBookingFilterChip('CANCELLED', 'Cancelled'),
+              ],
+            ),
+          ),
+        ),
+
+        // Bookings List
+        Expanded(
+          child: filtered.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.event_available_rounded, size: 40, color: AppTheme.textMuted.withAlpha(120)),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'No Bookings in this view',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Appointments booked by clients will appear here.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(10),
+                  itemCount: filtered.length,
+                  itemBuilder: (context, idx) {
+                    final b = filtered[idx];
+                    final isSelected = _selectedStudioBookingId == b.id;
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppTheme.primary.withAlpha(20) : AppTheme.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isSelected ? AppTheme.primary : AppTheme.border,
+                          width: isSelected ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: () {
+                            setState(() {
+                              _selectedStudioBookingId = b.id;
+                              if (isMobile) _mobileStep = 2;
+                            });
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        b.clientName.isNotEmpty ? b.clientName : 'Client',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: isSelected ? AppTheme.primary : Colors.white,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: b.status.statusColor.withAlpha(25),
+                                        borderRadius: BorderRadius.circular(5),
+                                        border: Border.all(color: b.status.statusColor.withAlpha(90)),
+                                      ),
+                                      child: Text(
+                                        b.status.label,
+                                        style: TextStyle(
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: b.status.statusColor,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  b.vehicleYearMakeModel,
+                                  style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary, fontWeight: FontWeight.w600),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  b.package.title,
+                                  style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const Divider(color: AppTheme.border, height: 16),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.calendar_today_rounded, size: 11, color: AppTheme.textSecondary),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      DateFormat('MMM d').format(b.scheduledDate),
+                                      style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Icon(Icons.access_time_rounded, size: 11, color: AppTheme.textMuted),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        b.scheduledTimeSlot,
+                                        style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    Text(
+                                      '\$${b.totalPrice.toStringAsFixed(0)}',
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Colors.white),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBookingFilterChip(String key, String label) {
+    final isSelected = _studioBookingFilter == key;
+    return InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: () => setState(() => _studioBookingFilter = key),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.primary : AppTheme.surfaceLight,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.bold,
+            color: isSelected ? Colors.black : AppTheme.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ==========================================
+  // PANE 3: STUDIO BOOKING INSPECTOR
+  // ==========================================
+  Widget _buildStudioBookingInspector(BuildContext context, {bool isMobile = false}) {
+    final studioBookings = widget.repository.studioBookings;
+    if (studioBookings.isEmpty) {
+      return const Center(
+        child: Text('No studio bookings to inspect.', style: TextStyle(color: AppTheme.textMuted)),
+      );
+    }
+
+    final b = studioBookings.firstWhere(
+      (item) => item.id == _selectedStudioBookingId,
+      orElse: () => studioBookings.first,
+    );
+
+    final staff = widget.repository.getStudioStaff(detailerId: widget.repository.currentUser.id);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 1. Vehicle and Status Card
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: b.status.statusColor.withAlpha(25),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: b.status.statusColor.withAlpha(90)),
+                    ),
+                    child: Text(
+                      b.status.label.toUpperCase(),
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: b.status.statusColor),
+                    ),
+                  ),
+                  Text(
+                    '\$${b.totalPrice.toStringAsFixed(0)}',
+                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                b.vehicleYearMakeModel,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.directions_car_rounded, size: 14, color: AppTheme.primary),
+                  const SizedBox(width: 4),
+                  Text(
+                    b.vehicleSize.label,
+                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                  ),
+                  const SizedBox(width: 12),
+                  const Icon(Icons.place_rounded, size: 14, color: AppTheme.primary),
+                  const SizedBox(width: 4),
+                  Text(
+                    b.locationType.label,
+                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        // 2. Client Contact Card
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.person_rounded, size: 16, color: AppTheme.primary),
+                  SizedBox(width: 6),
+                  Text('Client Information', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)),
+                ],
+              ),
+              const Divider(color: AppTheme.border, height: 20),
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  backgroundColor: AppTheme.primary.withAlpha(30),
+                  child: Text(
+                    b.clientName.isNotEmpty ? b.clientName[0].toUpperCase() : 'C',
+                    style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                title: Text(b.clientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                subtitle: Text('${b.clientPhone} • ${b.clientEmail}', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+              ),
+              if (b.clientAddress.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.location_on_outlined, size: 14, color: AppTheme.textMuted),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(b.clientAddress, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                    ),
+                  ],
+                ),
+              ],
+              if (b.clientNotes != null && b.clientNotes!.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.background,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: Text(
+                    'Notes: ${b.clientNotes}',
+                    style: const TextStyle(fontSize: 11.5, color: AppTheme.textSecondary, fontStyle: FontStyle.italic),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        // 3. Service Package & Scheduled Time
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.design_services_rounded, size: 16, color: AppTheme.primary),
+                  SizedBox(width: 6),
+                  Text('Service & Schedule', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)),
+                ],
+              ),
+              const Divider(color: AppTheme.border, height: 20),
+              Text(b.package.title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text(b.package.description, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(color: AppTheme.primary.withAlpha(20), borderRadius: BorderRadius.circular(6)),
+                    child: const Icon(Icons.calendar_month_rounded, size: 16, color: AppTheme.primary),
+                  ),
+                  const SizedBox(width: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(DateFormat('EEEE, MMMM d, yyyy').format(b.scheduledDate), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      Text(b.scheduledTimeSlot, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        // 4. Technician Assignment (When Working with Team is ON)
+        if (widget.repository.workingWithTeam) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.groups_rounded, size: 16, color: AppTheme.primary),
+                    SizedBox(width: 6),
+                    Text('Assigned Technician', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)),
+                  ],
+                ),
+                const Divider(color: AppTheme.border, height: 20),
+                DropdownButtonFormField<String>(
+                  value: staff.any((s) => s.id == b.assignedTeamMemberId) ? b.assignedTeamMemberId : 'founder',
+                  dropdownColor: AppTheme.surface,
+                  decoration: InputDecoration(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: 'founder', child: Text('Shop Owner (Founder)')),
+                    ...staff.where((s) => !s.isFounder).map(
+                          (m) => DropdownMenuItem(value: m.id, child: Text('${m.name} (${m.roleTitle})')),
+                        ),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) {
+                      final member = staff.firstWhere((s) => s.id == val, orElse: () => staff.first);
+                      widget.repository.assignBookingTechnician(b.id, member.id, member.name);
+                      setState(() {});
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+
+        // 5. Status Controls & Action Buttons
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Update Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (b.status != BookingStatus.inProgress && b.status != BookingStatus.completed && b.status != BookingStatus.cancelled)
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2196F3),
+                        foregroundColor: Colors.white,
+                      ),
+                      icon: const Icon(Icons.play_arrow_rounded, size: 16),
+                      label: const Text('Start (In Progress)'),
+                      onPressed: () {
+                        widget.repository.updateBookingStatus(b.id, BookingStatus.inProgress);
+                        setState(() {});
+                      },
+                    ),
+                  if (b.status == BookingStatus.inProgress)
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00E676),
+                        foregroundColor: Colors.black,
+                      ),
+                      icon: const Icon(Icons.check_circle_rounded, size: 16),
+                      label: const Text('Complete Job', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () {
+                        widget.repository.updateBookingStatus(b.id, BookingStatus.completed);
+                        setState(() {});
+                      },
+                    ),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.primary,
+                      side: const BorderSide(color: AppTheme.primary),
+                    ),
+                    icon: const Icon(Icons.calendar_month_rounded, size: 16),
+                    label: const Text('View in Calendar'),
+                    onPressed: () {
+                      setState(() {
+                        _selectedHub = StudioHubSection.calendar;
+                        _selectedCalendarDate = b.scheduledDate;
+                        _calendarDisplayMonth = DateTime(b.scheduledDate.year, b.scheduledDate.month, 1);
+                        if (isMobile) _mobileStep = 2;
+                      });
+                    },
+                  ),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.primary,
+                      side: const BorderSide(color: AppTheme.primary),
+                    ),
+                    icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                    label: const Text('Message Client'),
+                    onPressed: () async {
+                      final otherId = b.clientId ?? b.clientEmail;
+                      final convId = await widget.repository.openOrCreateConversation(otherId);
+                      if (context.mounted && convId != null) {
+                        ChatScreen.open(
+                          context,
+                          conversationId: convId,
+                          otherUserName: b.clientName,
+                          otherUserAvatar: '',
+                          repository: widget.repository,
+                        );
+                      }
+                    },
+                  ),
+                  if (b.status != BookingStatus.cancelled)
+                    TextButton.icon(
+                      style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                      icon: const Icon(Icons.cancel_outlined, size: 16),
+                      label: const Text('Cancel Booking'),
+                      onPressed: () => _confirmCancelBooking(context, b),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _confirmCancelBooking(BuildContext context, BookingAppointment b) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Colors.redAccent),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.redAccent),
+            SizedBox(width: 8),
+            Text('Cancel Booking?'),
+          ],
+        ),
+        content: Text(
+          'Cancelling this booking for ${b.clientName} (${b.vehicleYearMakeModel}) will immediately remove it from your Calendar schedule and free up the time slot for other clients.',
+          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Keep Booking', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              widget.repository.cancelBooking(b.id);
+              setState(() {});
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Booking cancelled. Appointment slot has been removed from Calendar.'),
+                  backgroundColor: AppTheme.surface,
+                ),
+              );
+            },
+            child: const Text('Confirm Cancellation', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================
+  // PANE 2: STUDIO MESSAGES LIST
+  // ==========================================
+  Widget _buildStudioMessagesPane2(BuildContext context, {bool isMobile = false}) {
+    final convs = widget.repository.studioConversations;
+
+    if (convs.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.chat_bubble_outline_rounded, size: 40, color: AppTheme.textMuted.withAlpha(120)),
+              const SizedBox(height: 12),
+              const Text(
+                'No Client Messages Yet',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Direct inquiries from customers on your public storefront will appear here.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(10),
+      itemCount: convs.length,
+      itemBuilder: (context, idx) {
+        final c = convs[idx];
+        final isSelected = _selectedStudioConversationId == c.id;
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 6),
+          decoration: BoxDecoration(
+            color: isSelected ? AppTheme.primary.withAlpha(20) : AppTheme.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? AppTheme.primary : AppTheme.border,
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: ListTile(
+              dense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              leading: CircleAvatar(
+                radius: 18,
+                backgroundImage: c.otherUserAvatar.isNotEmpty ? NetworkImage(c.otherUserAvatar) : null,
+                backgroundColor: AppTheme.surfaceLight,
+                child: c.otherUserAvatar.isEmpty ? const Icon(Icons.person_rounded, size: 18, color: AppTheme.textMuted) : null,
+              ),
+              title: Text(
+                c.otherUserName.isNotEmpty ? c.otherUserName : 'Customer',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isSelected ? AppTheme.primary : Colors.white),
+              ),
+              subtitle: Text(
+                c.lastMessage?.text ?? 'New conversation',
+                style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: c.unreadCount > 0
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(10)),
+                      child: Text(
+                        '${c.unreadCount}',
+                        style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
+                      ),
+                    )
+                  : Text(
+                      DateFormat('MMM d').format(c.updatedAt),
+                      style: const TextStyle(fontSize: 10, color: AppTheme.textMuted),
+                    ),
+              onTap: () {
+                setState(() {
+                  _selectedStudioConversationId = c.id;
+                  if (isMobile) _mobileStep = 2;
+                });
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ==========================================
+  // PANE 3: STUDIO MESSAGES INSPECTOR (CHAT)
+  // ==========================================
+  Widget _buildStudioMessagesInspector(BuildContext context, {bool isMobile = false}) {
+    final convs = widget.repository.studioConversations;
+    if (convs.isEmpty) {
+      return const Center(
+        child: Text('No active client conversations.', style: TextStyle(color: AppTheme.textMuted)),
+      );
+    }
+
+    final conv = convs.firstWhere(
+      (c) => c.id == _selectedStudioConversationId,
+      orElse: () => convs.first,
+    );
+
+    return ChatScreen(
+      key: ValueKey(conv.id),
+      conversationId: conv.id,
+      otherUserName: conv.otherUserName.isNotEmpty ? conv.otherUserName : 'Client',
+      otherUserAvatar: conv.otherUserAvatar,
+      repository: widget.repository,
+      isEmbedded: true,
+      onBack: isMobile ? () => setState(() => _mobileStep = 1) : null,
     );
   }
 

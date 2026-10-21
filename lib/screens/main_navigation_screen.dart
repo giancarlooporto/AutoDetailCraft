@@ -102,11 +102,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         final isDetailer = widget.repository.isDetailerWorkbenchMode ||
             widget.repository.currentUser.role == UserRole.detailer ||
             widget.repository.workbenchMode == 'studio';
+        final isStudioActive = isDetailer && currentIndex == 3;
         final studioLabel = isDetailer ? 'My Studio' : 'My Garage';
         final studioIcon = isDetailer ? Icons.storefront_outlined : Icons.garage_outlined;
         final studioSelectedIcon = isDetailer ? Icons.storefront_rounded : Icons.garage_rounded;
 
-        final unread = widget.repository.totalUnreadMessages;
+        final unread = isStudioActive ? widget.repository.studioUnreadMessages : widget.repository.clientUnreadMessages;
 
         final screens = [
           FeedScreen(repository: widget.repository),
@@ -118,10 +119,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         return LayoutBuilder(
           builder: (context, constraints) {
             final isDesktop = constraints.maxWidth >= 768;
-
-            // When in Studio Mode (tab 3 for Detailer), let DetailerWorkbenchView provide its own
-            // dedicated, clean professional Studio header and navigation — hiding consumer tabs!
-            final isStudioActive = isDetailer && currentIndex == 3;
 
             return Scaffold(
               // Turo-style Centered Desktop Navigation Header (Hidden in Studio Mode)
