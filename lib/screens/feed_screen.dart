@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
-import '../core/constants/app_constants.dart';
 import '../models/user_profile.dart';
 import '../services/job_repository.dart';
 import '../widgets/job_recipe_card.dart';
@@ -67,23 +66,6 @@ class _FeedScreenState extends State<FeedScreen> {
         ),
       ),
     );
-  }
-
-  IconData _getServiceIcon(String service) {
-    switch (service) {
-      case 'Ceramic Coating':
-        return Icons.shield_rounded;
-      case 'Paint Correction':
-        return Icons.auto_fix_high_rounded;
-      case 'Gloss & Decon Wash':
-        return Icons.water_drop_rounded;
-      case 'Interior Deep Clean':
-        return Icons.airline_seat_recline_extra_rounded;
-      case 'PPF & Clear Bra':
-        return Icons.security_rounded;
-      default:
-        return Icons.tune_rounded;
-    }
   }
 
   Widget _buildLocationDropdown(
@@ -213,149 +195,6 @@ class _FeedScreenState extends State<FeedScreen> {
                     Expanded(
                       child: Text(
                         selectedCity,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: isFiltered ? FontWeight.bold : FontWeight.w500,
-                          color: isFiltered ? AppTheme.primary : AppTheme.textPrimary,
-                          letterSpacing: -0.2,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
-                    ),
-                    Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: 15,
-                      color: isFiltered ? AppTheme.primary : AppTheme.textMuted,
-                    ),
-                  ],
-                ),
-              ),
-      ),
-    );
-  }
-
-  Widget _buildServiceDropdown(
-    BuildContext context,
-    List<String> serviceTypes,
-    String selectedService, {
-    bool isEmbedded = false,
-  }) {
-    final isFiltered = selectedService != 'All Services';
-    return Theme(
-      data: Theme.of(context).copyWith(
-        highlightColor: AppTheme.primary.withAlpha(25),
-        splashColor: AppTheme.primary.withAlpha(15),
-      ),
-      child: PopupMenuButton<String>(
-        key: const Key('service_dropdown_btn'),
-        tooltip: 'Filter by Service',
-        offset: const Offset(0, 42),
-        constraints: const BoxConstraints(minWidth: 185, maxWidth: 260),
-        color: AppTheme.surface,
-        elevation: 6,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(
-            color: isFiltered ? AppTheme.primary.withAlpha(140) : AppTheme.border,
-            width: 1,
-          ),
-        ),
-        initialValue: selectedService,
-        onSelected: (service) => widget.repository.setServiceFilter(service),
-        itemBuilder: (context) => serviceTypes.map((service) {
-          final isSelected = selectedService == service;
-          return PopupMenuItem<String>(
-            value: service,
-            height: 40,
-            child: Row(
-              children: [
-                Icon(
-                  _getServiceIcon(service),
-                  size: 15,
-                  color: isSelected ? AppTheme.primary : AppTheme.textMuted,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    service,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                      color: isSelected ? AppTheme.primary : AppTheme.textPrimary,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (isSelected)
-                  const Icon(Icons.check_rounded, size: 16, color: AppTheme.primary),
-              ],
-            ),
-          );
-        }).toList(),
-        child: isEmbedded
-            ? Container(
-                height: 48,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: isFiltered
-                    ? BoxDecoration(
-                        color: AppTheme.primary.withAlpha(20),
-                        borderRadius: BorderRadius.circular(20),
-                      )
-                    : null,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      _getServiceIcon(selectedService),
-                      size: 15,
-                      color: isFiltered ? AppTheme.primary : AppTheme.textMuted,
-                    ),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        selectedService,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: isFiltered ? FontWeight.bold : FontWeight.w500,
-                          color: isFiltered ? AppTheme.primary : AppTheme.textPrimary,
-                          letterSpacing: -0.2,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: 16,
-                      color: isFiltered ? AppTheme.primary : AppTheme.textMuted,
-                    ),
-                  ],
-                ),
-              )
-            : Container(
-                height: 38,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  color: isFiltered ? AppTheme.primary.withAlpha(20) : AppTheme.surface,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: isFiltered ? AppTheme.primary : AppTheme.border,
-                    width: isFiltered ? 1.5 : 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      _getServiceIcon(selectedService),
-                      size: 14,
-                      color: isFiltered ? AppTheme.primary : AppTheme.textMuted,
-                    ),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: Text(
-                        selectedService,
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: isFiltered ? FontWeight.bold : FontWeight.w500,
@@ -763,7 +602,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
                                     // 2. All Locations Dropdown
                                     ConstrainedBox(
-                                      constraints: const BoxConstraints(minWidth: 150, maxWidth: 190),
+                                      constraints: const BoxConstraints(minWidth: 150, maxWidth: 200),
                                       child: _buildLocationDropdown(
                                         context,
                                         activeCities,
@@ -771,22 +610,9 @@ class _FeedScreenState extends State<FeedScreen> {
                                         isEmbedded: false,
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
 
-                                    // 3. All Services Dropdown
-                                    ConstrainedBox(
-                                      constraints: const BoxConstraints(minWidth: 150, maxWidth: 190),
-                                      child: _buildServiceDropdown(
-                                        context,
-                                        AppConstants.serviceTypes,
-                                        widget.repository.selectedServiceType,
-                                        isEmbedded: false,
-                                      ),
-                                    ),
-
-                                    // 4. Quick Reset Button (if filters or search active)
+                                    // 3. Quick Reset Button (if filters or search active)
                                     if (selectedCity != 'All Locations' ||
-                                        widget.repository.selectedServiceType != 'All Services' ||
                                         _searchCtrl.text.isNotEmpty) ...[
                                       const SizedBox(width: 6),
                                       Tooltip(
@@ -822,7 +648,7 @@ class _FeedScreenState extends State<FeedScreen> {
                             ),
                           ),
                         ] else ...[
-                          // Mobile: Clean Side-by-Side Location & Service Dropdown Filter Bar
+                          // Mobile: Clean Location Dropdown Filter Bar
                           Padding(
                             padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
                             child: Center(
@@ -839,25 +665,16 @@ class _FeedScreenState extends State<FeedScreen> {
                                         isEmbedded: false,
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    // All Services Dropdown
-                                    Expanded(
-                                      child: _buildServiceDropdown(
-                                        context,
-                                        AppConstants.serviceTypes,
-                                        widget.repository.selectedServiceType,
-                                        isEmbedded: false,
-                                      ),
-                                    ),
                                     // Quick Reset button if filters active
                                     if (selectedCity != 'All Locations' ||
-                                        widget.repository.selectedServiceType != 'All Services') ...[
-                                      const SizedBox(width: 6),
+                                        _searchCtrl.text.isNotEmpty) ...[
+                                      const SizedBox(width: 8),
                                       InkWell(
                                         key: const Key('reset_filters_btn'),
                                         onTap: () {
+                                          _searchCtrl.clear();
                                           widget.repository.setLocationFilter('All Locations');
-                                          widget.repository.setServiceFilter('All Services');
+                                          setState(() {});
                                         },
                                         borderRadius: BorderRadius.circular(10),
                                         child: Container(

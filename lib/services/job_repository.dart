@@ -968,11 +968,6 @@ class JobRepository extends ChangeNotifier {
 
   List<DetailJob> get filteredJobs {
     final list = _jobs.where((job) {
-      if (_selectedServiceType != 'All Services' &&
-          !job.serviceType.toLowerCase().contains(_selectedServiceType.toLowerCase())) {
-        return false;
-      }
-
       if (_selectedLocationCity != 'All Locations' &&
           !job.author.location.toLowerCase().contains(_selectedLocationCity.toLowerCase())) {
         return false;
