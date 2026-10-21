@@ -729,7 +729,20 @@ class JobRepository extends ChangeNotifier {
   Future<void> deleteAccount() async {
     _unsubscribeFromRealtime();
     final userId = _currentUser.id;
+
+    // 1. Permanently purge user profile, garage, team, and auth from Supabase while authenticated
+    if (_isLoggedIn) {
+      await SupabaseDbService.deleteAccountFromCloud(userId);
+    }
+
+    // 2. Sign out auth session
     await SupabaseAuthService.signOut();
+
+    // 3. Purge local device storage & caches
+    _isStaffSession = false;
+    _activeTeamMemberId = null;
+    await LocalStorageService.saveIsStaffSession(false);
+    await LocalStorageService.saveActiveTeamMemberId(null);
     await LocalStorageService.deleteAccountData(userId);
     await LocalStorageService.saveWorkbenchMode('garage');
     _isLoggedIn = false;

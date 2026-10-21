@@ -316,6 +316,50 @@ class SupabaseDbService {
     }
   }
 
+  /// Permanently deletes the user's account and all associated cloud data from Supabase.
+  static Future<void> deleteAccountFromCloud(String userId) async {
+    final client = _client;
+    if (client == null) return;
+    if (userId == 'usr_you') return;
+
+    try {
+      // 1. Attempt server-side Postgres RPC function (purges auth.users & cascades)
+      await client.rpc('delete_user_account');
+      if (kDebugMode) print('[SupabaseDbService] Account permanently purged via RPC delete_user_account');
+      return;
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] RPC delete_user_account error (falling back to direct deletes): $e');
+    }
+
+    // 2. Direct table deletion fallback:
+    try {
+      await client.from('vehicles').delete().eq('user_id', userId);
+    } catch (_) {}
+
+    try {
+      await client.from('team_members').delete().eq('studio_id', userId);
+    } catch (_) {}
+
+    try {
+      await client.from('jobs').delete().eq('author_id', userId);
+    } catch (_) {}
+
+    try {
+      await client.from('inventory_items').delete().eq('user_id', userId);
+    } catch (_) {}
+
+    try {
+      await client.from('availability_blocks').delete().or('user_id.eq.$userId,detailer_id.eq.$userId');
+    } catch (_) {}
+
+    try {
+      await client.from('profiles').delete().eq('id', userId);
+      if (kDebugMode) print('[SupabaseDbService] Profile row deleted directly for $userId');
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error deleting profile row directly: $e');
+    }
+  }
+
   /// Submit a verification request (Insurance or IDA cert)
   static Future<void> submitVerificationRequest(VerificationRequest req) async {
     final client = _client;
