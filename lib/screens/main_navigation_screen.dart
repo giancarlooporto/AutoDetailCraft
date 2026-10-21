@@ -117,9 +117,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           builder: (context, constraints) {
             final isDesktop = constraints.maxWidth >= 768;
 
+            // When in Studio Mode (tab 3 for Detailer), let DetailerWorkbenchView provide its own
+            // dedicated, clean professional Studio header and navigation — hiding consumer tabs!
+            final isStudioActive = isDetailer && currentIndex == 3;
+
             return Scaffold(
-              // Turo-style Centered Desktop Navigation Header
-              appBar: isDesktop
+              // Turo-style Centered Desktop Navigation Header (Hidden in Studio Mode)
+              appBar: (isDesktop && !isStudioActive)
                   ? PreferredSize(
                       preferredSize: const Size.fromHeight(68),
                       child: Container(
@@ -210,8 +214,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 index: currentIndex,
                 children: screens,
               ),
-              // Mobile Bottom Navigation Bar
-              bottomNavigationBar: isDesktop
+              // Mobile Bottom Navigation Bar (Hidden when inside Studio Mode so Studio owns the UI)
+              bottomNavigationBar: (isDesktop || isStudioActive)
                   ? null
                   : NavigationBar(
                       selectedIndex: currentIndex,
