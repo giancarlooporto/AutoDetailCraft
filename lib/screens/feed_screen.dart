@@ -498,9 +498,18 @@ class _FeedScreenState extends State<FeedScreen> {
                           children: [
                             CircleAvatar(
                               radius: 20,
+                              backgroundColor: AppTheme.surfaceLight,
                               backgroundImage: d.localAvatarBytes != null
                                   ? MemoryImage(d.localAvatarBytes!) as ImageProvider
-                                  : NetworkImage(d.avatarUrl),
+                                  : (d.avatarUrl.trim().isNotEmpty ? NetworkImage(d.avatarUrl.trim()) : null),
+                              child: (d.localAvatarBytes == null && d.avatarUrl.trim().isEmpty)
+                                  ? Text(
+                                      (d.businessName.isNotEmpty ? d.businessName : d.displayName).isNotEmpty
+                                          ? (d.businessName.isNotEmpty ? d.businessName : d.displayName)[0].toUpperCase()
+                                          : '?',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                                    )
+                                  : null,
                             ),
                             const SizedBox(width: 10),
                             Expanded(

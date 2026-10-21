@@ -155,25 +155,55 @@ class SupabaseDbService {
       }
       final resolvedTeamList = mergedTeamMap.values.toList();
 
+      final rawAvatar = res['avatar_url'] as String? ?? '';
+      final cleanAvatar = (rawAvatar.contains('unsplash.com') && rawAvatar.contains('1535713875002')) ? '' : rawAvatar;
+
+      final rawCover = res['cover_url'] as String? ?? '';
+      final cleanCover = (rawCover.contains('unsplash.com') && rawCover.contains('1617814076367')) ? '' : rawCover;
+
+      final rawLocation = res['location'] as String? ?? '';
+      final cleanLocation = (rawLocation == 'Austin, Texas' && parsedRole == UserRole.client) ? '' : rawLocation;
+
+      final rawBio = res['bio'] as String? ?? '';
+      final cleanBio = (rawBio == 'Car enthusiast & detailing craft connoisseur.' || rawBio == 'Automotive enthusiast. Keeping paint in showroom condition.') ? '' : rawBio;
+
+      final rawBusiness = res['business_name'] as String? ?? '';
+      final cleanBusiness = (rawBusiness == 'My Detailing Studio' && parsedRole == UserRole.client) ? '' : rawBusiness;
+
+      final rawInstagram = res['instagram_handle'] as String? ?? '';
+      final cleanInstagram = (rawInstagram == '@detailcraft') ? '' : rawInstagram;
+
+      // Automatically sync clean fields to Supabase DB if it previously had dummy data
+      if (cleanAvatar != rawAvatar || cleanCover != rawCover || cleanBio != rawBio || cleanLocation != rawLocation || cleanBusiness != rawBusiness || cleanInstagram != rawInstagram) {
+        client.from('profiles').update({
+          'avatar_url': cleanAvatar,
+          'cover_url': cleanCover,
+          'location': cleanLocation,
+          'bio': cleanBio,
+          'business_name': cleanBusiness,
+          'instagram_handle': cleanInstagram,
+        }).eq('id', userId).then((_) {}, onError: (_) {});
+      }
+
       return UserProfile(
         id: res['id'] as String,
         role: parsedRole,
         username: (res['email'] as String?)?.split('@').first ?? 'user',
         displayName: res['display_name'] as String? ?? 'Vehicle Owner',
-        businessName: res['business_name'] as String? ?? 'My Detailing Studio',
-        avatarUrl: res['avatar_url'] as String? ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80',
-        coverUrl: res['cover_url'] as String? ?? 'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?w=1200&auto=format&fit=crop&q=80',
-        location: res['location'] as String? ?? 'Austin, Texas',
+        businessName: cleanBusiness,
+        avatarUrl: cleanAvatar,
+        coverUrl: cleanCover,
+        location: cleanLocation,
         serviceRadius: cleanServiceRadius,
-        bio: res['bio'] as String? ?? 'Car enthusiast & detailing craft connoisseur.',
+        bio: cleanBio,
         phone: res['phone'] as String? ?? '',
-        instagramHandle: res['instagram_handle'] as String? ?? '@detailcraft',
+        instagramHandle: cleanInstagram,
         isVerifiedHost: res['is_verified_host'] as bool? ?? false,
         isIdaCertified: res['is_ida_certified'] as bool? ?? false,
         isInsuranceVerified: res['is_insurance_verified'] as bool? ?? false,
         insurancePolicyNumber: res['insurance_policy_number'] as String? ?? '',
         servicePackages: packages,
-        startingPrice: (res['starting_price'] as num?)?.toDouble() ?? 150.0,
+        startingPrice: (res['starting_price'] as num?)?.toDouble() ?? 0.0,
         myGarage: garage,
         teamMembers: resolvedTeamList,
         totalJobsCount: res['total_jobs_count'] as int? ?? 0,
@@ -399,7 +429,7 @@ class SupabaseDbService {
           'display_name': (authUser?.userMetadata?['display_name'] as String?) ??
               authUser?.email?.split('@').first ??
               'Studio Owner',
-          'business_name': 'My Detailing Studio',
+          'business_name': '',
           'role': 'detailer',
           'updated_at': DateTime.now().toUtc().toIso8601String(),
         });

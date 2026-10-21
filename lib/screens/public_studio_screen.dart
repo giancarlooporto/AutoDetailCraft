@@ -133,11 +133,13 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                   fit: StackFit.expand,
                   children: [
                     // 1. Blurred Full-Width Background
-                    Image.network(
-                      detailer.coverUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => Container(color: AppTheme.surfaceLight),
-                    ),
+                    detailer.coverUrl.trim().isNotEmpty
+                        ? Image.network(
+                            detailer.coverUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Container(color: AppTheme.surfaceLight),
+                          )
+                        : Container(color: AppTheme.surfaceLight),
                     ClipRect(
                       child: BackdropFilter(
                         filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
@@ -153,11 +155,13 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                           height: double.infinity,
                           child: detailer.localCoverBytes != null
                               ? Image.memory(detailer.localCoverBytes!, fit: BoxFit.cover)
-                              : Image.network(
-                                  detailer.coverUrl,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) => const SizedBox(),
-                                ),
+                              : (detailer.coverUrl.trim().isNotEmpty
+                                  ? Image.network(
+                                      detailer.coverUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) => const SizedBox(),
+                                    )
+                                  : const SizedBox()),
                         ),
                       ),
                     ),
@@ -199,9 +203,24 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                             ),
                             child: CircleAvatar(
                               radius: 36,
+                              backgroundColor: AppTheme.surfaceLight,
                               backgroundImage: detailer.localAvatarBytes != null
                                   ? MemoryImage(detailer.localAvatarBytes!) as ImageProvider
-                                  : NetworkImage(detailer.avatarUrl),
+                                  : (detailer.avatarUrl.trim().isNotEmpty
+                                      ? NetworkImage(detailer.avatarUrl.trim())
+                                      : null),
+                              child: (detailer.localAvatarBytes == null && detailer.avatarUrl.trim().isEmpty)
+                                  ? Text(
+                                      (detailer.businessName.isNotEmpty ? detailer.businessName : detailer.displayName).isNotEmpty
+                                          ? (detailer.businessName.isNotEmpty ? detailer.businessName : detailer.displayName)[0].toUpperCase()
+                                          : '?',
+                                      style: const TextStyle(
+                                        fontSize: 26,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : null,
                             ),
                           ),
                           const SizedBox(width: 14),

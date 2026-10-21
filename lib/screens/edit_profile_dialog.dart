@@ -238,9 +238,13 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                       ),
                       child: CircleAvatar(
                         radius: 42,
+                        backgroundColor: AppTheme.surfaceLight,
                         backgroundImage: _avatarBytes != null
                             ? MemoryImage(_avatarBytes!) as ImageProvider
-                            : NetworkImage(_avatarUrl),
+                            : (_avatarUrl.trim().isNotEmpty ? NetworkImage(_avatarUrl.trim()) : null),
+                        child: (_avatarBytes == null && _avatarUrl.trim().isEmpty)
+                            ? const Icon(Icons.person, size: 40, color: Colors.white54)
+                            : null,
                       ),
                     ),
                     InkWell(

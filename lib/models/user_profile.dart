@@ -188,16 +188,16 @@ class UserProfile {
     this.role = UserRole.client,
     required this.username,
     required this.displayName,
-    required this.businessName,
-    required this.avatarUrl,
+    this.businessName = '',
+    this.avatarUrl = '',
     this.localAvatarBytes,
-    this.coverUrl = 'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?w=1200&auto=format&fit=crop&q=80',
+    this.coverUrl = '',
     this.localCoverBytes,
-    required this.location,
-    this.serviceRadius = '25 miles • Mobile & Studio',
-    required this.bio,
+    this.location = '',
+    this.serviceRadius = '',
+    this.bio = '',
     this.phone = '',
-    this.instagramHandle = '@detailcraft',
+    this.instagramHandle = '',
     this.isIdaCertified = false,
     this.isVerifiedHost = false,
     this.isInsuranceVerified = false,
@@ -211,7 +211,7 @@ class UserProfile {
     this.reviewCount = 0,
     this.followersCount = 0,
     this.followingCount = 0,
-    this.startingPrice = 150.0,
+    this.startingPrice = 0.0,
     this.ownerPinHash,
   });
 
@@ -324,21 +324,39 @@ class UserProfile {
       parsedRole = UserRole.detailer;
     }
 
+    final rawAvatar = json['avatarUrl'] as String? ?? '';
+    final cleanAvatar = (rawAvatar.contains('unsplash.com') && rawAvatar.contains('1535713875002')) ? '' : rawAvatar;
+
+    final rawCover = json['coverUrl'] as String? ?? '';
+    final cleanCover = (rawCover.contains('unsplash.com') && rawCover.contains('1617814076367')) ? '' : rawCover;
+
+    final rawLocation = json['location'] as String? ?? '';
+    final cleanLocation = (rawLocation == 'Austin, Texas' && parsedRole == UserRole.client) ? '' : rawLocation;
+
+    final rawBio = json['bio'] as String? ?? '';
+    final cleanBio = (rawBio == 'Car enthusiast & detailing craft connoisseur.' || rawBio == 'Automotive enthusiast. Keeping paint in showroom condition.') ? '' : rawBio;
+
+    final rawBusiness = json['businessName'] as String? ?? '';
+    final cleanBusiness = (rawBusiness == 'My Detailing Studio' && parsedRole == UserRole.client) ? '' : rawBusiness;
+
+    final rawInstagram = json['instagramHandle'] as String? ?? '';
+    final cleanInstagram = (rawInstagram == '@detailcraft') ? '' : rawInstagram;
+
     return UserProfile(
       id: json['id'] as String? ?? 'usr_you',
       role: parsedRole,
       username: json['username'] as String? ?? 'user',
       displayName: json['displayName'] as String? ?? 'Vehicle Owner',
-      businessName: json['businessName'] as String? ?? 'My Detailing Studio',
-      avatarUrl: json['avatarUrl'] as String? ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80',
+      businessName: cleanBusiness,
+      avatarUrl: cleanAvatar,
       localAvatarBytes: json['localAvatarBytes'] != null ? base64Decode(json['localAvatarBytes'] as String) : null,
-      coverUrl: json['coverUrl'] as String? ?? 'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?w=1200&auto=format&fit=crop&q=80',
+      coverUrl: cleanCover,
       localCoverBytes: json['localCoverBytes'] != null ? base64Decode(json['localCoverBytes'] as String) : null,
-      location: json['location'] as String? ?? 'Austin, Texas',
-      serviceRadius: json['serviceRadius'] as String? ?? '25 miles • Mobile & Studio',
-      bio: json['bio'] as String? ?? 'Car enthusiast & detailing craft connoisseur.',
+      location: cleanLocation,
+      serviceRadius: json['serviceRadius'] as String? ?? '',
+      bio: cleanBio,
       phone: json['phone'] as String? ?? '',
-      instagramHandle: json['instagramHandle'] as String? ?? '@detailcraft',
+      instagramHandle: cleanInstagram,
       isIdaCertified: json['isIdaCertified'] as bool? ?? false,
       isVerifiedHost: json['isVerifiedHost'] as bool? ?? false,
       isInsuranceVerified: json['is_insurance_verified'] as bool? ?? false,

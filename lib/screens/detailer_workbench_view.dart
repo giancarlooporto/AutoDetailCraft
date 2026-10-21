@@ -767,9 +767,16 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         children: [
                           CircleAvatar(
                             radius: 22,
+                            backgroundColor: AppTheme.surfaceLight,
                             backgroundImage: user.localAvatarBytes != null
                                 ? MemoryImage(user.localAvatarBytes!) as ImageProvider
-                                : NetworkImage(user.avatarUrl),
+                                : (user.avatarUrl.trim().isNotEmpty ? NetworkImage(user.avatarUrl.trim()) : null),
+                            child: (user.localAvatarBytes == null && user.avatarUrl.trim().isEmpty)
+                                ? Text(
+                                    user.displayName.isNotEmpty ? user.displayName[0].toUpperCase() : '?',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                                  )
+                                : null,
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -1359,9 +1366,16 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               leading: CircleAvatar(
                 radius: 18,
+                backgroundColor: AppTheme.surfaceLight,
                 backgroundImage: user.localAvatarBytes != null
                     ? MemoryImage(user.localAvatarBytes!) as ImageProvider
-                    : NetworkImage(user.avatarUrl),
+                    : (user.avatarUrl.trim().isNotEmpty ? NetworkImage(user.avatarUrl.trim()) : null),
+                child: (user.localAvatarBytes == null && user.avatarUrl.trim().isEmpty)
+                    ? Text(
+                        user.displayName.isNotEmpty ? user.displayName[0].toUpperCase() : '?',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.white),
+                      )
+                    : null,
               ),
               title: Row(
                 children: [
@@ -2669,9 +2683,16 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               children: [
                 CircleAvatar(
                   radius: 26,
+                  backgroundColor: AppTheme.surfaceLight,
                   backgroundImage: user.localAvatarBytes != null
                       ? MemoryImage(user.localAvatarBytes!) as ImageProvider
-                      : NetworkImage(user.avatarUrl),
+                      : (user.avatarUrl.trim().isNotEmpty ? NetworkImage(user.avatarUrl.trim()) : null),
+                  child: (user.localAvatarBytes == null && user.avatarUrl.trim().isEmpty)
+                      ? Text(
+                          user.displayName.isNotEmpty ? user.displayName[0].toUpperCase() : '?',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                        )
+                      : null,
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -4285,9 +4306,16 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             children: [
               CircleAvatar(
                 radius: 36,
+                backgroundColor: AppTheme.surfaceLight,
                 backgroundImage: user.localAvatarBytes != null
                     ? MemoryImage(user.localAvatarBytes!) as ImageProvider
-                    : NetworkImage(user.avatarUrl),
+                    : (user.avatarUrl.trim().isNotEmpty ? NetworkImage(user.avatarUrl.trim()) : null),
+                child: (user.localAvatarBytes == null && user.avatarUrl.trim().isEmpty)
+                    ? Text(
+                        user.displayName.isNotEmpty ? user.displayName[0].toUpperCase() : '?',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 24, color: Colors.white),
+                      )
+                    : null,
               ),
               const SizedBox(width: 16),
               Expanded(

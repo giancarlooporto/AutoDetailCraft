@@ -327,11 +327,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         // 1. Blurred Full-Width Background
                         user.localCoverBytes != null
                             ? Image.memory(user.localCoverBytes!, fit: BoxFit.cover)
-                            : Image.network(
-                                user.coverUrl,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) => Container(color: AppTheme.surfaceLight),
-                              ),
+                            : (user.coverUrl.trim().isNotEmpty
+                                ? Image.network(
+                                    user.coverUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) => Container(color: AppTheme.surfaceLight),
+                                  )
+                                : Container(color: AppTheme.surfaceLight)),
                         ClipRect(
                           child: BackdropFilter(
                             filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
@@ -347,11 +349,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                               height: double.infinity,
                               child: user.localCoverBytes != null
                                   ? Image.memory(user.localCoverBytes!, fit: BoxFit.cover)
-                                  : Image.network(
-                                      user.coverUrl,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) => const SizedBox(),
-                                    ),
+                                  : (user.coverUrl.trim().isNotEmpty
+                                      ? Image.network(
+                                          user.coverUrl,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) => const SizedBox(),
+                                        )
+                                      : const SizedBox()),
                             ),
                           ),
                         ),
@@ -399,9 +403,24 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                       ),
                                       child: CircleAvatar(
                                         radius: 36,
+                                        backgroundColor: AppTheme.surfaceLight,
                                         backgroundImage: user.localAvatarBytes != null
                                             ? MemoryImage(user.localAvatarBytes!) as ImageProvider
-                                            : NetworkImage(user.avatarUrl),
+                                            : (user.avatarUrl.trim().isNotEmpty
+                                                ? NetworkImage(user.avatarUrl.trim())
+                                                : null),
+                                        child: (user.localAvatarBytes == null && user.avatarUrl.trim().isEmpty)
+                                            ? Text(
+                                                user.displayName.isNotEmpty
+                                                    ? user.displayName[0].toUpperCase()
+                                                    : '?',
+                                                style: const TextStyle(
+                                                  fontSize: 26,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.white,
+                                                ),
+                                              )
+                                            : null,
                                       ),
                                     ),
                                     Container(

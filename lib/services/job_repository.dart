@@ -173,10 +173,12 @@ class JobRepository extends ChangeNotifier {
           id: authUser.id,
           username: authUser.email?.split('@').first ?? 'user',
           displayName: (authUser.userMetadata?['display_name'] as String?) ?? 'Vehicle Owner',
-          businessName: 'My Detailing Studio',
-          avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80',
-          location: 'Austin, Texas',
-          bio: 'Car enthusiast & detailing craft connoisseur.',
+          businessName: '',
+          avatarUrl: '',
+          coverUrl: '',
+          location: '',
+          serviceRadius: '',
+          bio: '',
         );
         _isLoggedIn = true;
         await LocalStorageService.saveIsGuest(false);
@@ -211,13 +213,11 @@ class JobRepository extends ChangeNotifier {
       List<ServicePackage> initialPackages;
       if (dedicatedPackages.isNotEmpty) {
         initialPackages = dedicatedPackages;
-      } else if (_currentUser.servicePackages.isNotEmpty &&
-                 _currentUser.servicePackages != MockDataService.standardPackages) {
+      } else if (_currentUser.servicePackages.isNotEmpty) {
         initialPackages = _currentUser.servicePackages;
         await LocalStorageService.saveServicePackages(initialPackages);
       } else {
-        // Default to standard packages and persist immediately to dedicated storage
-        initialPackages = List.from(MockDataService.standardPackages);
+        initialPackages = [];
         await LocalStorageService.saveServicePackages(initialPackages);
       }
       _currentUser = _currentUser.copyWith(servicePackages: initialPackages);

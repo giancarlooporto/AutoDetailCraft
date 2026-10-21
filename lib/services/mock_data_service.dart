@@ -76,25 +76,25 @@ class MockDataService {
   static final UserProfile youUser = UserProfile(
     id: 'usr_you',
     role: UserRole.client, // Regular user by default
-    username: 'car_enthusiast',
-    displayName: 'Car Enthusiast',
-    businessName: 'My Detailing Studio',
-    avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&auto=format&fit=crop&q=80',
-    coverUrl: 'https://images.unsplash.com/photo-1617814076367-b759c7d7e738?w=1200&auto=format&fit=crop&q=80',
-    location: 'Austin, Texas',
-    serviceRadius: '30 miles • Mobile & Shop',
-    bio: 'Automotive enthusiast. Keeping paint in showroom condition.',
+    username: 'user',
+    displayName: 'Vehicle Owner',
+    businessName: '',
+    avatarUrl: '',
+    coverUrl: '',
+    location: '',
+    serviceRadius: '',
+    bio: '',
     phone: '',
-    instagramHandle: '@detailcraft',
+    instagramHandle: '',
     isIdaCertified: false,
     isVerifiedHost: false,
-    servicePackages: standardPackages,
+    servicePackages: const [],
     myGarage: const [], // Starts empty so only user-added vehicles appear!
     teamMembers: const [],
     totalJobsCount: 0,
     averageRating: 5.0,
     reviewCount: 0,
-    startingPrice: 160.0,
+    startingPrice: 0.0,
   );
 
   // PUBLIC DISCOVERY PROFILES (Starts empty for real live profiles only)

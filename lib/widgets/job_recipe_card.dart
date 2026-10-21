@@ -262,7 +262,20 @@ class JobRecipeCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                   child: CircleAvatar(
                     radius: 20,
-                    backgroundImage: NetworkImage(job.author.avatarUrl),
+                    backgroundColor: AppTheme.surfaceLight,
+                    backgroundImage: job.author.localAvatarBytes != null
+                        ? MemoryImage(job.author.localAvatarBytes!) as ImageProvider
+                        : (job.author.avatarUrl.trim().isNotEmpty
+                            ? NetworkImage(job.author.avatarUrl.trim())
+                            : null),
+                    child: (job.author.localAvatarBytes == null && job.author.avatarUrl.trim().isEmpty)
+                        ? Text(
+                            (job.author.businessName.isNotEmpty ? job.author.businessName : job.author.displayName).isNotEmpty
+                                ? (job.author.businessName.isNotEmpty ? job.author.businessName : job.author.displayName)[0].toUpperCase()
+                                : '?',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                          )
+                        : null,
                   ),
                 ),
                 const SizedBox(width: 10),

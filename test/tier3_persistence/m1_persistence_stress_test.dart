@@ -45,7 +45,7 @@ void main() {
         // Memory integrity: list lengths should match standard base counts exactly, not multiplied 50x
         expect(repo.jobs.length, equals(MockDataService.getInitialJobs().length));
         expect(repo.publicDetailers.length, equals(MockDataService.publicDetailers.length));
-        expect(repo.currentUser.servicePackages.length, equals(MockDataService.standardPackages.length));
+        expect(repo.currentUser.servicePackages.length, equals(0));
       });
 
       test('1.2: Staggered interleaved init() calls while in-flight resolve smoothly', () async {
@@ -78,9 +78,12 @@ void main() {
       test('2.1: Add 10 custom packages, update 5, delete 3, simulate refresh -> verify exact identity, ordering, prices, titles', () async {
         final repo1 = JobRepository();
         await repo1.init();
+        for (final p in MockDataService.standardPackages) {
+          repo1.addServicePackage(p);
+        }
 
         final initialCount = repo1.currentUser.servicePackages.length;
-        expect(initialCount, equals(4)); // 4 standard mock packages
+        expect(initialCount, equals(4)); // 4 standard packages
 
         // --- Step A: Rapidly add 10 custom service packages ---
         final addedPackages = <ServicePackage>[];
@@ -248,6 +251,9 @@ void main() {
         // Initial session: Start and add 3 custom packages
         var currentRepo = JobRepository();
         await currentRepo.init();
+        for (final p in MockDataService.standardPackages) {
+          currentRepo.addServicePackage(p);
+        }
 
         final custom1 = const ServicePackage(
           id: 'custom_alpha',
