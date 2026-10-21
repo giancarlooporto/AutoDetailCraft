@@ -317,7 +317,7 @@ class SupabaseDbService {
       }
       final encodedRadius = radiusBuf.toString();
 
-      await client.from('profiles').upsert({
+      final fullPayload = <String, dynamic>{
         'id': user.id,
         'display_name': user.displayName,
         'business_name': user.businessName,
@@ -340,7 +340,58 @@ class SupabaseDbService {
         'starting_price': user.startingPrice,
         'service_packages': user.servicePackages.map((p) => p.toJson()).toList(),
         'updated_at': DateTime.now().toUtc().toIso8601String(),
-      });
+      };
+
+      try {
+        await client.from('profiles').upsert(fullPayload);
+      } on PostgrestException catch (pe) {
+        final msg = '${pe.message} ${pe.details ?? ''} ${pe.hint ?? ''}'.toLowerCase();
+        final isSchemaError = pe.code == 'PGRST204' ||
+            pe.code == '42703' ||
+            (msg.contains('column') && msg.contains('schema cache')) ||
+            msg.contains('is_insurance_verified') ||
+            msg.contains('insurance_policy_number');
+        if (isSchemaError) {
+          if (kDebugMode) {
+            print('[SupabaseDbService] Profile upsert schema mismatch (${pe.code}: ${pe.message}). Retrying without optional insurance fields...');
+          }
+          final fallbackPayload = Map<String, dynamic>.from(fullPayload)
+            ..remove('is_insurance_verified')
+            ..remove('insurance_policy_number');
+          await client.from('profiles').upsert(fallbackPayload);
+          if (kDebugMode) {
+            print('[SupabaseDbService] Fallback profile upsert succeeded.');
+          }
+        } else {
+          if (kDebugMode) {
+            print('[SupabaseDbService] Profile upsert PostgrestException: code=${pe.code}, message=${pe.message}, details=${pe.details}, hint=${pe.hint}');
+          }
+          rethrow;
+        }
+      } catch (e) {
+        final eStr = e.toString().toLowerCase();
+        if (eStr.contains('pgrst204') ||
+            eStr.contains('42703') ||
+            eStr.contains('is_insurance_verified') ||
+            eStr.contains('insurance_policy_number') ||
+            eStr.contains('schema cache')) {
+          if (kDebugMode) {
+            print('[SupabaseDbService] Retrying profile upsert without insurance fields due to: $e');
+          }
+          final fallbackPayload = Map<String, dynamic>.from(fullPayload)
+            ..remove('is_insurance_verified')
+            ..remove('insurance_policy_number');
+          await client.from('profiles').upsert(fallbackPayload);
+          if (kDebugMode) {
+            print('[SupabaseDbService] Fallback profile upsert succeeded.');
+          }
+        } else {
+          if (kDebugMode) {
+            print('[SupabaseDbService] Profile upsert non-schema error: $e');
+          }
+          rethrow;
+        }
+      }
 
       if (user.myGarage.isNotEmpty) {
         for (final v in user.myGarage) {

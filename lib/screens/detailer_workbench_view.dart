@@ -579,8 +579,6 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         itemTitle = job.vehicleFullName;
         deleteAction = () => widget.repository.deleteJob(job.id);
         break;
-      case StudioHubSection.booked:
-      case StudioHubSection.messages:
       case StudioHubSection.savedRecipes:
       case StudioHubSection.settings:
         return;
@@ -3414,7 +3412,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 ),
                 const Divider(color: AppTheme.border, height: 20),
                 DropdownButtonFormField<String>(
-                  value: staff.any((s) => s.id == b.assignedTeamMemberId) ? b.assignedTeamMemberId : 'founder',
+                  initialValue: staff.any((s) => s.id == b.assignedTeamMemberId) ? b.assignedTeamMemberId : 'founder',
                   dropdownColor: AppTheme.surface,
                   decoration: InputDecoration(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

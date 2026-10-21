@@ -93,5 +93,18 @@ CREATE POLICY "Allow insert on vehicles" ON public.vehicles FOR INSERT WITH CHEC
 CREATE POLICY "Allow update on vehicles" ON public.vehicles FOR UPDATE USING (true);
 CREATE POLICY "Allow delete on vehicles" ON public.vehicles FOR DELETE USING (true);
 
--- 8. Refresh schema cache
+-- 8. PROFILES COLUMNS & REALTIME (Ensure insurance columns and realtime publication exist)
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS is_insurance_verified boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS insurance_policy_number text DEFAULT '',
+  ADD COLUMN IF NOT EXISTS insurance_expiry_date date;
+
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- 9. Refresh schema cache
 NOTIFY pgrst, 'reload schema';
+

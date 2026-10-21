@@ -220,7 +220,14 @@ class JobRepository extends ChangeNotifier {
         initialPackages = [];
         await LocalStorageService.saveServicePackages(initialPackages);
       }
-      _currentUser = _currentUser.copyWith(servicePackages: initialPackages);
+      double restoredStartingPrice = _currentUser.startingPrice;
+      if (restoredStartingPrice <= 0 && initialPackages.isNotEmpty) {
+        restoredStartingPrice = initialPackages.map((p) => p.basePrice).reduce((a, b) => a < b ? a : b);
+      }
+      _currentUser = _currentUser.copyWith(
+        servicePackages: initialPackages,
+        startingPrice: restoredStartingPrice,
+      );
 
       // 2c. Hydrate dedicated garage vehicles from local storage first
       final dedicatedGarage = await LocalStorageService.loadGarageVehicles();
@@ -791,6 +798,16 @@ class JobRepository extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Public method to reload both jobs and public detailers from Supabase and notify listeners
+  Future<void> refreshExploreFeed() async {
+    await Future.wait([
+      _refreshJobsFromCloud(),
+      _refreshPublicDetailersFromCloud(),
+      if (_isLoggedIn) _refreshProfileFromCloud(_currentUser.id),
+    ]);
+    notifyListeners();
+  }
+
   void _persistBookings() {
     LocalStorageService.saveBookings(_bookings);
   }
@@ -914,11 +931,13 @@ class JobRepository extends ChangeNotifier {
   List<CalendarAvailabilityBlock> get availabilityBlocks => List.unmodifiable(_availabilityBlocks);
   DetailerCalendarPreferences get calendarPreferences => _calendarPreferences;
   
-  // All public detailers including the current user when registered/logged in as studio!
+  // All public detailers including the current user when offering services or registered as studio!
   List<UserProfile> get publicDetailers {
     final list = List<UserProfile>.from(_publicDetailers);
-    final isStudio = _currentUser.role == UserRole.detailer || _currentUser.role == UserRole.superAdmin;
-    if (_isLoggedIn && isStudio) {
+    final isStudio = _currentUser.role == UserRole.detailer ||
+        _currentUser.role == UserRole.superAdmin ||
+        _currentUser.servicePackages.isNotEmpty;
+    if ((_isLoggedIn || _currentUser.servicePackages.isNotEmpty) && isStudio) {
       final existingIndex = list.indexWhere((p) => p.id == _currentUser.id);
       if (existingIndex != -1) {
         list[existingIndex] = _currentUser;
@@ -1029,14 +1048,18 @@ class JobRepository extends ChangeNotifier {
         return false;
       }
 
-      if (_searchQuery.isNotEmpty) {
-        final q = _searchQuery.toLowerCase();
+      if (_searchQuery.trim().isNotEmpty) {
+        final q = _searchQuery.trim().toLowerCase();
         final matchName = detailer.displayName.toLowerCase().contains(q);
         final matchBusiness = detailer.businessName.toLowerCase().contains(q);
         final matchLocation = detailer.location.toLowerCase().contains(q);
         final matchBio = detailer.bio.toLowerCase().contains(q);
+        final matchServices = detailer.servicePackages.any((p) =>
+            p.title.toLowerCase().contains(q) ||
+            p.description.toLowerCase().contains(q) ||
+            p.includes.any((inc) => inc.toLowerCase().contains(q)));
 
-        if (!matchName && !matchBusiness && !matchLocation && !matchBio) {
+        if (!matchName && !matchBusiness && !matchLocation && !matchBio && !matchServices) {
           return false;
         }
       }

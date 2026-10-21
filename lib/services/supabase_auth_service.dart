@@ -74,6 +74,7 @@ class SupabaseAuthService {
       // 2. Check if there was already locally saved profile data for this user ID
       final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
       if (existingLocalProfile != null) {
+        await SupabaseDbService.saveUserProfile(existingLocalProfile);
         return (success: true, error: null, profile: existingLocalProfile);
       }
 
@@ -94,6 +95,10 @@ class SupabaseAuthService {
         myGarage: const [],
         teamMembers: const [],
       );
+
+      // Seed profile in Supabase so the profile row exists
+      await SupabaseDbService.saveUserProfile(profile);
+      await LocalStorageService.saveCurrentUser(profile);
 
       return (success: true, error: null, profile: profile);
     } on AuthException catch (e) {

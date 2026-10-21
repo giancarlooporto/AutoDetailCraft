@@ -456,7 +456,7 @@ class _FeedScreenState extends State<FeedScreen> {
         ),
         if (isFeaturedExpanded) ...[
           SizedBox(
-            height: 124,
+            height: 144,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               padding: EdgeInsets.symmetric(horizontal: isDesktop ? 24 : 14, vertical: 2),
@@ -465,14 +465,32 @@ class _FeedScreenState extends State<FeedScreen> {
                 final d = detailers[idx];
                 final isYou = widget.repository.isLoggedIn && d.id == widget.repository.currentUser.id;
 
+                final minPackagePrice = d.servicePackages.isNotEmpty
+                    ? d.servicePackages.map((p) => p.basePrice).reduce((a, b) => a < b ? a : b)
+                    : 0.0;
+                final startPrice = minPackagePrice > 0
+                    ? (d.startingPrice > 0 && d.startingPrice < minPackagePrice ? d.startingPrice : minPackagePrice)
+                    : d.startingPrice;
+                final serviceCount = d.servicePackages.length;
+                String servicesText = '';
+                if (startPrice > 0 && serviceCount > 0) {
+                  final formattedPrice = startPrice % 1 == 0 ? startPrice.toInt().toString() : startPrice.toStringAsFixed(0);
+                  servicesText = 'From \$$formattedPrice • $serviceCount ${serviceCount == 1 ? 'service' : 'services'}';
+                } else if (startPrice > 0) {
+                  final formattedPrice = startPrice % 1 == 0 ? startPrice.toInt().toString() : startPrice.toStringAsFixed(0);
+                  servicesText = 'From \$$formattedPrice';
+                } else if (serviceCount > 0) {
+                  servicesText = '$serviceCount ${serviceCount == 1 ? 'service' : 'services'}';
+                }
+
                 return GestureDetector(
                   key: Key('detailer_card_${d.id}'),
                   behavior: HitTestBehavior.opaque,
                   onTap: () => _openPublicStudio(context, d),
                   child: Container(
-                    width: 250,
+                    width: 252,
                     margin: const EdgeInsets.only(right: 12),
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       color: AppTheme.surface,
                       borderRadius: BorderRadius.circular(16),
@@ -548,6 +566,20 @@ class _FeedScreenState extends State<FeedScreen> {
                             ),
                           ],
                         ),
+                        if (servicesText.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Text(
+                              servicesText,
+                              key: Key('detailer_card_services_${d.id}'),
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.primary,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -853,41 +885,49 @@ class _FeedScreenState extends State<FeedScreen> {
 
                         // 2. Feed Content (Featured Detailers scrolls naturally with feed so it doesn't block screen on mobile!)
                         Expanded(
-                          child: jobs.isEmpty && detailers.isEmpty
-                              ? Center(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(Icons.location_city_rounded, size: 54, color: AppTheme.textMuted),
-                                      const SizedBox(height: 12),
-                                      Text(
-                                        'No detailers or posts found in "$selectedCity"',
-                                        style: const TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.bold, fontSize: 16),
+                          child: RefreshIndicator(
+                            color: AppTheme.primary,
+                            backgroundColor: AppTheme.surface,
+                            onRefresh: () async {
+                              await widget.repository.refreshExploreFeed();
+                            },
+                            child: jobs.isEmpty && detailers.isEmpty
+                                ? LayoutBuilder(
+                                    builder: (context, constraints) => SingleChildScrollView(
+                                      physics: const AlwaysScrollableScrollPhysics(),
+                                      child: ConstrainedBox(
+                                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                                        child: Center(
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.location_city_rounded, size: 54, color: AppTheme.textMuted),
+                                              const SizedBox(height: 12),
+                                              Text(
+                                                'No detailers or posts found in "$selectedCity"',
+                                                style: const TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.bold, fontSize: 16),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              const Text(
+                                                'Register as a detailer under My Studio to appear here!',
+                                                style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                                              ),
+                                              const SizedBox(height: 12),
+                                              TextButton.icon(
+                                                icon: const Icon(Icons.refresh_rounded, size: 16),
+                                                onPressed: () {
+                                                  _searchCtrl.clear();
+                                                  widget.repository.clearFilters();
+                                                },
+                                                label: const Text('Reset All Filters', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold)),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                       ),
-                                      const SizedBox(height: 6),
-                                      const Text(
-                                        'Register as a detailer under My Studio to appear here!',
-                                        style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      TextButton.icon(
-                                        icon: const Icon(Icons.refresh_rounded, size: 16),
-                                        onPressed: () {
-                                          _searchCtrl.clear();
-                                          widget.repository.clearFilters();
-                                        },
-                                        label: const Text('Reset All Filters', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold)),
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              : RefreshIndicator(
-                                  color: AppTheme.primary,
-                                  backgroundColor: AppTheme.surface,
-                                  onRefresh: () async {
-                                    await Future.delayed(const Duration(milliseconds: 600));
-                                  },
-                                  child: LayoutBuilder(
+                                    ),
+                                  )
+                                : LayoutBuilder(
                                     builder: (context, constraints) {
                                       final isDesktop = constraints.maxWidth >= 720;
                                       final isWide = constraints.maxWidth >= 1024;
@@ -898,6 +938,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                         final totalItems = (hasDetailers ? 1 : 0) + (jobs.isEmpty ? 1 : jobs.length);
 
                                         return ListView.builder(
+                                          physics: const AlwaysScrollableScrollPhysics(),
                                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                                           itemCount: totalItems,
                                           itemBuilder: (context, idx) {
@@ -939,6 +980,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                       }
 
                                       return SingleChildScrollView(
+                                        physics: const AlwaysScrollableScrollPhysics(),
                                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
