@@ -738,13 +738,25 @@ class JobRepository extends ChangeNotifier {
     // 2. Sign out auth session
     await SupabaseAuthService.signOut();
 
-    // 3. Purge local device storage & caches
+    // 3. Purge local device storage & all browser caches
     _isStaffSession = false;
     _activeTeamMemberId = null;
     await LocalStorageService.saveIsStaffSession(false);
     await LocalStorageService.saveActiveTeamMemberId(null);
     await LocalStorageService.deleteAccountData(userId);
     await LocalStorageService.saveWorkbenchMode('garage');
+
+    // 4. Reset all in-memory repository collections to fresh blank state
+    _jobs = [];
+    _bookings = [];
+    _conversations = [];
+    _customPresets = [];
+    _inventoryItems = [];
+    _availabilityBlocks = [];
+    _shiftRequests = [];
+    _ownerPinHash = null;
+    _isOwnerLocked = false;
+    _workingWithTeamOverride = null;
     _isLoggedIn = false;
     _currentUser = MockDataService.youUser;
     notifyListeners();

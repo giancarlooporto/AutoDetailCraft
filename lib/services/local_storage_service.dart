@@ -92,13 +92,11 @@ class LocalStorageService {
     } catch (_) {}
   }
 
-  // Permanent account deletion wipes stored data for that user
+  // Permanent account deletion wipes all stored data and completely resets browser cache
   static Future<void> deleteAccountData(String userId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('$_userKeyPrefix$userId');
-      await prefs.remove(_bookingsKey);
-      await prefs.remove(_lastActiveUserKey);
+      await prefs.clear();
       await prefs.setBool(_isGuestKey, true);
     } catch (_) {}
   }

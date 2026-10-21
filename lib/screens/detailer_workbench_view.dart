@@ -2803,32 +2803,50 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Sign out of your studio account on this browser.',
+                  'Manage session or permanently delete your account and studio data.',
                   style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary, height: 1.4),
                 ),
                 const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  key: const ValueKey('settings_logout_btn'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.redAccent,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  icon: const Icon(Icons.logout_rounded, size: 16),
-                  label: const Text('Log Out', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  onPressed: () async {
-                    final sm = ScaffoldMessenger.of(context);
-                    await repo.logoutUser();
-                    if (mounted) {
-                      sm.showSnackBar(
-                        const SnackBar(
-                          content: Text('You have been logged out.'),
-                          backgroundColor: AppTheme.surface,
-                        ),
-                      );
-                    }
-                  },
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 10,
+                  children: [
+                    ElevatedButton.icon(
+                      key: const ValueKey('settings_logout_btn'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.surfaceLight,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.logout_rounded, size: 16),
+                      label: const Text('Log Out', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      onPressed: () async {
+                        final sm = ScaffoldMessenger.of(context);
+                        await repo.logoutUser();
+                        if (mounted) {
+                          sm.showSnackBar(
+                            const SnackBar(
+                              content: Text('You have been logged out.'),
+                              backgroundColor: AppTheme.surface,
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    ElevatedButton.icon(
+                      key: const ValueKey('settings_delete_account_btn'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.delete_forever_rounded, size: 16),
+                      label: const Text('Delete Account', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      onPressed: () => _confirmDeleteAccount(context, repo),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -2930,6 +2948,46 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           ),
         ),
       ],
+    );
+  }
+
+  void _confirmDeleteAccount(BuildContext context, JobRepository repo) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Text('Delete Account Permanently', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+        content: const Text(
+          'This will permanently delete your studio, vehicles, team members, services, and authentication login from Supabase. This action cannot be undone.',
+          style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              final sm = ScaffoldMessenger.of(context);
+              Navigator.of(ctx).pop();
+              await repo.deleteAccount();
+              if (mounted) {
+                sm.showSnackBar(
+                  const SnackBar(
+                    content: Text('Your account and data have been permanently deleted.'),
+                    backgroundColor: AppTheme.surface,
+                  ),
+                );
+              }
+            },
+            child: const Text('Delete Permanently', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
     );
   }
 
