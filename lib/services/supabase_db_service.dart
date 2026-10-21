@@ -127,7 +127,7 @@ class SupabaseDbService {
 
   static UserProfile? _buildUserProfileFromMap(
     Map<String, dynamic> res, {
-    List<Vehicle> garage = const [],
+    List<UserVehicle> garage = const [],
     List<TeamMember> team = const [],
   }) {
     try {
@@ -217,7 +217,7 @@ class SupabaseDbService {
 
       double startingPrice = (res['starting_price'] as num?)?.toDouble() ?? 0.0;
       if (startingPrice <= 0.0 && packages.isNotEmpty) {
-        startingPrice = packages.map((p) => p.price).reduce((a, b) => a < b ? a : b);
+        startingPrice = packages.map((p) => p.basePrice).reduce((a, b) => a < b ? a : b);
       }
 
       return UserProfile(

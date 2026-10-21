@@ -1331,8 +1331,8 @@ class JobRepository extends ChangeNotifier {
   // Add / Edit / Remove Service Package (Persisted immediately to dedicated storage)
   void addServicePackage(ServicePackage package) {
     final updatedList = [..._currentUser.servicePackages, package];
-    final minPrice = updatedList.map((p) => p.price).fold<double>(
-      package.price,
+    final minPrice = updatedList.map((p) => p.basePrice).fold<double>(
+      package.basePrice,
       (prev, elem) => elem < prev ? elem : prev,
     );
     _currentUser = _currentUser.copyWith(
@@ -1353,7 +1353,7 @@ class JobRepository extends ChangeNotifier {
       final list = List<ServicePackage>.from(_currentUser.servicePackages);
       list[idx] = updated;
       final minPrice = list.isNotEmpty
-          ? list.map((p) => p.price).reduce((a, b) => a < b ? a : b)
+          ? list.map((p) => p.basePrice).reduce((a, b) => a < b ? a : b)
           : 0.0;
       _currentUser = _currentUser.copyWith(
         role: UserRole.detailer,
@@ -1371,7 +1371,7 @@ class JobRepository extends ChangeNotifier {
   void removeServicePackage(String packageId) {
     final updatedList = _currentUser.servicePackages.where((p) => p.id != packageId).toList();
     final minPrice = updatedList.isNotEmpty
-        ? updatedList.map((p) => p.price).reduce((a, b) => a < b ? a : b)
+        ? updatedList.map((p) => p.basePrice).reduce((a, b) => a < b ? a : b)
         : 0.0;
     _currentUser = _currentUser.copyWith(
       startingPrice: minPrice,
