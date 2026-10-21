@@ -519,7 +519,10 @@ class LocalStorageService {
       final jsonStr = prefs.getString(_servicePackagesKey);
       if (jsonStr != null && jsonStr.isNotEmpty) {
         final List<dynamic> list = jsonDecode(jsonStr);
-        return list.map((item) => ServicePackage.fromJson(item as Map<String, dynamic>)).toList();
+        return list
+            .whereType<Map>()
+            .map((item) => ServicePackage.fromJson(Map<String, dynamic>.from(item)))
+            .toList();
       }
     } catch (e) {
       if (kDebugMode) {

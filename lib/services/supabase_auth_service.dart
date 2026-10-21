@@ -54,6 +54,7 @@ class SupabaseAuthService {
       if (cloudProfile != null) {
         final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
         final localTeam = await LocalStorageService.loadTeamMembers();
+        final localPackages = await LocalStorageService.loadServicePackages();
         final localPinHash = await LocalStorageService.loadOwnerPinHash() ?? existingLocalProfile?.ownerPinHash;
         final teamMap = <String, TeamMember>{
           if (existingLocalProfile != null)
@@ -61,12 +62,26 @@ class SupabaseAuthService {
           for (final m in localTeam) m.id: m,
           for (final m in cloudProfile.teamMembers) m.id: m,
         };
+        final mergedPackages = cloudProfile.servicePackages.isNotEmpty
+            ? cloudProfile.servicePackages
+            : localPackages;
+        final hasPackages = mergedPackages.isNotEmpty;
+        final startingPrice = hasPackages
+            ? mergedPackages.map((p) => p.basePrice).reduce((a, b) => a < b ? a : b)
+            : cloudProfile.startingPrice;
         final merged = cloudProfile.copyWith(
+          role: (cloudProfile.role == UserRole.detailer || hasPackages)
+              ? UserRole.detailer
+              : cloudProfile.role,
+          servicePackages: mergedPackages,
+          startingPrice: startingPrice,
+          isVerifiedHost: hasPackages || cloudProfile.isVerifiedHost,
           teamMembers: teamMap.values.toList(),
           ownerPinHash: (cloudProfile.ownerPinHash != null && cloudProfile.ownerPinHash!.isNotEmpty)
               ? cloudProfile.ownerPinHash
               : localPinHash,
         );
+        await SupabaseDbService.saveUserProfile(merged);
         await LocalStorageService.saveCurrentUser(merged);
         return (success: true, error: null, profile: merged);
       }
@@ -74,24 +89,57 @@ class SupabaseAuthService {
       // 2. Check if there was already locally saved profile data for this user ID
       final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
       if (existingLocalProfile != null) {
-        await SupabaseDbService.saveUserProfile(existingLocalProfile);
-        return (success: true, error: null, profile: existingLocalProfile);
+        final localPackages = await LocalStorageService.loadServicePackages();
+        final mergedPackages = existingLocalProfile.servicePackages.isNotEmpty
+            ? existingLocalProfile.servicePackages
+            : localPackages;
+        final hasPackages = mergedPackages.isNotEmpty;
+        final startingPrice = hasPackages
+            ? mergedPackages.map((p) => p.basePrice).reduce((a, b) => a < b ? a : b)
+            : existingLocalProfile.startingPrice;
+        final merged = existingLocalProfile.copyWith(
+          role: (existingLocalProfile.role == UserRole.detailer || hasPackages)
+              ? UserRole.detailer
+              : existingLocalProfile.role,
+          servicePackages: mergedPackages,
+          startingPrice: startingPrice,
+          isVerifiedHost: hasPackages || existingLocalProfile.isVerifiedHost,
+        );
+        await SupabaseDbService.saveUserProfile(merged);
+        await LocalStorageService.saveCurrentUser(merged);
+        return (success: true, error: null, profile: merged);
       }
+
+      // 3. Load existing local service packages and draft profile (e.g. drafted by guest before signup)
+      final localPackages = await LocalStorageService.loadServicePackages();
+      final hasPackages = localPackages.isNotEmpty;
+      final startingPrice = hasPackages
+          ? localPackages.map((p) => p.basePrice).reduce((a, b) => a < b ? a : b)
+          : 150.0;
+      final guestProfile = await LocalStorageService.loadUserById('usr_you');
 
       final profile = UserProfile(
         id: user.id,
-        role: UserRole.client,
+        role: hasPackages ? UserRole.detailer : UserRole.client,
         username: email.split('@').first,
-        displayName: displayName.isNotEmpty ? displayName : email.split('@').first,
-        businessName: '',
-        avatarUrl: '',
-        coverUrl: '',
-        location: '',
-        serviceRadius: '',
-        bio: '',
-        phone: phone ?? '',
-        instagramHandle: '',
-        servicePackages: const [],
+        displayName: displayName.isNotEmpty
+            ? displayName
+            : ((guestProfile != null && guestProfile.displayName.isNotEmpty && guestProfile.displayName != 'Vehicle Owner')
+                ? guestProfile.displayName
+                : email.split('@').first),
+        businessName: guestProfile?.businessName ?? '',
+        avatarUrl: guestProfile?.avatarUrl ?? '',
+        coverUrl: guestProfile?.coverUrl ?? '',
+        location: guestProfile?.location ?? '',
+        serviceRadius: (guestProfile?.serviceRadius.isNotEmpty == true)
+            ? guestProfile!.serviceRadius
+            : '25 miles • Mobile & Studio',
+        bio: guestProfile?.bio ?? '',
+        phone: phone ?? (guestProfile?.phone ?? ''),
+        instagramHandle: guestProfile?.instagramHandle ?? '',
+        servicePackages: localPackages,
+        startingPrice: startingPrice,
+        isVerifiedHost: hasPackages,
         myGarage: const [],
         teamMembers: const [],
       );

@@ -252,7 +252,7 @@ class BookingAppointment {
       (v) => v.name == json['vehicleSize'],
       orElse: () => VehicleSize.coupeSedan,
     ),
-    package: ServicePackage.fromJson(json['package'] as Map<String, dynamic>),
+    package: ServicePackage.fromJson(Map<String, dynamic>.from(json['package'] as Map)),
     locationType: ServiceLocationType.values.firstWhere(
       (l) => l.name == json['locationType'],
       orElse: () => ServiceLocationType.mobile,

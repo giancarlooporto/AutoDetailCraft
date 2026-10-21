@@ -131,14 +131,17 @@ class SupabaseDbService {
     List<TeamMember> team = const [],
   }) {
     try {
-      // Fetch user's service packages if present; if empty/null, return empty list
       List<ServicePackage> packages = [];
-      if (res['service_packages'] != null && res['service_packages'] is List) {
+      if (res['service_packages'] != null) {
         try {
-          final list = res['service_packages'] as List<dynamic>;
-          if (list.isNotEmpty) {
-            packages = list
-                .map((p) => ServicePackage.fromJson(p as Map<String, dynamic>))
+          dynamic raw = res['service_packages'];
+          if (raw is String && raw.isNotEmpty) {
+            raw = jsonDecode(raw);
+          }
+          if (raw is List && raw.isNotEmpty) {
+            packages = raw
+                .whereType<Map>()
+                .map((p) => ServicePackage.fromJson(Map<String, dynamic>.from(p)))
                 .toList();
           }
         } catch (_) {}
@@ -264,8 +267,16 @@ class SupabaseDbService {
       for (final item in list) {
         final profileMap = Map<String, dynamic>.from(item as Map);
         final role = profileMap['role'] as String?;
-        final hasPackages = profileMap['service_packages'] is List &&
-            (profileMap['service_packages'] as List).isNotEmpty;
+        final rawPackages = profileMap['service_packages'];
+        bool hasPackages = false;
+        if (rawPackages is List) {
+          hasPackages = rawPackages.isNotEmpty;
+        } else if (rawPackages is String && rawPackages.isNotEmpty) {
+          try {
+            final decoded = jsonDecode(rawPackages);
+            if (decoded is List) hasPackages = decoded.isNotEmpty;
+          } catch (_) {}
+        }
         final isDetailer = role == 'detailer' ||
             role == 'super_admin' ||
             role == 'superAdmin' ||

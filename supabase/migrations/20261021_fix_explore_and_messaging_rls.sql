@@ -99,6 +99,8 @@ ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS insurance_policy_number text DEFAULT '',
   ADD COLUMN IF NOT EXISTS insurance_expiry_date date;
 
+ALTER TABLE public.profiles REPLICA IDENTITY FULL;
+
 DO $$
 BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;

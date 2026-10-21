@@ -362,19 +362,35 @@ class UserProfile {
       isInsuranceVerified: json['is_insurance_verified'] as bool? ?? false,
       insurancePolicyNumber: json['insurance_policy_number'] as String? ?? '',
       certifications: (json['certifications'] as List<dynamic>?)
-              ?.map((c) => UserCertification.fromJson(c as Map<String, dynamic>))
+              ?.whereType<Map>()
+              .map((c) => UserCertification.fromJson(Map<String, dynamic>.from(c)))
               .toList() ??
           [],
-      servicePackages: (json['servicePackages'] as List<dynamic>?)
-              ?.map((s) => ServicePackage.fromJson(s as Map<String, dynamic>))
-              .toList() ??
-          [],
+      servicePackages: () {
+        final raw = json['servicePackages'] ?? json['service_packages'];
+        if (raw == null) return <ServicePackage>[];
+        dynamic list = raw;
+        if (list is String && list.isNotEmpty) {
+          try {
+            list = jsonDecode(list);
+          } catch (_) {}
+        }
+        if (list is List) {
+          return list
+              .whereType<Map>()
+              .map((s) => ServicePackage.fromJson(Map<String, dynamic>.from(s)))
+              .toList();
+        }
+        return <ServicePackage>[];
+      }(),
       teamMembers: (json['teamMembers'] as List<dynamic>?)
-              ?.map((t) => TeamMember.fromJson(t as Map<String, dynamic>))
+              ?.whereType<Map>()
+              .map((t) => TeamMember.fromJson(Map<String, dynamic>.from(t)))
               .toList() ??
           [],
       myGarage: (json['myGarage'] as List<dynamic>?)
-              ?.map((v) => UserVehicle.fromJson(v as Map<String, dynamic>))
+              ?.whereType<Map>()
+              .map((v) => UserVehicle.fromJson(Map<String, dynamic>.from(v)))
               .toList() ??
           [],
       totalJobsCount: json['totalJobsCount'] as int? ?? 0,

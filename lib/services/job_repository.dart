@@ -389,10 +389,8 @@ class JobRepository extends ChangeNotifier {
       // 7. Load persistent messages & conversations
       loadConversations();
 
-      // 8. Subscribe to realtime channels if logged in
-      if (_isLoggedIn) {
-        _subscribeToRealtime();
-      }
+      // 8. Subscribe to realtime channels
+      _subscribeToRealtime();
 
       _isInitialized = true;
       notifyListeners();
@@ -417,10 +415,7 @@ class JobRepository extends ChangeNotifier {
             for (final p in _currentUser.servicePackages) p.id: p,
           };
           for (final cp in cloudProfile.servicePackages) {
-            final local = packageMap[cp.id];
-            if (local == null) {
-              packageMap[cp.id] = cp;
-            }
+            packageMap[cp.id] = cp;
           }
           resolvedPackages = packageMap.values.toList();
         } else {
@@ -730,6 +725,8 @@ class JobRepository extends ChangeNotifier {
     await LocalStorageService.saveWorkbenchMode('garage');
     _isLoggedIn = false;
     _currentUser = MockDataService.youUser;
+    // Re-subscribe to public realtime channels so public visitors continue receiving real-time updates
+    _subscribeToRealtime();
     notifyListeners();
   }
 
@@ -766,6 +763,9 @@ class JobRepository extends ChangeNotifier {
     _workingWithTeamOverride = null;
     _isLoggedIn = false;
     _currentUser = MockDataService.youUser;
+    // Re-subscribe to public realtime channels so public visitors continue receiving real-time updates
+    _subscribeToRealtime();
+    _refreshPublicDetailersFromCloud();
     notifyListeners();
   }
 
@@ -777,7 +777,7 @@ class JobRepository extends ChangeNotifier {
     }
   }
 
-  void _persistUser() {
+  Future<void> _persistUser() async {
     // 1. Always save to local storage for fast offline cache and refresh persistence
     LocalStorageService.saveCurrentUser(_currentUser);
     LocalStorageService.saveServicePackages(_currentUser.servicePackages);
@@ -786,7 +786,7 @@ class JobRepository extends ChangeNotifier {
     LocalStorageService.saveInventoryItems(_inventoryItems);
     if (_isLoggedIn) {
       // 2. Sync to Supabase Database
-      SupabaseDbService.saveUserProfile(_currentUser);
+      await SupabaseDbService.saveUserProfile(_currentUser);
     }
   }
 
@@ -1234,10 +1234,17 @@ class JobRepository extends ChangeNotifier {
   }
 
   // Update profile details (bio, business name, phone, etc.)
-  void updateCurrentUser(UserProfile updated) {
+  Future<void> updateCurrentUser(UserProfile updated) async {
     _currentUser = updated;
-    _persistUser();
+    LocalStorageService.saveCurrentUser(_currentUser);
+    LocalStorageService.saveServicePackages(_currentUser.servicePackages);
     notifyListeners();
+    try {
+      await _persistUser();
+    } catch (_) {}
+    try {
+      await _refreshPublicDetailersFromCloud();
+    } catch (_) {}
   }
 
   // Add / Edit / Remove vehicle in user's garage (Persisted)
@@ -1347,7 +1354,7 @@ class JobRepository extends ChangeNotifier {
   }
 
   // Add / Edit / Remove Service Package (Persisted immediately to dedicated storage)
-  void addServicePackage(ServicePackage package) {
+  Future<void> addServicePackage(ServicePackage package) async {
     final updatedList = [..._currentUser.servicePackages, package];
     final minPrice = updatedList.map((p) => p.basePrice).fold<double>(
       package.basePrice,
@@ -1360,12 +1367,16 @@ class JobRepository extends ChangeNotifier {
       servicePackages: updatedList,
     );
     LocalStorageService.saveServicePackages(updatedList);
-    _persistUser();
-    _refreshPublicDetailersFromCloud();
     notifyListeners();
+    try {
+      await _persistUser();
+    } catch (_) {}
+    try {
+      await _refreshPublicDetailersFromCloud();
+    } catch (_) {}
   }
 
-  void updateServicePackage(ServicePackage updated) {
+  Future<void> updateServicePackage(ServicePackage updated) async {
     final idx = _currentUser.servicePackages.indexWhere((p) => p.id == updated.id);
     if (idx != -1) {
       final list = List<ServicePackage>.from(_currentUser.servicePackages);
@@ -1380,13 +1391,17 @@ class JobRepository extends ChangeNotifier {
         servicePackages: list,
       );
       LocalStorageService.saveServicePackages(list);
-      _persistUser();
-      _refreshPublicDetailersFromCloud();
       notifyListeners();
+      try {
+        await _persistUser();
+      } catch (_) {}
+      try {
+        await _refreshPublicDetailersFromCloud();
+      } catch (_) {}
     }
   }
 
-  void removeServicePackage(String packageId) {
+  Future<void> removeServicePackage(String packageId) async {
     final updatedList = _currentUser.servicePackages.where((p) => p.id != packageId).toList();
     final minPrice = updatedList.isNotEmpty
         ? updatedList.map((p) => p.basePrice).reduce((a, b) => a < b ? a : b)
@@ -1396,9 +1411,13 @@ class JobRepository extends ChangeNotifier {
       servicePackages: updatedList,
     );
     LocalStorageService.saveServicePackages(updatedList);
-    _persistUser();
-    _refreshPublicDetailersFromCloud();
     notifyListeners();
+    try {
+      await _persistUser();
+    } catch (_) {}
+    try {
+      await _refreshPublicDetailersFromCloud();
+    } catch (_) {}
   }
 
   /// Toggles like state and persists liked IDs + like counts across all jobs
@@ -3543,34 +3562,38 @@ class JobRepository extends ChangeNotifier {
         .subscribe();
 
     // 3. Bookings realtime channel
-    _bookingsChannel = client
-        .channel('public:bookings')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'bookings',
-          callback: (_) {
-            if (_isLoggedIn) {
-              _refreshBookingsFromCloud(_currentUser.id);
-            }
-          },
-        )
-        .subscribe();
+    if (_isLoggedIn) {
+      _bookingsChannel = client
+          .channel('public:bookings')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'bookings',
+            callback: (_) {
+              if (_isLoggedIn) {
+                _refreshBookingsFromCloud(_currentUser.id);
+              }
+            },
+          )
+          .subscribe();
+    }
 
     // 4. User interactions realtime channel
-    _interactionsChannel = client
-        .channel('public:user_interactions')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'user_interactions',
-          callback: (_) {
-            if (_isLoggedIn) {
-              _refreshInteractionsFromCloud(_currentUser.id);
-            }
-          },
-        )
-        .subscribe();
+    if (_isLoggedIn) {
+      _interactionsChannel = client
+          .channel('public:user_interactions')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'user_interactions',
+            callback: (_) {
+              if (_isLoggedIn) {
+                _refreshInteractionsFromCloud(_currentUser.id);
+              }
+            },
+          )
+          .subscribe();
+    }
 
     // 5. Profiles realtime channel (for public studio discovery sync)
     _profilesChannel = client
@@ -3579,8 +3602,15 @@ class JobRepository extends ChangeNotifier {
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'profiles',
-          callback: (_) {
+          callback: (payload) {
             _refreshPublicDetailersFromCloud();
+            if (_isLoggedIn) {
+              final newId = payload.newRecord['id'] as String?;
+              final oldId = payload.oldRecord['id'] as String?;
+              if (newId == _currentUser.id || oldId == _currentUser.id) {
+                _refreshProfileFromCloud(_currentUser.id);
+              }
+            }
           },
         )
         .subscribe();
