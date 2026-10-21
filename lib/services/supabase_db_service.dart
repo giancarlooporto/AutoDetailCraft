@@ -187,6 +187,32 @@ class SupabaseDbService {
     }
   }
 
+  /// Fetches all public registered detailers and studios from Supabase profiles.
+  static Future<List<UserProfile>> fetchPublicDetailers() async {
+    final client = _client;
+    if (client == null) return [];
+
+    try {
+      final res = await client
+          .from('profiles')
+          .select('id')
+          .or('role.eq.detailer,role.eq.super_admin,role.eq.superAdmin');
+      final list = res as List<dynamic>;
+      final profiles = <UserProfile>[];
+      for (final item in list) {
+        final id = item['id'] as String;
+        final p = await fetchUserProfile(id);
+        if (p != null) {
+          profiles.add(p);
+        }
+      }
+      return profiles;
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error fetching public detailers: $e');
+      return [];
+    }
+  }
+
   /// Upsert full user profile to Supabase
   static Future<void> saveUserProfile(UserProfile user) async {
     final client = _client;

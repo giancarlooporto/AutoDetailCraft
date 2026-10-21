@@ -14,7 +14,7 @@ void main() {
     });
 
     test('STRESS-1: Rapid consecutive comments on mock and custom jobs survive browser reload', () async {
-      final repo1 = await TestHarness.createSession(isLoggedIn: true);
+      final repo1 = await TestHarness.createSession(isLoggedIn: true, seedSampleJob: true);
 
       // 1. Target mock job: job_01
       const mockJobId = 'job_01';
@@ -150,6 +150,9 @@ void main() {
 
     test('STRESS-2: Rapid like/unlike bursts on 5 jobs toggle 10 times consecutively and survive reload', () async {
       final repo1 = await TestHarness.createSession(isLoggedIn: true);
+      while (repo1.allJobs.length < 3) {
+        repo1.addJob(createTestJob(id: 'job_test_seed_${repo1.allJobs.length}'));
+      }
 
       // Ensure at least 5 jobs exist by uploading 2 custom jobs alongside the 3 initial mock jobs
       final customBurstJob1 = DetailJob(

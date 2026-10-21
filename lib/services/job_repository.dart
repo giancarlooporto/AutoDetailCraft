@@ -19,13 +19,25 @@ import '../models/calendar_availability_block.dart';
 import '../models/shift_request.dart';
 import 'owner_pin_security.dart';
 
+const Set<String> _legacyMockJobIds = {
+  'job_01', 'job_02', 'job_03', 'job_04', 'job_05', 'job_06', 'job_07'
+};
+const Set<String> _legacyMockInvIds = {
+  'inv_hw_01', 'inv_hw_02', 'inv_hw_03', 'inv_hw_04', 'inv_hw_05',
+  'inv_chem_01', 'inv_chem_02', 'inv_chem_03', 'inv_chem_04', 'inv_chem_05',
+  'inv_rcp_01', 'inv_rcp_02'
+};
+const Set<String> _legacyMockBookingIds = {
+  'bk_01', 'bk_02', 'bk_03', 'bk_04'
+};
+
 class JobRepository extends ChangeNotifier {
-  List<DetailJob> _jobs = MockDataService.getInitialJobs();
+  List<DetailJob> _jobs = [];
   List<BookingAppointment> _bookings = [];
-  List<UserProfile> _publicDetailers = List.from(MockDataService.publicDetailers);
+  List<UserProfile> _publicDetailers = [];
   UserProfile _currentUser = MockDataService.youUser; // Default fallback
   List<StudioRecipePreset> _customPresets = [];
-  List<InventoryItem> _inventoryItems = MockDataService.getInitialInventory();
+  List<InventoryItem> _inventoryItems = [];
   List<CalendarAvailabilityBlock> _availabilityBlocks = [];
   DetailerCalendarPreferences _calendarPreferences = DetailerCalendarPreferences.defaults();
   final Map<String, DetailerCalendarPreferences> _detailerPreferencesMap = {};
@@ -57,6 +69,7 @@ class JobRepository extends ChangeNotifier {
   RealtimeChannel? _jobsChannel;
   RealtimeChannel? _bookingsChannel;
   RealtimeChannel? _interactionsChannel;
+  RealtimeChannel? _profilesChannel;
 
   JobRepository();
 
@@ -132,9 +145,9 @@ class JobRepository extends ChangeNotifier {
     _initCompleter = Completer<void>();
 
     try {
-      _jobs = MockDataService.getInitialJobs();
-      _bookings = MockDataService.getInitialBookings();
-      _publicDetailers = List.from(MockDataService.publicDetailers);
+      _jobs = [];
+      _bookings = [];
+      _publicDetailers = [];
 
       // 1. Load active tab index
       _activeTabIndex = await LocalStorageService.loadActiveTab();
@@ -239,9 +252,9 @@ class JobRepository extends ChangeNotifier {
       // 2e. Hydrate dedicated inventory items from local storage first
       final dedicatedInventory = await LocalStorageService.loadInventoryItems();
       if (dedicatedInventory != null) {
-        _inventoryItems = dedicatedInventory;
+        _inventoryItems = dedicatedInventory.where((i) => !_legacyMockInvIds.contains(i.id)).toList();
       } else {
-        _inventoryItems = MockDataService.getInitialInventory();
+        _inventoryItems = [];
         await LocalStorageService.saveInventoryItems(_inventoryItems);
       }
 
@@ -278,23 +291,15 @@ class JobRepository extends ChangeNotifier {
       // 2g. Hydrate dedicated booking appointments from local storage first
       final dedicatedBookings = await LocalStorageService.loadBookings();
       if (dedicatedBookings != null) {
-        _bookings = dedicatedBookings;
+        _bookings = dedicatedBookings.where((b) => !_legacyMockBookingIds.contains(b.id)).toList();
       } else {
-        _bookings = MockDataService.getInitialBookings();
+        _bookings = [];
         await LocalStorageService.saveBookings(_bookings);
       }
 
       // 2h. Hydrate dedicated custom transformation jobs from local storage first
       final customJobs = await LocalStorageService.loadCustomJobs();
-      if (customJobs.isNotEmpty) {
-        final existingIds = customJobs.map((j) => j.id).toSet();
-        _jobs = [
-          ...customJobs,
-          ...MockDataService.getInitialJobs().where((j) => !existingIds.contains(j.id)),
-        ];
-      } else {
-        _jobs = MockDataService.getInitialJobs();
-      }
+      _jobs = customJobs.where((j) => !_legacyMockJobIds.contains(j.id)).toList();
 
       // 2i. Hydrate dedicated comment overrides across all jobs (both mock and custom)
       final commentOverrides = await LocalStorageService.loadJobCommentsOverrides();
@@ -363,13 +368,15 @@ class JobRepository extends ChangeNotifier {
             _refreshJobsFromCloud(),
             _refreshBookingsFromCloud(_currentUser.id),
             _refreshInteractionsFromCloud(_currentUser.id),
+            _refreshPublicDetailersFromCloud(),
           ]).timeout(const Duration(seconds: 4));
         } catch (_) {
           // Fallback to local cache if offline or slow network
         }
       } else {
-        // For guest visitors, refresh community jobs in the background
+        // For guest visitors, refresh community jobs and detailers in the background
         _refreshJobsFromCloud();
+        _refreshPublicDetailersFromCloud();
       }
 
       // 7. Load persistent messages & conversations
@@ -686,8 +693,11 @@ class JobRepository extends ChangeNotifier {
 
     await LocalStorageService.saveCurrentUser(_currentUser);
 
-    // 2. Refresh jobs from cloud
-    await _refreshJobsFromCloud();
+    // 2. Refresh jobs and public detailers from cloud
+    await Future.wait([
+      _refreshJobsFromCloud(),
+      _refreshPublicDetailersFromCloud(),
+    ]);
 
     // 3. Refresh conversations
     await loadConversations();
@@ -748,14 +758,21 @@ class JobRepository extends ChangeNotifier {
     }
   }
 
+  Future<void> _refreshPublicDetailersFromCloud() async {
+    try {
+      final detailers = await SupabaseDbService.fetchPublicDetailers();
+      _publicDetailers = detailers;
+      notifyListeners();
+    } catch (_) {}
+  }
+
   void _persistBookings() {
     LocalStorageService.saveBookings(_bookings);
   }
 
   void _persistCustomJobs() {
-    // Only persist jobs that are custom user jobs (not initial mock ids or created by current user)
-    final mockIds = MockDataService.getInitialJobs().map((j) => j.id).toSet();
-    final customJobs = _jobs.where((j) => !mockIds.contains(j.id)).toList();
+    // Only persist jobs that are custom user jobs (not legacy mock ids)
+    final customJobs = _jobs.where((j) => !_legacyMockJobIds.contains(j.id)).toList();
     LocalStorageService.saveCustomJobs(customJobs);
   }
 
@@ -867,15 +884,16 @@ class JobRepository extends ChangeNotifier {
 
   // Client Bookings: Only personal bookings made by this user as a customer
   List<BookingAppointment> get clientBookings =>
-      _bookings.where((b) => b.clientId == _currentUser.id || b.detailerId != _currentUser.id).toList();
+      _bookings.where((b) => b.clientId == _currentUser.id).toList();
 
   List<CalendarAvailabilityBlock> get availabilityBlocks => List.unmodifiable(_availabilityBlocks);
   DetailerCalendarPreferences get calendarPreferences => _calendarPreferences;
   
-  // All public detailers including the current user when registered/logged in!
+  // All public detailers including the current user when registered/logged in as studio!
   List<UserProfile> get publicDetailers {
     final list = List<UserProfile>.from(_publicDetailers);
-    if (_isLoggedIn && _currentUser.location.isNotEmpty) {
+    final isStudio = _currentUser.role == UserRole.detailer || _currentUser.role == UserRole.superAdmin;
+    if (_isLoggedIn && isStudio && _currentUser.location.isNotEmpty) {
       final existingIndex = list.indexWhere((p) => p.id == _currentUser.id);
       if (existingIndex != -1) {
         list[existingIndex] = _currentUser;
@@ -3488,6 +3506,19 @@ class JobRepository extends ChangeNotifier {
           },
         )
         .subscribe();
+
+    // 5. Profiles realtime channel (for public studio discovery sync)
+    _profilesChannel = client
+        .channel('public:profiles')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'profiles',
+          callback: (_) {
+            _refreshPublicDetailersFromCloud();
+          },
+        )
+        .subscribe();
   }
 
   void _unsubscribeFromRealtime() {
@@ -3499,6 +3530,8 @@ class JobRepository extends ChangeNotifier {
     _bookingsChannel = null;
     _interactionsChannel?.unsubscribe();
     _interactionsChannel = null;
+    _profilesChannel?.unsubscribe();
+    _profilesChannel = null;
   }
 
   @override

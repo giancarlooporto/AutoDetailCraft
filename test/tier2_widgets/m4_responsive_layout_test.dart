@@ -12,6 +12,7 @@ import 'package:detail_craft/screens/add_team_member_dialog.dart';
 import 'package:detail_craft/widgets/inventory_item_editor_dialog.dart';
 import 'package:detail_craft/services/job_repository.dart';
 import '../core/mock_http_client.dart';
+import '../core/test_harness.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -112,7 +113,7 @@ void main() {
 
         final repo = JobRepository();
         await repo.init();
-        final job = repo.allJobs.first;
+        final job = repo.allJobs.isNotEmpty ? repo.allJobs.first : createTestJob();
 
         await tester.pumpWidget(
           MaterialApp(

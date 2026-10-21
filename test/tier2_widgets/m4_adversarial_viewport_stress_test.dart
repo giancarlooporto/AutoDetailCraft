@@ -13,6 +13,7 @@ import 'package:detail_craft/screens/calendar_preferences_dialog.dart';
 import 'package:detail_craft/widgets/inventory_item_editor_dialog.dart';
 import 'package:detail_craft/services/job_repository.dart';
 import '../core/mock_http_client.dart';
+import '../core/test_harness.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -91,7 +92,7 @@ void main() {
 
           final repo = JobRepository();
           await repo.init();
-          final job = repo.allJobs.first;
+          final job = repo.allJobs.isNotEmpty ? repo.allJobs.first : createTestJob();
 
           FlutterErrorDetails? caughtError;
           final originalOnError = FlutterError.onError;
@@ -408,7 +409,7 @@ void main() {
         await repo.init();
 
         const longVehicleName = 'Mercedes-Benz AMG GT 63 S E-Performance 4-Door Coupe V8 Bi-Turbo Hybrid Carbon Edition';
-        final baseJob = repo.allJobs.first;
+        final baseJob = repo.allJobs.isNotEmpty ? repo.allJobs.first : createTestJob();
         final adversarialJob = baseJob.copyWith(
           vehicleYear: 2024,
           vehicleMake: 'Mercedes-Benz',

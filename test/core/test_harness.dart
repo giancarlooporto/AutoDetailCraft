@@ -1,8 +1,44 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:detail_craft/models/user_profile.dart';
+import 'package:detail_craft/models/detail_job.dart';
 import 'package:detail_craft/services/job_repository.dart';
 import 'package:detail_craft/services/local_storage_service.dart';
+import 'package:detail_craft/services/mock_data_service.dart';
+
+/// Helper to create a standalone job for isolated widget/persistence testing
+DetailJob createTestJob({String id = 'job_test_01'}) => DetailJob(
+  id: id,
+  author: MockDataService.youUser,
+  createdAt: DateTime.now(),
+  title: 'Test Transformation Job',
+  description: 'Test detail description',
+  vehicleYear: 2024,
+  vehicleMake: 'Porsche',
+  vehicleModel: '911 GT3',
+  paintColorName: 'Guards Red',
+  paintCode: 'G1',
+  paintHardness: PaintHardness.medium,
+  initialPaintThicknessMicrons: 130.0,
+  finalPaintThicknessMicrons: 125.0,
+  defectSeverity: 2,
+  defectStage: DefectStage.stage2,
+  correctionPercentage: 90,
+  serviceType: 'Stage 2 Paint Correction & Enhancement',
+  recipeStages: const [],
+  beforeImageUrl: '',
+  afterImageUrl: '',
+  beforePhotos: const [],
+  afterPhotos: const [],
+  mediaZones: const [],
+  durationHours: 6.0,
+  quotedPrice: 650.0,
+  likesCount: 1,
+  isLiked: false,
+  savesCount: 0,
+  isSaved: false,
+  comments: const [],
+);
 
 /// Central test harness for initializing isolated sessions and simulating
 /// browser refreshes across AutoDetailCraft tests.
@@ -12,10 +48,12 @@ class TestHarness {
   /// - [initialPreferences]: Optional seed data for [SharedPreferences].
   /// - [isLoggedIn]: Whether the user starts in logged-in host mode or guest mode.
   /// - [currentUser]: Optional custom [UserProfile] to preload into local storage.
+  /// - [seedSampleJob]: If true and jobs are empty, adds a test job for widget testing.
   static Future<JobRepository> createSession({
     Map<String, Object>? initialPreferences,
     bool isLoggedIn = false,
     UserProfile? currentUser,
+    bool seedSampleJob = false,
   }) async {
     TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -31,6 +69,10 @@ class TestHarness {
     // Create fresh repository and await asynchronous hydration
     final repository = JobRepository();
     await repository.init();
+
+    if (seedSampleJob && repository.allJobs.isEmpty) {
+      repository.addJob(createTestJob());
+    }
 
     if (currentUser != null && repository.currentUser.id != currentUser.id) {
       // Ensure exact user object if local hydration did not replace default

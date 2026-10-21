@@ -66,7 +66,7 @@ void main() {
     });
 
     test('T2: Discussion comments added to mock and custom jobs survive reload', () async {
-      final repo1 = await TestHarness.createSession(isLoggedIn: true);
+      final repo1 = await TestHarness.createSession(isLoggedIn: true, seedSampleJob: true);
 
       // 1. Add comment to mock job
       final mockJobId = repo1.allJobs.first.id;
@@ -149,7 +149,7 @@ void main() {
     });
 
     test('T3: Toggling like on job persists like state and count across reload', () async {
-      final repo1 = await TestHarness.createSession(isLoggedIn: true);
+      final repo1 = await TestHarness.createSession(isLoggedIn: true, seedSampleJob: true);
       final jobId = repo1.allJobs.first.id;
       final initialLikes = repo1.allJobs.first.likesCount;
 
