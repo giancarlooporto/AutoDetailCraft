@@ -918,7 +918,7 @@ class JobRepository extends ChangeNotifier {
   List<UserProfile> get publicDetailers {
     final list = List<UserProfile>.from(_publicDetailers);
     final isStudio = _currentUser.role == UserRole.detailer || _currentUser.role == UserRole.superAdmin;
-    if (_isLoggedIn && isStudio && _currentUser.location.isNotEmpty) {
+    if (_isLoggedIn && isStudio) {
       final existingIndex = list.indexWhere((p) => p.id == _currentUser.id);
       if (existingIndex != -1) {
         list[existingIndex] = _currentUser;
