@@ -90,23 +90,65 @@ class SupabaseDbService {
       }).toList();
 
 
-      // Fetch user's service packages if present; if empty/null, return empty list (do NOT substitute MockDataService.standardPackages)
+      // Build and return the clean UserProfile
+      final profile = _buildUserProfileFromMap(res, garage: garage, team: team);
+      if (profile != null) {
+        // Automatically sync clean fields to Supabase DB if it previously had dummy data
+        final cleanAvatar = profile.avatarUrl;
+        final cleanCover = profile.coverUrl;
+        final cleanBio = profile.bio;
+        final cleanLocation = profile.location;
+        final cleanBusiness = profile.businessName;
+        final cleanInstagram = profile.instagramHandle;
+        final rawAvatar = res['avatar_url'] as String? ?? '';
+        final rawCover = res['cover_url'] as String? ?? '';
+        final rawLocation = res['location'] as String? ?? '';
+        final rawBio = res['bio'] as String? ?? '';
+        final rawBusiness = res['business_name'] as String? ?? '';
+        final rawInstagram = res['instagram_handle'] as String? ?? '';
+
+        if (cleanAvatar != rawAvatar || cleanCover != rawCover || cleanBio != rawBio || cleanLocation != rawLocation || cleanBusiness != rawBusiness || cleanInstagram != rawInstagram) {
+          client.from('profiles').update({
+            'avatar_url': cleanAvatar,
+            'cover_url': cleanCover,
+            'location': cleanLocation,
+            'bio': cleanBio,
+            'business_name': cleanBusiness,
+            'instagram_handle': cleanInstagram,
+          }).eq('id', userId).then((_) {}, onError: (_) {});
+        }
+      }
+      return profile;
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error fetching profile: $e');
+      return null;
+    }
+  }
+
+  static UserProfile? _buildUserProfileFromMap(
+    Map<String, dynamic> res, {
+    List<Vehicle> garage = const [],
+    List<TeamMember> team = const [],
+  }) {
+    try {
+      // Fetch user's service packages if present; if empty/null, return empty list
       List<ServicePackage> packages = [];
       if (res['service_packages'] != null && res['service_packages'] is List) {
         try {
           final list = res['service_packages'] as List<dynamic>;
           if (list.isNotEmpty) {
-            packages = list.map((p) => ServicePackage.fromJson(p as Map<String, dynamic>)).toList();
+            packages = list
+                .map((p) => ServicePackage.fromJson(p as Map<String, dynamic>))
+                .toList();
           }
         } catch (_) {}
       }
-
 
       final roleStr = res['role'] as String?;
       UserRole parsedRole = UserRole.client;
       if (roleStr == 'superAdmin' || roleStr == 'super_admin') {
         parsedRole = UserRole.superAdmin;
-      } else if (roleStr == 'detailer') {
+      } else if (roleStr == 'detailer' || packages.isNotEmpty) {
         parsedRole = UserRole.detailer;
       }
 
@@ -173,16 +215,9 @@ class SupabaseDbService {
       final rawInstagram = res['instagram_handle'] as String? ?? '';
       final cleanInstagram = (rawInstagram == '@detailcraft') ? '' : rawInstagram;
 
-      // Automatically sync clean fields to Supabase DB if it previously had dummy data
-      if (cleanAvatar != rawAvatar || cleanCover != rawCover || cleanBio != rawBio || cleanLocation != rawLocation || cleanBusiness != rawBusiness || cleanInstagram != rawInstagram) {
-        client.from('profiles').update({
-          'avatar_url': cleanAvatar,
-          'cover_url': cleanCover,
-          'location': cleanLocation,
-          'bio': cleanBio,
-          'business_name': cleanBusiness,
-          'instagram_handle': cleanInstagram,
-        }).eq('id', userId).then((_) {}, onError: (_) {});
+      double startingPrice = (res['starting_price'] as num?)?.toDouble() ?? 0.0;
+      if (startingPrice <= 0.0 && packages.isNotEmpty) {
+        startingPrice = packages.map((p) => p.price).reduce((a, b) => a < b ? a : b);
       }
 
       return UserProfile(
@@ -198,12 +233,12 @@ class SupabaseDbService {
         bio: cleanBio,
         phone: res['phone'] as String? ?? '',
         instagramHandle: cleanInstagram,
-        isVerifiedHost: res['is_verified_host'] as bool? ?? false,
+        isVerifiedHost: res['is_verified_host'] as bool? ?? (parsedRole == UserRole.detailer),
         isIdaCertified: res['is_ida_certified'] as bool? ?? false,
         isInsuranceVerified: res['is_insurance_verified'] as bool? ?? false,
         insurancePolicyNumber: res['insurance_policy_number'] as String? ?? '',
         servicePackages: packages,
-        startingPrice: (res['starting_price'] as num?)?.toDouble() ?? 0.0,
+        startingPrice: startingPrice,
         myGarage: garage,
         teamMembers: resolvedTeamList,
         totalJobsCount: res['total_jobs_count'] as int? ?? 0,
@@ -212,28 +247,34 @@ class SupabaseDbService {
         ownerPinHash: ownerPinHash,
       );
     } catch (e) {
-      if (kDebugMode) print('[SupabaseDbService] Error fetching profile: $e');
+      if (kDebugMode) print('[SupabaseDbService] Error parsing UserProfile: $e');
       return null;
     }
   }
 
-  /// Fetches all public registered detailers and studios from Supabase profiles.
+  /// Fetches all public registered detailers and studios from Supabase profiles in a single query.
   static Future<List<UserProfile>> fetchPublicDetailers() async {
     final client = _client;
     if (client == null) return [];
 
     try {
-      final res = await client
-          .from('profiles')
-          .select('id')
-          .or('role.eq.detailer,role.eq.super_admin,role.eq.superAdmin');
+      final res = await client.from('profiles').select();
       final list = res as List<dynamic>;
       final profiles = <UserProfile>[];
       for (final item in list) {
-        final id = item['id'] as String;
-        final p = await fetchUserProfile(id);
-        if (p != null) {
-          profiles.add(p);
+        final profileMap = Map<String, dynamic>.from(item as Map);
+        final role = profileMap['role'] as String?;
+        final hasPackages = profileMap['service_packages'] is List &&
+            (profileMap['service_packages'] as List).isNotEmpty;
+        final isDetailer = role == 'detailer' ||
+            role == 'super_admin' ||
+            role == 'superAdmin' ||
+            hasPackages;
+        if (isDetailer) {
+          final p = _buildUserProfileFromMap(profileMap);
+          if (p != null) {
+            profiles.add(p);
+          }
         }
       }
       return profiles;

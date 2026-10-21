@@ -1331,11 +1331,19 @@ class JobRepository extends ChangeNotifier {
   // Add / Edit / Remove Service Package (Persisted immediately to dedicated storage)
   void addServicePackage(ServicePackage package) {
     final updatedList = [..._currentUser.servicePackages, package];
+    final minPrice = updatedList.map((p) => p.price).fold<double>(
+      package.price,
+      (prev, elem) => elem < prev ? elem : prev,
+    );
     _currentUser = _currentUser.copyWith(
+      role: UserRole.detailer,
+      isVerifiedHost: true,
+      startingPrice: minPrice,
       servicePackages: updatedList,
     );
     LocalStorageService.saveServicePackages(updatedList);
     _persistUser();
+    _refreshPublicDetailersFromCloud();
     notifyListeners();
   }
 
@@ -1344,20 +1352,34 @@ class JobRepository extends ChangeNotifier {
     if (idx != -1) {
       final list = List<ServicePackage>.from(_currentUser.servicePackages);
       list[idx] = updated;
-      _currentUser = _currentUser.copyWith(servicePackages: list);
+      final minPrice = list.isNotEmpty
+          ? list.map((p) => p.price).reduce((a, b) => a < b ? a : b)
+          : 0.0;
+      _currentUser = _currentUser.copyWith(
+        role: UserRole.detailer,
+        isVerifiedHost: true,
+        startingPrice: minPrice,
+        servicePackages: list,
+      );
       LocalStorageService.saveServicePackages(list);
       _persistUser();
+      _refreshPublicDetailersFromCloud();
       notifyListeners();
     }
   }
 
   void removeServicePackage(String packageId) {
     final updatedList = _currentUser.servicePackages.where((p) => p.id != packageId).toList();
+    final minPrice = updatedList.isNotEmpty
+        ? updatedList.map((p) => p.price).reduce((a, b) => a < b ? a : b)
+        : 0.0;
     _currentUser = _currentUser.copyWith(
+      startingPrice: minPrice,
       servicePackages: updatedList,
     );
     LocalStorageService.saveServicePackages(updatedList);
     _persistUser();
+    _refreshPublicDetailersFromCloud();
     notifyListeners();
   }
 
