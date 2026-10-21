@@ -99,7 +99,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         final rawIndex = widget.repository.activeTabIndex;
         final currentIndex = rawIndex.clamp(0, 3);
 
-        final isDetailer = widget.repository.currentUser.role == UserRole.detailer;
+        final isDetailer = widget.repository.isDetailerWorkbenchMode ||
+            widget.repository.currentUser.role == UserRole.detailer ||
+            widget.repository.workbenchMode == 'studio';
         final studioLabel = isDetailer ? 'My Studio' : 'My Garage';
         final studioIcon = isDetailer ? Icons.storefront_outlined : Icons.garage_outlined;
         final studioSelectedIcon = isDetailer ? Icons.storefront_rounded : Icons.garage_rounded;
