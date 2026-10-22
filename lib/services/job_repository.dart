@@ -627,18 +627,11 @@ class JobRepository extends ChangeNotifier {
   Future<void> _refreshBookingsFromCloud(String userId) async {
     try {
       final cloudBookings = await SupabaseDbService.fetchBookings(userId);
-      if (cloudBookings.isNotEmpty) {
-        final Map<String, BookingAppointment> map = {
-          for (final b in _bookings) b.id: b,
-        };
-        for (final cb in cloudBookings) {
-          map[cb.id] = cb;
-        }
-        _bookings = map.values.toList()
-          ..sort((a, b) => b.scheduledDate.compareTo(a.scheduledDate));
-        LocalStorageService.saveBookings(_bookings);
-        notifyListeners();
-      }
+      // Synchronize cloud bookings directly: if empty in cloud, reflect empty state
+      _bookings = List<BookingAppointment>.from(cloudBookings)
+        ..sort((a, b) => b.scheduledDate.compareTo(a.scheduledDate));
+      LocalStorageService.saveBookings(_bookings);
+      notifyListeners();
     } catch (_) {}
   }
 

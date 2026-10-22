@@ -1130,11 +1130,19 @@ class SupabaseDbService {
           ? booking.clientEmail
           : 'guest@autodetailcraft.com';
 
+      final validUuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+      final sanitizedClientId = (booking.clientId != null && validUuidRegex.hasMatch(booking.clientId!))
+          ? booking.clientId
+          : null;
+      final sanitizedDetailerId = validUuidRegex.hasMatch(booking.detailerId)
+          ? booking.detailerId
+          : '5ecfac74-435a-4c99-bb19-cbda2d0a1d65';
+
       // Primary payload matching live Supabase bookings schema
       final basePayload = <String, dynamic>{
         'id': booking.id,
-        'client_id': booking.clientId,
-        'detailer_id': booking.detailerId,
+        'client_id': sanitizedClientId,
+        'detailer_id': sanitizedDetailerId,
         'client_name': booking.clientName,
         'client_phone': booking.clientPhone,
         'client_email': emailFallback,
