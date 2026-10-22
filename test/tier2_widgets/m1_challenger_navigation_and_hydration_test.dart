@@ -281,10 +281,10 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          // Verification: Unauthenticated users are strictly guarded and see the guest bookings view
-          expect(find.text('View & Manage Detailing Bookings'), findsOneWidget);
-          expect(find.text('Sign In to View Bookings'), findsOneWidget);
-          expect(find.text('Titanium Multi-Stage Coating'), findsNothing);
+          // Verification: Unauthenticated users with bookings on device render appointment cards with guest sync banner
+          expect(find.text('Guest Bookings on Device'), findsOneWidget);
+          expect(find.text('Sign In'), findsOneWidget);
+          expect(find.text('Titanium Multi-Stage Coating'), findsOneWidget);
         } finally {
           tearDownMockImageHttpClient();
           tester.view.resetPhysicalSize();

@@ -626,9 +626,23 @@ class JobRepository extends ChangeNotifier {
 
   Future<void> _refreshBookingsFromCloud(String userId) async {
     try {
-      final cloudBookings = await SupabaseDbService.fetchBookings(userId);
-      // Synchronize cloud bookings directly: if empty in cloud, reflect empty state
-      _bookings = List<BookingAppointment>.from(cloudBookings)
+      final authEmail = SupabaseAuthService.currentAuthUser?.email ??
+          (_currentUser.username.contains('@') ? _currentUser.username : null);
+      final cloudBookings = await SupabaseDbService.fetchBookings(
+        userId,
+        userEmail: authEmail,
+      );
+
+      // Non-destructive union merge: merge cloud bookings with local bookings by id
+      final bookingMap = <String, BookingAppointment>{};
+      for (final b in _bookings) {
+        bookingMap[b.id] = b;
+      }
+      for (final b in cloudBookings) {
+        bookingMap[b.id] = b;
+      }
+
+      _bookings = bookingMap.values.toList()
         ..sort((a, b) => b.scheduledDate.compareTo(a.scheduledDate));
       LocalStorageService.saveBookings(_bookings);
       notifyListeners();
@@ -697,7 +711,12 @@ class JobRepository extends ChangeNotifier {
     // 3. Refresh conversations
     await loadConversations();
 
-    // 4. Refresh bookings and interactions from cloud
+    // 4. Claim guest bookings and refresh bookings and interactions from cloud
+    final userEmail = SupabaseAuthService.currentAuthUser?.email ??
+        (user.username.contains('@') ? user.username : null);
+    if (userEmail != null && userEmail.isNotEmpty) {
+      await SupabaseDbService.claimGuestBookings(userEmail);
+    }
     await _refreshBookingsFromCloud(user.id);
     await _refreshInteractionsFromCloud(user.id);
 
@@ -786,8 +805,10 @@ class JobRepository extends ChangeNotifier {
   Future<void> _refreshPublicDetailersFromCloud() async {
     try {
       final detailers = await SupabaseDbService.fetchPublicDetailers();
-      _publicDetailers = detailers;
-      notifyListeners();
+      if (detailers.isNotEmpty) {
+        _publicDetailers = detailers;
+        notifyListeners();
+      }
     } catch (_) {}
   }
 
@@ -918,8 +939,16 @@ class JobRepository extends ChangeNotifier {
       _bookings.where((b) => b.detailerId == _currentUser.id).toList();
 
   // Client Bookings: Only personal bookings made by this user as a customer
-  List<BookingAppointment> get clientBookings =>
-      _bookings.where((b) => b.clientId == _currentUser.id).toList();
+  List<BookingAppointment> get clientBookings {
+    final authEmail = SupabaseAuthService.currentAuthUser?.email?.toLowerCase() ??
+        (_currentUser.username.contains('@') ? _currentUser.username.toLowerCase() : null);
+    return _bookings.where((b) {
+      final matchesId = b.clientId != null && b.clientId == _currentUser.id;
+      final matchesEmail = authEmail != null && authEmail.isNotEmpty && b.clientEmail.toLowerCase() == authEmail;
+      final matchesGuest = !_isLoggedIn && (b.clientId == null || b.clientId == 'usr_you');
+      return matchesId || matchesEmail || matchesGuest;
+    }).toList();
+  }
 
   List<CalendarAvailabilityBlock> get availabilityBlocks => List.unmodifiable(_availabilityBlocks);
   DetailerCalendarPreferences get calendarPreferences => _calendarPreferences;

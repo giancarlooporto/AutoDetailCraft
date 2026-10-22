@@ -7,6 +7,7 @@ import 'package:detail_craft/models/team_member.dart';
 import 'package:detail_craft/screens/booking_flow_screen.dart';
 import 'package:detail_craft/screens/bookings_list_screen.dart';
 import 'package:detail_craft/services/job_repository.dart';
+import 'package:detail_craft/services/mock_data_service.dart';
 import '../core/mock_http_client.dart';
 
 void main() {
@@ -170,7 +171,9 @@ void main() {
         clientEmail: 'alice@example.com',
         vehicleYearMakeModel: 'Porsche Cayman GT4',
         vehicleSize: VehicleSize.coupeSedan,
-        package: repo.currentUser.servicePackages.first,
+        package: repo.currentUser.servicePackages.isNotEmpty
+            ? repo.currentUser.servicePackages.first
+            : MockDataService.standardPackages.first,
         locationType: ServiceLocationType.shop,
         clientAddress: '100 Studio Way',
         scheduledDate: date,
@@ -191,7 +194,9 @@ void main() {
         clientEmail: 'bob@example.com',
         vehicleYearMakeModel: 'Ferrari 488',
         vehicleSize: VehicleSize.coupeSedan,
-        package: repo.currentUser.servicePackages.first,
+        package: repo.currentUser.servicePackages.isNotEmpty
+            ? repo.currentUser.servicePackages.first
+            : MockDataService.standardPackages.first,
         locationType: ServiceLocationType.shop,
         clientAddress: '100 Studio Way',
         scheduledDate: date,
@@ -225,7 +230,9 @@ void main() {
         clientEmail: 'idem@example.com',
         vehicleYearMakeModel: 'Audi RS3',
         vehicleSize: VehicleSize.coupeSedan,
-        package: repo.currentUser.servicePackages.first,
+        package: repo.currentUser.servicePackages.isNotEmpty
+            ? repo.currentUser.servicePackages.first
+            : MockDataService.standardPackages.first,
         locationType: ServiceLocationType.shop,
         clientAddress: '100 Studio Way',
         scheduledDate: DateTime(2026, 12, 12),

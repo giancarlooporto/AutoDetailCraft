@@ -6,6 +6,8 @@ import '../models/booking_models.dart';
 import '../models/team_member.dart';
 import '../models/calendar_availability_block.dart';
 import '../services/job_repository.dart';
+import '../services/supabase_auth_service.dart';
+import '../services/mock_data_service.dart';
 import 'auth_modal.dart';
 
 class BookingFlowScreen extends StatefulWidget {
@@ -72,8 +74,13 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     if (user.phone.isNotEmpty) {
       _phoneCtrl.text = user.phone;
     }
-    if (user.username.isNotEmpty) {
-      _emailCtrl.text = user.username.contains('@') ? user.username : '${user.username}@example.com';
+    final authEmail = SupabaseAuthService.currentAuthUser?.email;
+    if (authEmail != null && authEmail.isNotEmpty) {
+      _emailCtrl.text = authEmail;
+    } else if (user.username.isNotEmpty && user.username.contains('@')) {
+      _emailCtrl.text = user.username;
+    } else {
+      _emailCtrl.text = '';
     }
     if (user.location.isNotEmpty) {
       _addressCtrl.text = user.location;
@@ -88,7 +95,18 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     _selectedPackage = widget.initialPackage ??
         (widget.detailer.servicePackages.isNotEmpty
             ? widget.detailer.servicePackages.first
-            : widget.repository.currentUser.servicePackages.first);
+            : (widget.repository.currentUser.servicePackages.isNotEmpty
+                ? widget.repository.currentUser.servicePackages.first
+                : (MockDataService.standardPackages.isNotEmpty
+                    ? MockDataService.standardPackages.first
+                    : const ServicePackage(
+                        id: 'pkg_custom',
+                        title: 'Custom Detail Service',
+                        description: 'Tailored detailing service',
+                        basePrice: 150.0,
+                        estimatedDuration: '2 hrs',
+                        includes: ['Exterior Wash'],
+                      ))));
 
     if (_timeSlots.isNotEmpty && !_timeSlots.contains(_selectedTimeSlot)) {
       _selectedTimeSlot = _timeSlots.first;
@@ -191,6 +209,47 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   }
 
   void _confirmAndSubmitBooking() {
+    final name = _nameCtrl.text.trim();
+    final phone = _phoneCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
+
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter your full name for the booking reservation.'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      setState(() => _currentStep = 2);
+      return;
+    }
+
+    if (phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter your phone number so the detailer can contact you.'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      setState(() => _currentStep = 2);
+      return;
+    }
+
+    final emailRegex = RegExp(r'^[\w\.\-]+@[\w\-]+(\.[\w\-]+)+$');
+    if (email.isEmpty || !emailRegex.hasMatch(email)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid email address for warranty and booking confirmation.'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      setState(() => _currentStep = 2);
+      return;
+    }
+
     final conflictReason = _getSlotUnavailableReason(_selectedTimeSlot);
     if (conflictReason != null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -222,13 +281,17 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       assignedTeamMemberId: _selectedTeamMember?.id,
       assignedTeamMemberName: _selectedTeamMember?.name,
       detailerName: _selectedTeamMember != null
-          ? '${widget.detailer.businessName} (${_selectedTeamMember!.name})'
-          : widget.detailer.displayName,
-      detailerBusinessName: widget.detailer.businessName,
+          ? '${widget.detailer.businessName.isNotEmpty ? widget.detailer.businessName : widget.detailer.displayName} (${_selectedTeamMember!.name})'
+          : (widget.detailer.displayName.isNotEmpty
+              ? widget.detailer.displayName
+              : (widget.detailer.businessName.isNotEmpty ? widget.detailer.businessName : 'Detailing Studio')),
+      detailerBusinessName: widget.detailer.businessName.isNotEmpty
+          ? widget.detailer.businessName
+          : (widget.detailer.displayName.isNotEmpty ? widget.detailer.displayName : 'Detailing Studio'),
       detailerAvatar: _selectedTeamMember?.avatarUrl ?? widget.detailer.avatarUrl,
       clientName: _nameCtrl.text.trim(),
       clientPhone: _phoneCtrl.text.trim(),
-      clientEmail: _emailCtrl.text.trim(),
+      clientEmail: _emailCtrl.text.trim().toLowerCase(),
       vehicleYearMakeModel: _vehicleModelCtrl.text.trim(),
       vehicleSize: _vehicleSize,
       package: _selectedPackage,
@@ -343,6 +406,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () {
+              widget.repository.setActiveTab(1);
               Navigator.of(ctx).pop();
               Navigator.of(context).pop();
             },

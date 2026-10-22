@@ -12,6 +12,7 @@ import 'package:detail_craft/screens/add_team_member_dialog.dart';
 import 'package:detail_craft/screens/calendar_preferences_dialog.dart';
 import 'package:detail_craft/widgets/inventory_item_editor_dialog.dart';
 import 'package:detail_craft/services/job_repository.dart';
+import 'package:detail_craft/services/mock_data_service.dart';
 import '../core/mock_http_client.dart';
 import '../core/test_harness.dart';
 
@@ -128,7 +129,9 @@ void main() {
 
           final repo = JobRepository();
           await repo.init();
-          final pkg = repo.currentUser.servicePackages.first;
+          final pkg = repo.currentUser.servicePackages.isNotEmpty
+              ? repo.currentUser.servicePackages.first
+              : MockDataService.standardPackages.first;
 
           FlutterErrorDetails? caughtError;
           final originalOnError = FlutterError.onError;

@@ -74,6 +74,12 @@ class TestHarness {
       repository.addJob(createTestJob());
     }
 
+    if (isLoggedIn && repository.currentUser.servicePackages.isEmpty) {
+      for (final pkg in MockDataService.standardPackages) {
+        repository.addServicePackage(pkg);
+      }
+    }
+
     if (currentUser != null && repository.currentUser.id != currentUser.id) {
       // Ensure exact user object if local hydration did not replace default
       await repository.loginUser(currentUser);

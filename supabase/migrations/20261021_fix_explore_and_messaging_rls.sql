@@ -116,6 +116,36 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 
--- 9. Refresh schema cache
+-- 9. CLAIM GUEST BOOKINGS RPC FUNCTION
+-- Allows authenticated users to automatically claim any past bookings created as a guest with their email
+CREATE OR REPLACE FUNCTION public.claim_guest_bookings(target_email text)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  claimed_count integer;
+  current_user_id text;
+BEGIN
+  current_user_id := auth.uid()::text;
+  IF current_user_id IS NULL OR target_email IS NULL OR trim(target_email) = '' THEN
+    RETURN 0;
+  END IF;
+
+  UPDATE public.bookings
+  SET client_id = current_user_id,
+      updated_at = timezone('utc'::text, now())
+  WHERE lower(trim(client_email)) = lower(trim(target_email))
+    AND (client_id IS NULL OR client_id = '' OR client_id = 'usr_you' OR client_id != current_user_id);
+
+  GET DIAGNOSTICS claimed_count = ROW_COUNT;
+  RETURN claimed_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.claim_guest_bookings(text) FROM public;
+GRANT EXECUTE ON FUNCTION public.claim_guest_bookings(text) TO authenticated, anon;
+
+-- 10. Refresh schema cache
 NOTIFY pgrst, 'reload schema';
 

@@ -1126,8 +1126,8 @@ class SupabaseDbService {
     if (client == null) return;
 
     try {
-      final emailFallback = booking.clientEmail.isNotEmpty
-          ? booking.clientEmail
+      final emailFallback = booking.clientEmail.trim().isNotEmpty
+          ? booking.clientEmail.trim().toLowerCase()
           : 'guest@autodetailcraft.com';
 
       final validUuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
@@ -1143,12 +1143,17 @@ class SupabaseDbService {
         'id': booking.id,
         'client_id': sanitizedClientId,
         'detailer_id': sanitizedDetailerId,
+        'detailer_name': booking.detailerName,
+        'detailer_business_name': booking.detailerBusinessName,
+        'detailer_avatar': booking.detailerAvatar,
         'client_name': booking.clientName,
         'client_phone': booking.clientPhone,
         'client_email': emailFallback,
         'vehicle_year_make_model': booking.vehicleYearMakeModel,
         'vehicle_size': booking.vehicleSize.name,
+        'package': booking.package.toJson(),
         'package_data': booking.package.toJson(),
+        'location_type': booking.locationType.name,
         'service_location_type': booking.locationType.name,
         'client_address': booking.clientAddress,
         'scheduled_date': booking.scheduledDate.toIso8601String(),
@@ -1165,11 +1170,6 @@ class SupabaseDbService {
       try {
         await client.from('bookings').upsert({
           ...basePayload,
-          'package': booking.package.toJson(),
-          'location_type': booking.locationType.name,
-          'detailer_name': booking.detailerName,
-          'detailer_business_name': booking.detailerBusinessName,
-          'detailer_avatar': booking.detailerAvatar,
           if (booking.assignedTeamMemberId != null)
             'assigned_team_member_id': booking.assignedTeamMemberId,
           if (booking.assignedTeamMemberName != null)
@@ -1190,15 +1190,33 @@ class SupabaseDbService {
   }
 
   /// Fetches bookings related to a user (either as client or as detailer)
-  static Future<List<BookingAppointment>> fetchBookings(String userId) async {
+  static Future<List<BookingAppointment>> fetchBookings(String userId, {String? userEmail}) async {
     final client = _client;
     if (client == null) return [];
 
     try {
+      final validUuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+      final isUuid = validUuidRegex.hasMatch(userId.trim());
+      final cleanEmail = userEmail?.trim().toLowerCase();
+      final hasEmail = cleanEmail != null && cleanEmail.isNotEmpty;
+
+      final filters = <String>[];
+      if (isUuid) {
+        filters.add('client_id.eq.$userId');
+        filters.add('detailer_id.eq.$userId');
+      }
+      if (hasEmail) {
+        filters.add('client_email.eq.$cleanEmail');
+      }
+
+      if (filters.isEmpty) {
+        return [];
+      }
+
       final res = await client
           .from('bookings')
           .select()
-          .or('client_id.eq.$userId,detailer_id.eq.$userId')
+          .or(filters.join(','))
           .order('scheduled_date', ascending: false);
 
       final List<dynamic> list = res as List<dynamic>;
@@ -1217,6 +1235,25 @@ class SupabaseDbService {
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error fetching bookings: $e');
       return [];
+    }
+  }
+
+  /// Links guest bookings placed with this email to the authenticated user account
+  static Future<int> claimGuestBookings(String email) async {
+    final client = _client;
+    if (client == null) return 0;
+    final cleanEmail = email.trim().toLowerCase();
+    if (cleanEmail.isEmpty) return 0;
+
+    try {
+      final res = await client.rpc('claim_guest_bookings', params: {
+        'target_email': cleanEmail,
+      });
+      if (kDebugMode) print('[SupabaseDbService] Claimed guest bookings for $cleanEmail: $res');
+      return (res is int) ? res : int.tryParse(res.toString()) ?? 0;
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error claiming guest bookings: $e');
+      return 0;
     }
   }
 

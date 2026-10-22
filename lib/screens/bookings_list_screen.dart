@@ -574,7 +574,7 @@ class BookingsListScreen extends StatelessWidget {
         // In Client Mode, strictly display only personal bookings made by this user as a customer
         final allBookings = repository.clientBookings;
 
-        if (!isLoggedIn) {
+        if (!isLoggedIn && allBookings.isEmpty) {
           return Scaffold(
             appBar: AppBar(
               title: const Text('Appointments & Bookings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
@@ -618,35 +618,42 @@ class BookingsListScreen extends StatelessWidget {
                 body: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 860),
-                    child: TabBarView(
+                    child: Column(
                       children: [
-                        _buildBookingsTabList(
-                          context,
-                          upcoming,
-                          emptyTitle: 'No Upcoming Appointments',
-                          emptySubtitle: 'Confirmed and pending appointments will appear here.',
-                          emptyIcon: Icons.calendar_today_rounded,
-                        ),
-                        _buildBookingsTabList(
-                          context,
-                          inProgress,
-                          emptyTitle: 'No Services In Progress',
-                          emptySubtitle: 'Active detailing jobs underway will appear here.',
-                          emptyIcon: Icons.play_circle_outline_rounded,
-                        ),
-                        _buildBookingsTabList(
-                          context,
-                          completed,
-                          emptyTitle: 'No Completed Services',
-                          emptySubtitle: 'Your finished detailing appointments will be archived here.',
-                          emptyIcon: Icons.task_alt_rounded,
-                        ),
-                        _buildBookingsTabList(
-                          context,
-                          cancelled,
-                          emptyTitle: 'No Cancelled Bookings',
-                          emptySubtitle: 'Cancelled reservations will appear here.',
-                          emptyIcon: Icons.cancel_outlined,
+                        if (!isLoggedIn) _buildGuestSyncBanner(context),
+                        Expanded(
+                          child: TabBarView(
+                            children: [
+                              _buildBookingsTabList(
+                                context,
+                                upcoming,
+                                emptyTitle: 'No Upcoming Appointments',
+                                emptySubtitle: 'Confirmed and pending appointments will appear here.',
+                                emptyIcon: Icons.calendar_today_rounded,
+                              ),
+                              _buildBookingsTabList(
+                                context,
+                                inProgress,
+                                emptyTitle: 'No Services In Progress',
+                                emptySubtitle: 'Active detailing jobs underway will appear here.',
+                                emptyIcon: Icons.play_circle_outline_rounded,
+                              ),
+                              _buildBookingsTabList(
+                                context,
+                                completed,
+                                emptyTitle: 'No Completed Services',
+                                emptySubtitle: 'Your finished detailing appointments will be archived here.',
+                                emptyIcon: Icons.task_alt_rounded,
+                              ),
+                              _buildBookingsTabList(
+                                context,
+                                cancelled,
+                                emptyTitle: 'No Cancelled Bookings',
+                                emptySubtitle: 'Cancelled reservations will appear here.',
+                                emptyIcon: Icons.cancel_outlined,
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -657,6 +664,60 @@ class BookingsListScreen extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildGuestSyncBanner(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.primary.withAlpha(80)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withAlpha(30),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.cloud_sync_outlined, color: AppTheme.primary, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'Guest Bookings on Device',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Sign in with your email to claim and sync appointments across all devices.',
+                  style: TextStyle(fontSize: 11, color: AppTheme.textSecondary, height: 1.3),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => AuthModal.show(context, repository: repository, initialIsSignUp: false),
+            child: const Text('Sign In', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+          ),
+        ],
+      ),
     );
   }
 }

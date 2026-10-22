@@ -202,6 +202,8 @@ create table if not exists public.bookings (
   client_notes text,
   pre_inspection_summary text,
   warranty_passport_id text,
+  assigned_team_member_id text,
+  assigned_team_member_name text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
@@ -254,4 +256,46 @@ create policy "Allow read on verification_requests" on public.verification_reque
 create policy "Allow insert on verification_requests" on public.verification_requests for insert with check (true);
 create policy "Allow update on verification_requests" on public.verification_requests for update using (true);
 create policy "Allow delete on verification_requests" on public.verification_requests for delete using (true);
+
+-- 11. REALTIME REPLICA IDENTITY & PUBLICATION
+alter table public.profiles replica identity full;
+alter table public.bookings replica identity full;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.profiles;
+  alter publication supabase_realtime add table public.bookings;
+exception when others then null;
+end $$;
+
+-- 12. CLAIM GUEST BOOKINGS RPC FUNCTION
+-- Allows authenticated users to automatically claim past bookings created with their email
+create or replace function public.claim_guest_bookings(target_email text)
+returns integer
+language plpgsql
+security definer
+as $$
+declare
+  claimed_count integer;
+  current_user_id text;
+begin
+  current_user_id := auth.uid()::text;
+  if current_user_id is null or target_email is null or trim(target_email) = '' then
+    return 0;
+  end if;
+
+  update public.bookings
+  set client_id = current_user_id,
+      updated_at = timezone('utc'::text, now())
+  where lower(trim(client_email)) = lower(trim(target_email))
+    and (client_id is null or client_id = '' or client_id = 'usr_you' or client_id != current_user_id);
+
+  get diagnostics claimed_count = row_count;
+  return claimed_count;
+end;
+$$;
+
+revoke all on function public.claim_guest_bookings(text) from public;
+grant execute on function public.claim_guest_bookings(text) to authenticated, anon;
+
 
