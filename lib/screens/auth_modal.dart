@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../services/job_repository.dart';
@@ -68,6 +69,13 @@ class _AuthModalState extends State<AuthModal> {
   final TextEditingController _invitePassCtrl = TextEditingController();
   final TextEditingController _inviteConfirmCtrl = TextEditingController();
 
+  // 6-Digit Email OTP Verification State
+  bool _isVerifyingOtp = false;
+  String _pendingEmail = '';
+  final TextEditingController _otpCtrl = TextEditingController();
+  int _resendCooldown = 0;
+  Timer? _resendTimer;
+
   @override
   void initState() {
     super.initState();
@@ -90,6 +98,8 @@ class _AuthModalState extends State<AuthModal> {
     _inviteTokenCtrl.dispose();
     _invitePassCtrl.dispose();
     _inviteConfirmCtrl.dispose();
+    _otpCtrl.dispose();
+    _resendTimer?.cancel();
     super.dispose();
   }
 
@@ -185,6 +195,102 @@ class _AuthModalState extends State<AuthModal> {
     }
   }
 
+  void _startResendCooldown() {
+    setState(() => _resendCooldown = 60);
+    _resendTimer?.cancel();
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_resendCooldown > 0) {
+        setState(() => _resendCooldown--);
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  Future<void> _submitVerifyOtp() async {
+    final code = _otpCtrl.text.trim();
+    if (code.length < 6) {
+      setState(() => _errorMessage = 'Please enter the complete 6-digit verification code.');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final res = await SupabaseAuthService.verifyEmailOtp(
+      email: _pendingEmail,
+      token: code,
+    );
+
+    if (!mounted) return;
+
+    if (res.success && res.profile != null) {
+      setState(() => _isLoading = false);
+      await widget.repository.loginUser(res.profile!);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      widget.onSuccess?.call();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_rounded, color: AppTheme.primary),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Email confirmed! Welcome to AutoDetailCraft, ${res.profile!.displayName}!')),
+            ],
+          ),
+          backgroundColor: AppTheme.surface,
+        ),
+      );
+    } else {
+      // Fallback: If user was already confirmed via trigger/link, attempt signing in
+      final pass = _passwordCtrl.text.trim();
+      if (pass.isNotEmpty) {
+        final signRes = await SupabaseAuthService.signIn(email: _pendingEmail, password: pass);
+        if (signRes.success && signRes.profile != null) {
+          setState(() => _isLoading = false);
+          await widget.repository.loginUser(signRes.profile!);
+          if (!mounted) return;
+          Navigator.of(context).pop();
+          widget.onSuccess?.call();
+          return;
+        }
+      }
+      setState(() {
+        _isLoading = false;
+        _errorMessage = res.error ?? 'Invalid verification code. Please check your email and try again.';
+      });
+    }
+  }
+
+  Future<void> _resendOtp() async {
+    if (_resendCooldown > 0) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    final res = await SupabaseAuthService.resendSignupOtp(_pendingEmail);
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    if (res.success) {
+      _startResendCooldown();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Fresh 6-digit verification code sent! Check your inbox.'),
+          backgroundColor: AppTheme.surface,
+        ),
+      );
+    } else {
+      setState(() => _errorMessage = res.error ?? 'Failed to resend code.');
+    }
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -210,23 +316,13 @@ class _AuthModalState extends State<AuthModal> {
       if (!mounted) return;
       setState(() => _isLoading = false);
 
-      if (res.success && res.profile != null) {
-        await widget.repository.loginUser(res.profile!);
-        if (!mounted) return;
-        Navigator.of(context).pop();
-        widget.onSuccess?.call();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle_rounded, color: AppTheme.primary),
-                const SizedBox(width: 8),
-                Text('Welcome to AutoDetailCraft, ${res.profile!.displayName}!'),
-              ],
-            ),
-            backgroundColor: AppTheme.surface,
-          ),
-        );
+      if (res.success) {
+        setState(() {
+          _isVerifyingOtp = true;
+          _pendingEmail = email;
+          _errorMessage = null;
+        });
+        _startResendCooldown();
       } else {
         setState(() => _errorMessage = res.error ?? 'Sign up failed.');
       }
@@ -256,6 +352,15 @@ class _AuthModalState extends State<AuthModal> {
             backgroundColor: AppTheme.surface,
           ),
         );
+      } else if (res.error != null && res.error!.toLowerCase().contains('confirmation is pending')) {
+        setState(() {
+          _isLoading = false;
+          _isVerifyingOtp = true;
+          _pendingEmail = email;
+          _errorMessage = 'Email confirmation pending. Please enter your 6-digit code:';
+        });
+        _startResendCooldown();
+        SupabaseAuthService.resendSignupOtp(email);
       } else {
         // Fallback: check if this matches staff member credentials across company roster
         final staffRes = await widget.repository.loginStaffMember(
@@ -360,7 +465,175 @@ class _AuthModalState extends State<AuthModal> {
                   ),
                 ),
               ),
-              if (_isInviteMode) ...[
+              if (_isVerifyingOtp) ...[
+                // 6-Digit Email OTP Verification View
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withAlpha(25),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.mark_email_read_rounded, color: AppTheme.primary, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Verify Your Email',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                          Text(
+                            'Enter the 6-digit confirmation code',
+                            style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.email_outlined, size: 16, color: AppTheme.primary),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _pendingEmail,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => setState(() {
+                          _isVerifyingOtp = false;
+                          _errorMessage = null;
+                        }),
+                        style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(40, 24)),
+                        child: const Text('Edit', style: TextStyle(color: AppTheme.primary, fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Error Banner
+                if (_errorMessage != null) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withAlpha(25),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.redAccent.withAlpha(100)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline_rounded, size: 18, color: Colors.redAccent),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+
+                // 6-Digit Code Input
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 280),
+                    child: TextFormField(
+                      controller: _otpCtrl,
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                      textAlign: TextAlign.center,
+                      autofocus: true,
+                      style: const TextStyle(
+                        fontSize: 28,
+                        letterSpacing: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: '••••••',
+                        hintStyle: const TextStyle(fontSize: 28, letterSpacing: 10, color: AppTheme.textMuted),
+                        counterText: '',
+                        filled: true,
+                        fillColor: AppTheme.surfaceLight,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.border)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppTheme.primary, width: 2)),
+                      ),
+                      onFieldSubmitted: (_) => _submitVerifyOtp(),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+
+                // Verify Button
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: _isLoading ? null : _submitVerifyOtp,
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                        )
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.check_circle_outline_rounded, size: 18),
+                            SizedBox(width: 8),
+                            Text(
+                              'Verify & Complete Sign Up',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            ),
+                          ],
+                        ),
+                ),
+                const SizedBox(height: 16),
+
+                // Resend Cooldown
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      _resendCooldown > 0
+                          ? 'Resend code in ${_resendCooldown}s'
+                          : "Didn't receive the code?",
+                      style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                    ),
+                    if (_resendCooldown == 0) ...[
+                      const SizedBox(width: 6),
+                      TextButton(
+                        onPressed: _isLoading ? null : _resendOtp,
+                        style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(60, 24)),
+                        child: const Text('Resend Code', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold, fontSize: 12)),
+                      ),
+                    ],
+                  ],
+                ),
+              ] else if (_isInviteMode) ...[
                 // Staff Invite Header
                 Row(
                   children: [

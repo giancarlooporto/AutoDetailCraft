@@ -308,6 +308,91 @@ class SupabaseAuthService {
     }
   }
 
+  /// Verify 6-digit email signup OTP code
+  static Future<({bool success, String? error, UserProfile? profile})> verifyEmailOtp({
+    required String email,
+    required String token,
+  }) async {
+    final client = _client;
+    if (client == null) {
+      return (success: false, error: 'Backend not ready. Please try again.', profile: null);
+    }
+
+    try {
+      final response = await client.auth.verifyOTP(
+        email: email.trim(),
+        token: token.trim(),
+        type: OtpType.signup,
+      );
+
+      final user = response.user;
+      if (user == null) {
+        return (success: false, error: 'Verification failed. Please check the code and try again.', profile: null);
+      }
+
+      // 1. Fetch or create verified cloud profile
+      var profile = await SupabaseDbService.fetchUserProfile(user.id);
+      if (profile == null) {
+        final guestProfile = await LocalStorageService.loadUserById('usr_you');
+        final localPackages = await LocalStorageService.loadServicePackages();
+        final hasPackages = localPackages.isNotEmpty;
+        final startingPrice = hasPackages
+            ? localPackages.map((p) => p.basePrice).reduce((a, b) => a < b ? a : b)
+            : 150.0;
+
+        profile = UserProfile(
+          id: user.id,
+          role: hasPackages ? UserRole.detailer : UserRole.client,
+          username: email.split('@').first,
+          displayName: (user.userMetadata?['display_name'] as String?) ??
+              ((guestProfile != null && guestProfile.displayName.isNotEmpty && guestProfile.displayName != 'Vehicle Owner')
+                  ? guestProfile.displayName
+                  : email.split('@').first),
+          businessName: guestProfile?.businessName ?? '',
+          avatarUrl: guestProfile?.avatarUrl ?? '',
+          coverUrl: guestProfile?.coverUrl ?? '',
+          location: guestProfile?.location ?? '',
+          serviceRadius: (guestProfile?.serviceRadius.isNotEmpty == true)
+              ? guestProfile!.serviceRadius
+              : '25 miles • Mobile & Studio',
+          bio: guestProfile?.bio ?? '',
+          phone: (user.userMetadata?['phone'] as String?) ?? (guestProfile?.phone ?? ''),
+          instagramHandle: guestProfile?.instagramHandle ?? '',
+          servicePackages: localPackages,
+          startingPrice: startingPrice,
+          isVerifiedHost: hasPackages,
+          myGarage: const [],
+          teamMembers: const [],
+        );
+        await SupabaseDbService.saveUserProfile(profile);
+      }
+
+      await LocalStorageService.saveCurrentUser(profile);
+      return (success: true, error: null, profile: profile);
+    } on AuthException catch (e) {
+      return (success: false, error: e.message, profile: null);
+    } catch (e) {
+      return (success: false, error: e.toString(), profile: null);
+    }
+  }
+
+  /// Resend 6-digit signup confirmation code
+  static Future<({bool success, String? error})> resendSignupOtp(String email) async {
+    final client = _client;
+    if (client == null) return (success: false, error: 'Backend not ready.');
+    try {
+      await client.auth.resend(
+        type: OtpType.signup,
+        email: email.trim(),
+      );
+      return (success: true, error: null);
+    } on AuthException catch (e) {
+      return (success: false, error: e.message);
+    } catch (e) {
+      return (success: false, error: e.toString());
+    }
+  }
+
   /// Send password reset email
   static Future<({bool success, String? error})> sendPasswordReset(String email) async {
     final client = _client;
