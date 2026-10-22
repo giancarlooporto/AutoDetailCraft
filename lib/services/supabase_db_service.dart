@@ -1120,26 +1120,28 @@ class SupabaseDbService {
 
   // ─── BOOKINGS ─────────────────────────────────────────────────────────────
 
-  /// Upsert a booking appointment to Supabase
+  /// Upsert a booking appointment to Supabase with schema fallback resilience
   static Future<void> saveBooking(BookingAppointment booking) async {
     final client = _client;
     if (client == null) return;
 
     try {
-      await client.from('bookings').upsert({
+      final emailFallback = booking.clientEmail.isNotEmpty
+          ? booking.clientEmail
+          : 'guest@autodetailcraft.com';
+
+      // Primary payload matching live Supabase bookings schema
+      final basePayload = <String, dynamic>{
         'id': booking.id,
         'client_id': booking.clientId,
         'detailer_id': booking.detailerId,
-        'detailer_name': booking.detailerName,
-        'detailer_business_name': booking.detailerBusinessName,
-        'detailer_avatar': booking.detailerAvatar,
         'client_name': booking.clientName,
         'client_phone': booking.clientPhone,
-        'client_email': booking.clientEmail,
+        'client_email': emailFallback,
         'vehicle_year_make_model': booking.vehicleYearMakeModel,
         'vehicle_size': booking.vehicleSize.name,
-        'package': booking.package.toJson(),
-        'location_type': booking.locationType.name,
+        'package_data': booking.package.toJson(),
+        'service_location_type': booking.locationType.name,
         'client_address': booking.clientAddress,
         'scheduled_date': booking.scheduledDate.toIso8601String(),
         'scheduled_time_slot': booking.scheduledTimeSlot,
@@ -1149,12 +1151,30 @@ class SupabaseDbService {
         'client_notes': booking.clientNotes,
         'pre_inspection_summary': booking.preInspectionSummary,
         'warranty_passport_id': booking.warrantyPassportId,
-        if (booking.assignedTeamMemberId != null)
-          'assigned_team_member_id': booking.assignedTeamMemberId,
-        if (booking.assignedTeamMemberName != null)
-          'assigned_team_member_name': booking.assignedTeamMemberName,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
-      });
+      };
+
+      try {
+        await client.from('bookings').upsert({
+          ...basePayload,
+          'package': booking.package.toJson(),
+          'location_type': booking.locationType.name,
+          'detailer_name': booking.detailerName,
+          'detailer_business_name': booking.detailerBusinessName,
+          'detailer_avatar': booking.detailerAvatar,
+          if (booking.assignedTeamMemberId != null)
+            'assigned_team_member_id': booking.assignedTeamMemberId,
+          if (booking.assignedTeamMemberName != null)
+            'assigned_team_member_name': booking.assignedTeamMemberName,
+        });
+      } on PostgrestException catch (pe) {
+        if (pe.code == 'PGRST204' || pe.code == '42703') {
+          // Schema drift fallback: upsert with live table columns
+          await client.from('bookings').upsert(basePayload);
+        } else {
+          rethrow;
+        }
+      }
       if (kDebugMode) print('[SupabaseDbService] Booking saved to Supabase: ${booking.id}');
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error saving booking: $e');

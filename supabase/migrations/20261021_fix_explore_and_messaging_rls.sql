@@ -93,17 +93,26 @@ CREATE POLICY "Allow insert on vehicles" ON public.vehicles FOR INSERT WITH CHEC
 CREATE POLICY "Allow update on vehicles" ON public.vehicles FOR UPDATE USING (true);
 CREATE POLICY "Allow delete on vehicles" ON public.vehicles FOR DELETE USING (true);
 
--- 8. PROFILES COLUMNS & REALTIME (Ensure insurance columns and realtime publication exist)
+-- 8. PROFILES & BOOKINGS COLUMNS & REALTIME
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS is_insurance_verified boolean DEFAULT false,
   ADD COLUMN IF NOT EXISTS insurance_policy_number text DEFAULT '',
   ADD COLUMN IF NOT EXISTS insurance_expiry_date date;
 
+ALTER TABLE public.bookings
+  ADD COLUMN IF NOT EXISTS detailer_name text,
+  ADD COLUMN IF NOT EXISTS detailer_business_name text,
+  ADD COLUMN IF NOT EXISTS detailer_avatar text DEFAULT '',
+  ADD COLUMN IF NOT EXISTS assigned_team_member_id text,
+  ADD COLUMN IF NOT EXISTS assigned_team_member_name text;
+
 ALTER TABLE public.profiles REPLICA IDENTITY FULL;
+ALTER TABLE public.bookings REPLICA IDENTITY FULL;
 
 DO $$
 BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.bookings;
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 

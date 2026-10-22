@@ -1576,9 +1576,7 @@ class JobRepository extends ChangeNotifier {
     if (existingIdx != -1) {
       _bookings[existingIdx] = booking;
       _persistBookings();
-      if (_isLoggedIn) {
-        SupabaseDbService.saveBooking(booking);
-      }
+      SupabaseDbService.saveBooking(booking);
       notifyListeners();
       return true;
     }
@@ -1599,9 +1597,7 @@ class JobRepository extends ChangeNotifier {
 
     _bookings.insert(0, booking);
     _persistBookings();
-    if (_isLoggedIn) {
-      SupabaseDbService.saveBooking(booking);
-    }
+    SupabaseDbService.saveBooking(booking);
     notifyListeners();
     return true;
   }

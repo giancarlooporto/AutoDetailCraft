@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 
 enum VehicleSize {
@@ -237,39 +238,59 @@ class BookingAppointment {
     if (assignedTeamMemberName != null) 'assignedTeamMemberName': assignedTeamMemberName,
   };
 
-  factory BookingAppointment.fromJson(Map<String, dynamic> json) => BookingAppointment(
-    id: json['id'] as String? ?? 'bk_${DateTime.now().millisecondsSinceEpoch}',
-    clientId: json['clientId'] as String?,
-    detailerId: json['detailerId'] as String? ?? '',
-    detailerName: json['detailerName'] as String? ?? '',
-    detailerBusinessName: json['detailerBusinessName'] as String? ?? '',
-    detailerAvatar: json['detailerAvatar'] as String? ?? '',
-    clientName: json['clientName'] as String? ?? '',
-    clientPhone: json['clientPhone'] as String? ?? '',
-    clientEmail: json['clientEmail'] as String? ?? '',
-    vehicleYearMakeModel: json['vehicleYearMakeModel'] as String? ?? '',
-    vehicleSize: VehicleSize.values.firstWhere(
-      (v) => v.name == json['vehicleSize'],
-      orElse: () => VehicleSize.coupeSedan,
-    ),
-    package: ServicePackage.fromJson(Map<String, dynamic>.from(json['package'] as Map)),
-    locationType: ServiceLocationType.values.firstWhere(
-      (l) => l.name == json['locationType'],
-      orElse: () => ServiceLocationType.mobile,
-    ),
-    clientAddress: json['clientAddress'] as String? ?? '',
-    scheduledDate: DateTime.tryParse(json['scheduledDate'] as String? ?? '') ?? DateTime.now(),
-    scheduledTimeSlot: json['scheduledTimeSlot'] as String? ?? '9:00 AM',
-    totalPrice: (json['totalPrice'] as num?)?.toDouble() ?? 0.0,
-    depositAmount: (json['depositAmount'] as num?)?.toDouble() ?? 0.0,
-    status: BookingStatus.values.firstWhere(
-      (s) => s.name == json['status'],
-      orElse: () => BookingStatus.confirmed,
-    ),
-    clientNotes: json['clientNotes'] as String?,
-    preInspectionSummary: json['preInspectionSummary'] as String?,
-    warrantyPassportId: json['warrantyPassportId'] as String?,
-    assignedTeamMemberId: json['assignedTeamMemberId'] as String?,
-    assignedTeamMemberName: json['assignedTeamMemberName'] as String?,
-  );
+  factory BookingAppointment.fromJson(Map<String, dynamic> json) {
+    final rawPackage = json['package'] ?? json['package_data'];
+    final packageMap = rawPackage is Map
+        ? Map<String, dynamic>.from(rawPackage)
+        : (rawPackage is String ? Map<String, dynamic>.from(jsonDecode(rawPackage) as Map) : <String, dynamic>{});
+
+    final locRaw = json['locationType'] ?? json['location_type'] ?? json['service_location_type'];
+    final vehicleSizeRaw = json['vehicleSize'] ?? json['vehicle_size'];
+    final statusRaw = json['status'];
+
+    return BookingAppointment(
+      id: (json['id'] as String?) ?? 'bk_${DateTime.now().millisecondsSinceEpoch}',
+      clientId: (json['clientId'] ?? json['client_id']) as String?,
+      detailerId: (json['detailerId'] ?? json['detailer_id']) as String? ?? '',
+      detailerName: (json['detailerName'] ?? json['detailer_name']) as String? ?? '',
+      detailerBusinessName: (json['detailerBusinessName'] ?? json['detailer_business_name']) as String? ?? '',
+      detailerAvatar: (json['detailerAvatar'] ?? json['detailer_avatar']) as String? ?? '',
+      clientName: (json['clientName'] ?? json['client_name']) as String? ?? '',
+      clientPhone: (json['clientPhone'] ?? json['client_phone']) as String? ?? '',
+      clientEmail: (json['clientEmail'] ?? json['client_email']) as String? ?? '',
+      vehicleYearMakeModel: (json['vehicleYearMakeModel'] ?? json['vehicle_year_make_model']) as String? ?? '',
+      vehicleSize: VehicleSize.values.firstWhere(
+        (v) => v.name == vehicleSizeRaw,
+        orElse: () => VehicleSize.coupeSedan,
+      ),
+      package: packageMap.isNotEmpty
+          ? ServicePackage.fromJson(packageMap)
+          : ServicePackage(
+              id: 'pkg_fallback',
+              title: 'Standard Service',
+              description: 'Professional detailing package',
+              basePrice: ((json['totalPrice'] ?? json['total_price']) as num?)?.toDouble() ?? 0.0,
+              estimatedDuration: '2 hours',
+              includes: const ['Full detail service'],
+            ),
+      locationType: ServiceLocationType.values.firstWhere(
+        (l) => l.name == locRaw,
+        orElse: () => ServiceLocationType.mobile,
+      ),
+      clientAddress: (json['clientAddress'] ?? json['client_address']) as String? ?? '',
+      scheduledDate: DateTime.tryParse((json['scheduledDate'] ?? json['scheduled_date']) as String? ?? '') ?? DateTime.now(),
+      scheduledTimeSlot: (json['scheduledTimeSlot'] ?? json['scheduled_time_slot']) as String? ?? '9:00 AM',
+      totalPrice: ((json['totalPrice'] ?? json['total_price']) as num?)?.toDouble() ?? 0.0,
+      depositAmount: ((json['depositAmount'] ?? json['deposit_amount']) as num?)?.toDouble() ?? 0.0,
+      status: BookingStatus.values.firstWhere(
+        (s) => s.name == statusRaw,
+        orElse: () => BookingStatus.confirmed,
+      ),
+      clientNotes: (json['clientNotes'] ?? json['client_notes']) as String?,
+      preInspectionSummary: (json['preInspectionSummary'] ?? json['pre_inspection_summary']) as String?,
+      warrantyPassportId: (json['warrantyPassportId'] ?? json['warranty_passport_id']) as String?,
+      assignedTeamMemberId: (json['assignedTeamMemberId'] ?? json['assigned_team_member_id']) as String?,
+      assignedTeamMemberName: (json['assignedTeamMemberName'] ?? json['assigned_team_member_name']) as String?,
+    );
+  }
 }
