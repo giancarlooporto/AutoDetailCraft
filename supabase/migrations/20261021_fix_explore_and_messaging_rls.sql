@@ -136,7 +136,7 @@ BEGIN
   SET client_id = current_user_id,
       updated_at = timezone('utc'::text, now())
   WHERE lower(trim(client_email)) = lower(trim(target_email))
-    AND (client_id IS NULL OR client_id = '' OR client_id = 'usr_you' OR client_id != current_user_id);
+    AND (client_id IS NULL OR client_id::text = '' OR client_id::text = 'usr_you');
 
   GET DIAGNOSTICS claimed_count = ROW_COUNT;
   RETURN claimed_count;

@@ -371,5 +371,148 @@ void main() {
         tearDownMockImageHttpClient();
       }
     });
+
+    test('Unit 3: Local guest bookings on device persist in clientBookings after login', () async {
+      final repo = JobRepository();
+      await repo.init();
+
+      // Guest creates booking on device
+      final localBooking = BookingAppointment(
+        id: 'guest_local_persists_01',
+        clientId: null,
+        detailerId: studioDetailer.id,
+        detailerName: studioDetailer.displayName,
+        detailerBusinessName: studioDetailer.businessName,
+        detailerAvatar: '',
+        clientName: 'Local User',
+        clientPhone: '555-999-8888',
+        clientEmail: 'local.user@example.com',
+        vehicleYearMakeModel: 'Porsche 911 GT3',
+        vehicleSize: VehicleSize.coupeSedan,
+        package: testPkg,
+        locationType: ServiceLocationType.shop,
+        clientAddress: 'Austin, TX',
+        scheduledDate: DateTime(2026, 12, 1),
+        scheduledTimeSlot: '10:00 AM - 1:00 PM',
+        totalPrice: 450.0,
+        depositAmount: 100.0,
+        status: BookingStatus.confirmed,
+      );
+      repo.addBooking(localBooking);
+
+      expect(repo.clientBookings.length, 1);
+
+      // Now user logs in as client with a username (before cloud claim or offline)
+      await repo.loginUser(const UserProfile(
+        id: 'usr_newly_logged_in_client',
+        username: 'client_user_no_email',
+        displayName: 'Client Name',
+        role: UserRole.client,
+      ));
+
+      // The local guest booking MUST NOT vanish from clientBookings
+      expect(repo.isLoggedIn, isTrue);
+      expect(repo.clientBookings.any((b) => b.id == 'guest_local_persists_01'), isTrue);
+    });
+
+    test('Unit 4: clientBookings trims leading/trailing spaces and normalizes uppercase email', () async {
+      final repo = JobRepository();
+      await repo.init();
+
+      final bookingWithSpaces = BookingAppointment(
+        id: 'space_booking_01',
+        clientId: 'another_user',
+        detailerId: studioDetailer.id,
+        detailerName: studioDetailer.displayName,
+        detailerBusinessName: studioDetailer.businessName,
+        detailerAvatar: '',
+        clientName: 'Space User',
+        clientPhone: '555-111-2222',
+        clientEmail: '  ALICE.SPACES@EXAMPLE.COM  ',
+        vehicleYearMakeModel: 'BMW M3',
+        vehicleSize: VehicleSize.coupeSedan,
+        package: testPkg,
+        locationType: ServiceLocationType.shop,
+        clientAddress: 'Austin, TX',
+        scheduledDate: DateTime(2026, 12, 2),
+        scheduledTimeSlot: '10:00 AM - 1:00 PM',
+        totalPrice: 300.0,
+        depositAmount: 50.0,
+        status: BookingStatus.confirmed,
+      );
+      repo.addBooking(bookingWithSpaces);
+
+      // Log in with clean lowercase email
+      await repo.loginUser(const UserProfile(
+        id: 'usr_clean_alice',
+        username: 'alice.spaces@example.com',
+        displayName: 'Alice Spaces',
+        role: UserRole.client,
+      ));
+
+      // Successfully matches via dual-key despite spaces and casing in booking
+      expect(repo.clientBookings.any((b) => b.id == 'space_booking_01'), isTrue);
+    });
+
+    testWidgets('UI 4: BookingsListScreen details modal shows client status explanation and Call Studio action', (tester) async {
+      setupMockImageHttpClient();
+      try {
+        final repo = JobRepository();
+        await repo.init();
+
+        final clientAppt = BookingAppointment(
+          id: 'appt_client_view_01',
+          clientId: 'client_id_123',
+          detailerId: studioDetailer.id,
+          detailerName: studioDetailer.displayName,
+          detailerBusinessName: studioDetailer.businessName,
+          detailerAvatar: '',
+          clientName: 'Customer Jane',
+          clientPhone: '555-444-5555',
+          clientEmail: 'jane@example.com',
+          vehicleYearMakeModel: 'Audi RS6 Avant',
+          vehicleSize: VehicleSize.coupeSedan,
+          package: testPkg,
+          locationType: ServiceLocationType.shop,
+          clientAddress: '100 Studio Way',
+          scheduledDate: DateTime.now().add(const Duration(days: 1)),
+          scheduledTimeSlot: '9:00 AM - 1:00 PM',
+          totalPrice: 600.0,
+          depositAmount: 150.0,
+          status: BookingStatus.pending,
+        );
+        repo.addBooking(clientAppt);
+
+        await repo.loginUser(const UserProfile(
+          id: 'client_id_123',
+          username: 'jane@example.com',
+          displayName: 'Customer Jane',
+          role: UserRole.client,
+        ));
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: BookingsListScreen(repository: repo),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Tap on booking card to open details modal
+        await tester.tap(find.text('Audi RS6 Avant'));
+        await tester.pumpAndSettle();
+
+        // Modal should show Call Studio (not Call Host)
+        expect(find.text('Call Studio'), findsOneWidget);
+
+        // Modal should show client reassurance status banner
+        expect(find.text('Awaiting studio confirmation. Your deposit is held securely in escrow.'), findsOneWidget);
+
+        // Modal should NOT show host "Confirm & Accept Booking" button because user is client!
+        expect(find.text('Confirm & Accept Booking'), findsNothing);
+      } finally {
+        tearDownMockImageHttpClient();
+      }
+    });
   });
 }

@@ -288,7 +288,7 @@ begin
   set client_id = current_user_id,
       updated_at = timezone('utc'::text, now())
   where lower(trim(client_email)) = lower(trim(target_email))
-    and (client_id is null or client_id = '' or client_id = 'usr_you' or client_id != current_user_id);
+    and (client_id is null or client_id::text = '' or client_id::text = 'usr_you');
 
   get diagnostics claimed_count = row_count;
   return claimed_count;

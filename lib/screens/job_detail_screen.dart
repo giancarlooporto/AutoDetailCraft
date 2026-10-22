@@ -1848,7 +1848,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                       widget.repository != null &&
                       widget.repository!.currentUser.id != _currentJob.author.id;
 
-                  if (isNarrow && hasVisitorActions) {
+                  if (isNarrow) {
                     return Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1901,65 +1901,91 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: _messagingLoading ? null : _messageDetailer,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppTheme.surfaceLight,
-                                  foregroundColor: AppTheme.textPrimary,
-                                  side: const BorderSide(color: AppTheme.border),
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                  minimumSize: const Size(0, 38),
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  elevation: 0,
-                                ),
-                                child: _messagingLoading
-                                    ? const SizedBox(
-                                        width: 14,
-                                        height: 14,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: AppTheme.primary,
+                        if (_isOwner) ...[
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              key: const Key('job_detail_owner_edit_button'),
+                              onPressed: _openEditRecipe,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.surfaceLight,
+                                foregroundColor: AppTheme.primary,
+                                side: const BorderSide(color: AppTheme.border),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                minimumSize: const Size(0, 36),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                elevation: 0,
+                              ),
+                              icon: const Icon(Icons.edit_outlined, size: 15, color: AppTheme.primary),
+                              label: const Text(
+                                'Edit',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppTheme.primary),
+                              ),
+                            ),
+                          ),
+                        ] else if (hasVisitorActions) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _messagingLoading ? null : _messageDetailer,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.surfaceLight,
+                                    foregroundColor: AppTheme.textPrimary,
+                                    side: const BorderSide(color: AppTheme.border),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                    minimumSize: const Size(0, 38),
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    elevation: 0,
+                                  ),
+                                  child: _messagingLoading
+                                      ? const SizedBox(
+                                          width: 14,
+                                          height: 14,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: AppTheme.primary,
+                                          ),
+                                        )
+                                      : const Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.chat_rounded, size: 15),
+                                            SizedBox(width: 6),
+                                            Text('Message', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                          ],
                                         ),
-                                      )
-                                    : const Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          Icon(Icons.chat_rounded, size: 15),
-                                          SizedBox(width: 6),
-                                          Text('Message', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                        ],
-                                      ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: _openBookingFlow,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppTheme.primary,
-                                  foregroundColor: Colors.black,
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                                  minimumSize: const Size(0, 38),
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  elevation: 0,
-                                ),
-                                icon: const Icon(Icons.bolt_rounded, size: 16, color: Colors.black),
-                                label: const Text(
-                                  'Book Service',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: _openBookingFlow,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.primary,
+                                    foregroundColor: Colors.black,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                    minimumSize: const Size(0, 38),
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    elevation: 0,
+                                  ),
+                                  icon: const Icon(Icons.bolt_rounded, size: 16, color: Colors.black),
+                                  label: const Text(
+                                    'Book Service',
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     );
                   }

@@ -381,9 +381,10 @@ class JobRepository extends ChangeNotifier {
           // Fallback to local cache if offline or slow network
         }
       } else {
-        // For guest visitors, refresh community jobs and detailers in the background
+        // For guest visitors, refresh community jobs, detailers, and device bookings in the background
         _refreshJobsFromCloud();
         _refreshPublicDetailersFromCloud();
+        _refreshBookingsFromCloud(_currentUser.id);
       }
 
       // 7. Load persistent messages & conversations
@@ -628,9 +629,17 @@ class JobRepository extends ChangeNotifier {
     try {
       final authEmail = SupabaseAuthService.currentAuthUser?.email ??
           (_currentUser.username.contains('@') ? _currentUser.username : null);
+      final localIds = _bookings.map((b) => b.id).toList();
+      final guestEmails = _bookings
+          .map((b) => b.clientEmail.trim().toLowerCase())
+          .where((e) => e.isNotEmpty && e.contains('@'))
+          .toList();
+
       final cloudBookings = await SupabaseDbService.fetchBookings(
         userId,
         userEmail: authEmail,
+        guestEmails: guestEmails,
+        bookingIds: localIds,
       );
 
       // Non-destructive union merge: merge cloud bookings with local bookings by id
@@ -714,8 +723,32 @@ class JobRepository extends ChangeNotifier {
     // 4. Claim guest bookings and refresh bookings and interactions from cloud
     final userEmail = SupabaseAuthService.currentAuthUser?.email ??
         (user.username.contains('@') ? user.username : null);
-    if (userEmail != null && userEmail.isNotEmpty) {
-      await SupabaseDbService.claimGuestBookings(userEmail);
+    final emailsToClaim = <String>{};
+    if (userEmail != null && userEmail.trim().isNotEmpty) {
+      emailsToClaim.add(userEmail.trim().toLowerCase());
+    }
+    for (final b in _bookings) {
+      final clean = b.clientEmail.trim().toLowerCase();
+      if ((b.clientId == null || b.clientId == '' || b.clientId == 'usr_you') && clean.contains('@')) {
+        emailsToClaim.add(clean);
+      }
+    }
+    for (final email in emailsToClaim) {
+      await SupabaseDbService.claimGuestBookings(email);
+    }
+    var localBookingsUpdated = false;
+    for (var i = 0; i < _bookings.length; i++) {
+      final b = _bookings[i];
+      if (b.clientId == null || b.clientId == '' || b.clientId == 'usr_you') {
+        if (emailsToClaim.contains(b.clientEmail.trim().toLowerCase())) {
+          _bookings[i] = b.copyWith(clientId: user.id);
+          SupabaseDbService.saveBooking(_bookings[i]);
+          localBookingsUpdated = true;
+        }
+      }
+    }
+    if (localBookingsUpdated) {
+      LocalStorageService.saveBookings(_bookings);
     }
     await _refreshBookingsFromCloud(user.id);
     await _refreshInteractionsFromCloud(user.id);
@@ -940,13 +973,16 @@ class JobRepository extends ChangeNotifier {
 
   // Client Bookings: Only personal bookings made by this user as a customer
   List<BookingAppointment> get clientBookings {
-    final authEmail = SupabaseAuthService.currentAuthUser?.email?.toLowerCase() ??
-        (_currentUser.username.contains('@') ? _currentUser.username.toLowerCase() : null);
+    final cleanAuthEmail = SupabaseAuthService.currentAuthUser?.email?.trim().toLowerCase() ??
+        (_currentUser.username.contains('@') ? _currentUser.username.trim().toLowerCase() : null);
     return _bookings.where((b) {
+      final cleanBookingEmail = b.clientEmail.trim().toLowerCase();
       final matchesId = b.clientId != null && b.clientId == _currentUser.id;
-      final matchesEmail = authEmail != null && authEmail.isNotEmpty && b.clientEmail.toLowerCase() == authEmail;
-      final matchesGuest = !_isLoggedIn && (b.clientId == null || b.clientId == 'usr_you');
-      return matchesId || matchesEmail || matchesGuest;
+      final matchesEmail = cleanAuthEmail != null && cleanAuthEmail.isNotEmpty && cleanBookingEmail == cleanAuthEmail;
+      // An unassigned guest booking on this device belongs to the client if not booked with self as detailer
+      final isGuestBooking = (b.clientId == null || b.clientId == '' || b.clientId == 'usr_you');
+      final matchesDeviceGuest = isGuestBooking && b.detailerId != _currentUser.id;
+      return matchesId || matchesEmail || matchesDeviceGuest;
     }).toList();
   }
 
@@ -3579,22 +3615,18 @@ class JobRepository extends ChangeNotifier {
         )
         .subscribe();
 
-    // 3. Bookings realtime channel
-    if (_isLoggedIn) {
-      _bookingsChannel = client
-          .channel('public:bookings')
-          .onPostgresChanges(
-            event: PostgresChangeEvent.all,
-            schema: 'public',
-            table: 'bookings',
-            callback: (_) {
-              if (_isLoggedIn) {
-                _refreshBookingsFromCloud(_currentUser.id);
-              }
-            },
-          )
-          .subscribe();
-    }
+    // 3. Bookings realtime channel (active for authenticated users and guests with bookings)
+    _bookingsChannel = client
+        .channel('public:bookings')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'bookings',
+          callback: (_) {
+            _refreshBookingsFromCloud(_currentUser.id);
+          },
+        )
+        .subscribe();
 
     // 4. User interactions realtime channel
     if (_isLoggedIn) {

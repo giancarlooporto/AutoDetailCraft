@@ -46,15 +46,19 @@ class BookingsListScreen extends StatelessWidget {
               const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(booking.package.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 2),
-                      Text('with ${booking.detailerBusinessName}', style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
-                    ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(booking.package.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 2),
+                        Text('with ${booking.detailerBusinessName}', style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 12),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
@@ -109,94 +113,120 @@ class BookingsListScreen extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 20),
-              // Status Management Actions
-              if (booking.status == BookingStatus.pending) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00E676),
-                      foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              if (repository.isLoggedIn && booking.detailerId == repository.currentUser.id) ...[
+                if (booking.status == BookingStatus.pending) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00E676),
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.check_circle_outline, size: 18),
+                      label: const Text('Confirm & Accept Booking', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () {
+                        repository.updateBookingStatus(booking.id, BookingStatus.confirmed);
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Booking confirmed & added to schedule!')),
+                        );
+                      },
                     ),
-                    icon: const Icon(Icons.check_circle_outline, size: 18),
-                    label: const Text('Confirm & Accept Booking', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onPressed: () {
-                      repository.updateBookingStatus(booking.id, BookingStatus.confirmed);
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Booking confirmed & added to schedule!')),
-                      );
-                    },
+                  ),
+                  const SizedBox(height: 10),
+                ] else if (booking.status == BookingStatus.confirmed) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFFB300),
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
+                      label: const Text('Start Service (In Progress)', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () {
+                        repository.updateBookingStatus(booking.id, BookingStatus.inProgress);
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Service is now in progress!')),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ] else if (booking.status == BookingStatus.inProgress) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2979FF),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.task_alt_rounded, size: 18),
+                      label: const Text('Complete Service & Release Escrow', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () {
+                        repository.updateBookingStatus(booking.id, BookingStatus.completed);
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Service marked as completed & escrow released!')),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+              ] else ...[
+                // Client perspective status explanation banner
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: booking.status.statusColor.withAlpha(20),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: booking.status.statusColor.withAlpha(70)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        booking.status == BookingStatus.pending
+                            ? Icons.hourglass_top_rounded
+                            : (booking.status == BookingStatus.confirmed
+                                ? Icons.event_available_rounded
+                                : (booking.status == BookingStatus.inProgress
+                                    ? Icons.auto_awesome_rounded
+                                    : Icons.verified_rounded)),
+                        color: booking.status.statusColor,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          booking.status == BookingStatus.pending
+                              ? 'Awaiting studio confirmation. Your deposit is held securely in escrow.'
+                              : (booking.status == BookingStatus.confirmed
+                                  ? 'Appointment confirmed! Please arrive within the arrival window: ${booking.scheduledTimeSlot}.'
+                                  : (booking.status == BookingStatus.inProgress
+                                      ? 'Service is actively in progress at ${booking.detailerBusinessName}.'
+                                      : (booking.status == BookingStatus.completed
+                                          ? 'Service completed! Your digital warranty passport is ready.'
+                                          : 'This appointment was cancelled.'))),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: booking.status.statusColor,
+                            height: 1.3,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 10),
-              ] else if (booking.status == BookingStatus.confirmed) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFFB300),
-                      foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
-                    label: const Text('Start Service (In Progress)', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onPressed: () {
-                      repository.updateBookingStatus(booking.id, BookingStatus.inProgress);
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Service is now in progress!')),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2979FF),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    icon: const Icon(Icons.task_alt_rounded, size: 18),
-                    label: const Text('Complete Service & Release Escrow', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onPressed: () {
-                      repository.updateBookingStatus(booking.id, BookingStatus.completed);
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Service marked as completed & escrow released!')),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 10),
-              ] else if (booking.status == BookingStatus.inProgress) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2979FF),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    icon: const Icon(Icons.task_alt_rounded, size: 18),
-                    label: const Text('Complete Service & Release Escrow', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onPressed: () {
-                      repository.updateBookingStatus(booking.id, BookingStatus.completed);
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Service marked as completed & escrow released!')),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 10),
               ],
               Row(
                 children: [
@@ -208,13 +238,18 @@ class BookingsListScreen extends StatelessWidget {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                       icon: const Icon(Icons.phone_outlined, size: 16),
-                      label: const Text('Call Host'),
+                      label: const Text('Call Studio'),
                       onPressed: () {
-                        final phone = booking.clientPhone.isNotEmpty ? booking.clientPhone : '(512) 555-0199';
+                        final detailer = repository.publicDetailers
+                            .where((d) => d.id == booking.detailerId)
+                            .firstOrNull;
+                        final phone = (detailer != null && detailer.phone.trim().isNotEmpty)
+                            ? detailer.phone.trim()
+                            : '(512) 555-0199';
                         Clipboard.setData(ClipboardData(text: phone));
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text('Detailer phone number ($phone) copied to clipboard!'),
+                            content: Text('Studio phone number ($phone) copied to clipboard!'),
                             action: SnackBarAction(label: 'Call', onPressed: () {}),
                           ),
                         );

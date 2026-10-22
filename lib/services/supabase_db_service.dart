@@ -1189,8 +1189,13 @@ class SupabaseDbService {
     }
   }
 
-  /// Fetches bookings related to a user (either as client or as detailer)
-  static Future<List<BookingAppointment>> fetchBookings(String userId, {String? userEmail}) async {
+  /// Fetches bookings related to a user (either as client, as detailer, by guest emails, or by booking IDs)
+  static Future<List<BookingAppointment>> fetchBookings(
+    String userId, {
+    String? userEmail,
+    List<String>? guestEmails,
+    List<String>? bookingIds,
+  }) async {
     final client = _client;
     if (client == null) return [];
 
@@ -1207,6 +1212,22 @@ class SupabaseDbService {
       }
       if (hasEmail) {
         filters.add('client_email.eq.$cleanEmail');
+      }
+      if (guestEmails != null) {
+        for (final email in guestEmails) {
+          final clean = email.trim().toLowerCase();
+          if (clean.isNotEmpty && clean.contains('@') && clean != cleanEmail) {
+            filters.add('client_email.eq.$clean');
+          }
+        }
+      }
+      if (bookingIds != null) {
+        for (final bId in bookingIds) {
+          final trimmed = bId.trim();
+          if (trimmed.isNotEmpty) {
+            filters.add('id.eq.$trimmed');
+          }
+        }
       }
 
       if (filters.isEmpty) {
