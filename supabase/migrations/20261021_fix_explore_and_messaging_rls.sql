@@ -150,6 +150,30 @@ $$;
 REVOKE ALL ON FUNCTION public.claim_guest_bookings(text) FROM public;
 GRANT EXECUTE ON FUNCTION public.claim_guest_bookings(text) TO authenticated, anon;
 
--- 10. Refresh schema cache
+-- 10. AUTO-CONFIRM USERS (Ensures test & client accounts can sign in immediately without email link confirmation)
+UPDATE auth.users
+SET email_confirmed_at = COALESCE(email_confirmed_at, now()),
+    confirmed_at = COALESCE(confirmed_at, now())
+WHERE email_confirmed_at IS NULL;
+
+CREATE OR REPLACE FUNCTION public.auto_confirm_new_users()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  NEW.email_confirmed_at := COALESCE(NEW.email_confirmed_at, now());
+  NEW.confirmed_at := COALESCE(NEW.confirmed_at, now());
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created_auto_confirm ON auth.users;
+CREATE TRIGGER on_auth_user_created_auto_confirm
+  BEFORE INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.auto_confirm_new_users();
+
+-- 11. Refresh schema cache
 NOTIFY pgrst, 'reload schema';
 

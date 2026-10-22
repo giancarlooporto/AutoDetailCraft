@@ -49,6 +49,21 @@ class SupabaseAuthService {
         return (success: false, error: 'Registration failed. Please try again.', profile: null);
       }
 
+      // If Supabase created the user in auth.users but session is null (email confirmation enabled),
+      // attempt an immediate sign-in in case auto-confirm is enabled, or establish session.
+      if (response.session == null) {
+        try {
+          await client.auth.signInWithPassword(
+            email: email.trim(),
+            password: password.trim(),
+          );
+        } on AuthException catch (ae) {
+          if (kDebugMode) {
+            print('[SupabaseAuthService] User created in Supabase auth.users; session pending email confirmation: ${ae.message}');
+          }
+        } catch (_) {}
+      }
+
       // 1. First check if there is an existing cloud profile in Supabase Database
       final cloudProfile = await SupabaseDbService.fetchUserProfile(user.id);
       if (cloudProfile != null) {
@@ -150,6 +165,14 @@ class SupabaseAuthService {
 
       return (success: true, error: null, profile: profile);
     } on AuthException catch (e) {
+      final msg = e.message;
+      if (msg.toLowerCase().contains('email not confirmed')) {
+        return (
+          success: false,
+          error: 'Email confirmation is pending. Please verify your email, or turn OFF "Confirm email" in Supabase Auth settings to sign in immediately.',
+          profile: null,
+        );
+      }
       return (success: false, error: e.message, profile: null);
     } catch (e) {
       return (success: false, error: e.toString(), profile: null);
@@ -271,6 +294,14 @@ class SupabaseAuthService {
 
       return (success: true, error: null, profile: profile);
     } on AuthException catch (e) {
+      final msg = e.message;
+      if (msg.toLowerCase().contains('email not confirmed')) {
+        return (
+          success: false,
+          error: 'Email confirmation is pending. Please verify your email, or turn OFF "Confirm email" in Supabase Auth settings to sign in immediately.',
+          profile: null,
+        );
+      }
       return (success: false, error: e.message, profile: null);
     } catch (e) {
       return (success: false, error: e.toString(), profile: null);
