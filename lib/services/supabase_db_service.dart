@@ -1121,9 +1121,9 @@ class SupabaseDbService {
   // ─── BOOKINGS ─────────────────────────────────────────────────────────────
 
   /// Upsert a booking appointment to Supabase with schema fallback resilience
-  static Future<void> saveBooking(BookingAppointment booking) async {
+  static Future<bool> saveBooking(BookingAppointment booking) async {
     final client = _client;
-    if (client == null) return;
+    if (client == null) return false;
 
     try {
       final emailFallback = booking.clientEmail.trim().isNotEmpty
@@ -1151,9 +1151,7 @@ class SupabaseDbService {
         'client_email': emailFallback,
         'vehicle_year_make_model': booking.vehicleYearMakeModel,
         'vehicle_size': booking.vehicleSize.name,
-        'package': booking.package.toJson(),
         'package_data': booking.package.toJson(),
-        'location_type': booking.locationType.name,
         'service_location_type': booking.locationType.name,
         'client_address': booking.clientAddress,
         'scheduled_date': booking.scheduledDate.toIso8601String(),
@@ -1175,17 +1173,23 @@ class SupabaseDbService {
           if (booking.assignedTeamMemberName != null)
             'assigned_team_member_name': booking.assignedTeamMemberName,
         });
+        if (kDebugMode) print('[SupabaseDbService] Booking saved to Supabase: ${booking.id}');
+        return true;
       } on PostgrestException catch (pe) {
         if (pe.code == 'PGRST204' || pe.code == '42703') {
-          // Schema drift fallback: upsert with live table columns
-          await client.from('bookings').upsert(basePayload);
+          // Schema drift fallback: try alternate column naming if schema uses package or location_type
+          final fallbackPayload = Map<String, dynamic>.from(basePayload);
+          fallbackPayload['package'] = booking.package.toJson();
+          fallbackPayload['location_type'] = booking.locationType.name;
+          await client.from('bookings').upsert(fallbackPayload);
+          return true;
         } else {
           rethrow;
         }
       }
-      if (kDebugMode) print('[SupabaseDbService] Booking saved to Supabase: ${booking.id}');
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error saving booking: $e');
+      return false;
     }
   }
 

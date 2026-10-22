@@ -104,7 +104,11 @@ ALTER TABLE public.bookings
   ADD COLUMN IF NOT EXISTS detailer_business_name text,
   ADD COLUMN IF NOT EXISTS detailer_avatar text DEFAULT '',
   ADD COLUMN IF NOT EXISTS assigned_team_member_id text,
-  ADD COLUMN IF NOT EXISTS assigned_team_member_name text;
+  ADD COLUMN IF NOT EXISTS assigned_team_member_name text,
+  ADD COLUMN IF NOT EXISTS package jsonb,
+  ADD COLUMN IF NOT EXISTS package_data jsonb,
+  ADD COLUMN IF NOT EXISTS location_type text,
+  ADD COLUMN IF NOT EXISTS service_location_type text;
 
 ALTER TABLE public.profiles REPLICA IDENTITY FULL;
 ALTER TABLE public.bookings REPLICA IDENTITY FULL;
@@ -125,18 +129,18 @@ SECURITY DEFINER
 AS $$
 DECLARE
   claimed_count integer;
-  current_user_id text;
+  current_uid uuid;
 BEGIN
-  current_user_id := auth.uid()::text;
-  IF current_user_id IS NULL OR target_email IS NULL OR trim(target_email) = '' THEN
+  current_uid := auth.uid();
+  IF current_uid IS NULL OR target_email IS NULL OR trim(target_email) = '' THEN
     RETURN 0;
   END IF;
 
   UPDATE public.bookings
-  SET client_id = current_user_id,
+  SET client_id = current_uid,
       updated_at = timezone('utc'::text, now())
   WHERE lower(trim(client_email)) = lower(trim(target_email))
-    AND (client_id IS NULL OR client_id::text = '' OR client_id::text = 'usr_you');
+    AND (client_id IS NULL OR client_id = current_uid);
 
   GET DIAGNOSTICS claimed_count = ROW_COUNT;
   RETURN claimed_count;

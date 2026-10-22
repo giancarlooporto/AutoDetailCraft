@@ -1660,6 +1660,15 @@ class JobRepository extends ChangeNotifier {
     return true;
   }
 
+  /// Asynchronous variant that awaits the Supabase upsert before completing
+  Future<bool> addBookingAsync(BookingAppointment booking, {bool allowOverbooking = false}) async {
+    final added = addBooking(booking, allowOverbooking: allowOverbooking);
+    if (added) {
+      await SupabaseDbService.saveBooking(booking);
+    }
+    return added;
+  }
+
   void updateBookingStatus(String bookingId, BookingStatus newStatus) {
     final idx = _bookings.indexWhere((b) => b.id == bookingId);
     if (idx != -1) {

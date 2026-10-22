@@ -208,7 +208,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     return (_calculatedTotal * 0.20).clamp(50.0, 200.0);
   }
 
-  void _confirmAndSubmitBooking() {
+  Future<void> _confirmAndSubmitBooking() async {
     final name = _nameCtrl.text.trim();
     final phone = _phoneCtrl.text.trim();
     final email = _emailCtrl.text.trim();
@@ -310,7 +310,8 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       warrantyPassportId: 'ADC-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
     );
 
-    final success = widget.repository.addBooking(booking);
+    final success = await widget.repository.addBookingAsync(booking);
+    if (!mounted) return;
     if (!success) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
