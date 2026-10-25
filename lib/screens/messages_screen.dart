@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../models/message_model.dart';
 import '../services/job_repository.dart';
+import '../widgets/ios_swipe_to_delete.dart';
 import 'chat_screen.dart';
 import 'auth_modal.dart';
 
@@ -114,102 +115,97 @@ class _MessagesScreenState extends State<MessagesScreen> {
         : '${isFromMe ? 'You: ' : ''}${lastMsg.text}';
     final timeLabel = lastMsg == null ? '' : _formatTime(lastMsg.createdAt);
 
-    return InkWell(
-      onTap: () => _openChat(conv),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Stack(
+    return IosSwipeToDelete(
+      key: ValueKey(conv.id),
+      onDelete: () => _confirmDeleteConversation(conv),
+      child: Material(
+        color: AppTheme.background,
+        child: InkWell(
+          onTap: () => _openChat(conv),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
               children: [
-                CircleAvatar(
-                  radius: 26,
-                  backgroundImage: conv.otherUserAvatar.isNotEmpty
-                      ? NetworkImage(conv.otherUserAvatar)
-                      : null,
-                  backgroundColor: AppTheme.surfaceLight,
-                  child: conv.otherUserAvatar.isEmpty
-                      ? const Icon(Icons.storefront_rounded, size: 26, color: AppTheme.textMuted)
-                      : null,
-                ),
-                if (conv.unreadCount > 0)
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Container(
-                      width: 16,
-                      height: 16,
-                      decoration: const BoxDecoration(
-                        color: AppTheme.primary,
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        conv.unreadCount > 9 ? '9+' : '${conv.unreadCount}',
-                        style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.black),
-                      ),
+                Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 26,
+                      backgroundImage: conv.otherUserAvatar.isNotEmpty
+                          ? NetworkImage(conv.otherUserAvatar)
+                          : null,
+                      backgroundColor: AppTheme.surfaceLight,
+                      child: conv.otherUserAvatar.isEmpty
+                          ? const Icon(Icons.storefront_rounded, size: 26, color: AppTheme.textMuted)
+                          : null,
                     ),
-                  ),
-              ],
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          conv.otherUserName.isNotEmpty ? conv.otherUserName : 'Unknown User',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.w600,
+                    if (conv.unreadCount > 0)
+                      Positioned(
+                        right: 0,
+                        top: 0,
+                        child: Container(
+                          width: 16,
+                          height: 16,
+                          decoration: const BoxDecoration(
+                            color: AppTheme.primary,
+                            shape: BoxShape.circle,
                           ),
-                          overflow: TextOverflow.ellipsis,
+                          alignment: Alignment.center,
+                          child: Text(
+                            conv.unreadCount > 9 ? '9+' : '${conv.unreadCount}',
+                            style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.black),
+                          ),
                         ),
                       ),
-                      if (timeLabel.isNotEmpty)
-                        Text(
-                          timeLabel,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: conv.unreadCount > 0 ? AppTheme.primary : AppTheme.textMuted,
-                            fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+                  ],
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              conv.otherUserName.isNotEmpty ? conv.otherUserName : 'Unknown User',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
+                          if (timeLabel.isNotEmpty)
+                            Text(
+                              timeLabel,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: conv.unreadCount > 0 ? AppTheme.primary : AppTheme.textMuted,
+                                fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        preview,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: conv.unreadCount > 0 ? AppTheme.textPrimary : AppTheme.textSecondary,
+                          fontWeight: conv.unreadCount > 0 ? FontWeight.w500 : FontWeight.normal,
                         ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    preview,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: conv.unreadCount > 0 ? AppTheme.textPrimary : AppTheme.textSecondary,
-                      fontWeight: conv.unreadCount > 0 ? FontWeight.w500 : FontWeight.normal,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded, color: AppTheme.textMuted, size: 20),
-                  tooltip: 'Delete conversation',
-                  splashRadius: 18,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => _confirmDeleteConversation(conv),
                 ),
+                const SizedBox(width: 8),
                 const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted, size: 20),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );

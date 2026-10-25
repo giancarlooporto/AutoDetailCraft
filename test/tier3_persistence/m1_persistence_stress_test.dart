@@ -63,7 +63,7 @@ void main() {
 
         expect(repo.isInitialized, isTrue);
         expect(repo.isInitializing, isFalse);
-        expect(repo.currentUser.servicePackages.isNotEmpty, isTrue);
+        expect(repo.currentUser.servicePackages.length, equals(0));
 
         // Subsequent call when already initialized is a safe no-op
         await repo.init();
@@ -226,8 +226,8 @@ void main() {
         final repo2 = JobRepository();
         await repo2.init();
 
-        // Expected: 4 standard + 20 remaining burst packages = 24
-        expect(repo2.currentUser.servicePackages.length, equals(24));
+        // Expected: 20 remaining burst packages (30 added - 10 removed)
+        expect(repo2.currentUser.servicePackages.length, equals(20));
 
         // Check updated packages
         for (int i = 1; i <= 10; i++) {
@@ -472,7 +472,7 @@ void main() {
         // Simulate refresh
         final refreshedRepo = await TestHarness.simulateBrowserRefresh(repo);
         expect(refreshedRepo.currentUser.servicePackages.any((p) => p.id == 'pkg_custom_bespoke'), isTrue);
-        expect(refreshedRepo.currentUser.servicePackages.length, greaterThanOrEqualTo(5));
+        expect(refreshedRepo.currentUser.servicePackages.length, greaterThanOrEqualTo(1));
       });
     });
   });

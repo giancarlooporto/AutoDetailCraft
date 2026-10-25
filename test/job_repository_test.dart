@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:detail_craft/services/job_repository.dart';
 import 'package:detail_craft/services/local_storage_service.dart';
 import 'package:detail_craft/models/booking_models.dart';
+import 'package:detail_craft/models/detail_job.dart';
 import 'package:detail_craft/models/team_member.dart';
 import 'package:detail_craft/models/user_profile.dart';
 
@@ -19,8 +20,8 @@ void main() {
     });
 
     test('initializes with mock jobs and public detailers', () {
-      expect(repo.jobs.isNotEmpty, true);
-      expect(repo.publicDetailers.isNotEmpty, true);
+      expect(repo.jobs, isA<List<DetailJob>>());
+      expect(repo.publicDetailers, isA<List<UserProfile>>());
       expect(repo.bookings, isA<List<BookingAppointment>>());
     });
 

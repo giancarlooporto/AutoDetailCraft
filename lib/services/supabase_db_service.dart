@@ -148,10 +148,11 @@ class SupabaseDbService {
       }
 
       final roleStr = res['role'] as String?;
+      final businessNameStr = (res['business_name'] as String?)?.trim() ?? '';
       UserRole parsedRole = UserRole.client;
       if (roleStr == 'superAdmin' || roleStr == 'super_admin') {
         parsedRole = UserRole.superAdmin;
-      } else if (roleStr == 'detailer' || packages.isNotEmpty) {
+      } else if (roleStr == 'detailer' || (roleStr != 'client' && businessNameStr.isNotEmpty)) {
         parsedRole = UserRole.detailer;
       }
 
@@ -1331,12 +1332,21 @@ class SupabaseDbService {
         if (kDebugMode) print('[SupabaseDbService] Booking saved to Supabase: ${booking.id}');
         return true;
       } on PostgrestException catch (pe) {
-        if (pe.code == 'PGRST204' || pe.code == '42703') {
+        if (pe.code == 'PGRST204' || pe.code == '42703' || pe.message.contains('package_data') || pe.message.contains('service_location_type')) {
           // Schema drift fallback: try alternate column naming if schema uses package or location_type
           final fallbackPayload = Map<String, dynamic>.from(basePayload);
+          fallbackPayload.remove('package_data');
+          fallbackPayload.remove('service_location_type');
           fallbackPayload['package'] = booking.package.toJson();
           fallbackPayload['location_type'] = booking.locationType.name;
-          await client.from('bookings').upsert(fallbackPayload);
+          await client.from('bookings').upsert({
+            ...fallbackPayload,
+            if (booking.assignedTeamMemberId != null)
+              'assigned_team_member_id': booking.assignedTeamMemberId,
+            if (booking.assignedTeamMemberName != null)
+              'assigned_team_member_name': booking.assignedTeamMemberName,
+          });
+          if (kDebugMode) print('[SupabaseDbService] Booking saved with fallback schema: ${booking.id}');
           return true;
         } else {
           rethrow;

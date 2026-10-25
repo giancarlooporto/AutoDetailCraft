@@ -673,7 +673,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                         key: const Key('reset_filters_btn'),
                                         onTap: () {
                                           _searchCtrl.clear();
-                                          widget.repository.setLocationFilter('All Locations');
+                                          widget.repository.clearFilters();
                                           setState(() {});
                                         },
                                         borderRadius: BorderRadius.circular(10),

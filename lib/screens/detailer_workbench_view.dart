@@ -21,6 +21,7 @@ import '../models/calendar_availability_block.dart';
 import '../models/shift_request.dart';
 import '../models/message_model.dart';
 import '../services/local_storage_service.dart';
+import '../widgets/ios_swipe_to_delete.dart';
 import 'chat_screen.dart';
 
 enum StudioHubSection {
@@ -4167,70 +4168,63 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         final c = convs[idx];
         final isSelected = _selectedStudioConversationId == c.id;
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 6),
-          decoration: BoxDecoration(
-            color: isSelected ? AppTheme.primary.withAlpha(20) : AppTheme.surface,
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: IosSwipeToDelete(
+            key: ValueKey(c.id),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: isSelected ? AppTheme.primary : AppTheme.border,
-              width: isSelected ? 1.5 : 1,
-            ),
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: ListTile(
-              dense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              leading: CircleAvatar(
-                radius: 18,
-                backgroundImage: c.otherUserAvatar.isNotEmpty ? NetworkImage(c.otherUserAvatar) : null,
-                backgroundColor: AppTheme.surfaceLight,
-                child: c.otherUserAvatar.isEmpty ? const Icon(Icons.person_rounded, size: 18, color: AppTheme.textMuted) : null,
+            onDelete: () => _confirmDeleteStudioConversation(c),
+            child: Container(
+              decoration: BoxDecoration(
+                color: isSelected ? const Color(0xFF1E2822) : AppTheme.surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isSelected ? AppTheme.primary : AppTheme.border,
+                  width: isSelected ? 1.5 : 1,
+                ),
               ),
-              title: Text(
-                c.otherUserName.isNotEmpty ? c.otherUserName : 'Customer',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isSelected ? AppTheme.primary : Colors.white),
-              ),
-              subtitle: Text(
-                c.lastMessage?.text ?? 'New conversation',
-                style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (c.unreadCount > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(10)),
-                      child: Text(
-                        '${c.unreadCount}',
-                        style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
-                      ),
-                    )
-                  else
-                    Text(
-                      DateFormat('MMM d').format(c.updatedAt),
-                      style: const TextStyle(fontSize: 10, color: AppTheme.textMuted),
-                    ),
-                  const SizedBox(width: 4),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppTheme.textMuted),
-                    tooltip: 'Delete conversation',
-                    splashRadius: 16,
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => _confirmDeleteStudioConversation(c),
+              child: Material(
+                color: Colors.transparent,
+                child: ListTile(
+                  dense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  leading: CircleAvatar(
+                    radius: 18,
+                    backgroundImage: c.otherUserAvatar.isNotEmpty ? NetworkImage(c.otherUserAvatar) : null,
+                    backgroundColor: AppTheme.surfaceLight,
+                    child: c.otherUserAvatar.isEmpty ? const Icon(Icons.person_rounded, size: 18, color: AppTheme.textMuted) : null,
                   ),
-                ],
+                  title: Text(
+                    c.otherUserName.isNotEmpty ? c.otherUserName : 'Customer',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isSelected ? AppTheme.primary : Colors.white),
+                  ),
+                  subtitle: Text(
+                    c.lastMessage?.text ?? 'New conversation',
+                    style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: c.unreadCount > 0
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(10)),
+                          child: Text(
+                            '${c.unreadCount}',
+                            style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
+                          ),
+                        )
+                      : Text(
+                          DateFormat('MMM d').format(c.updatedAt),
+                          style: const TextStyle(fontSize: 10, color: AppTheme.textMuted),
+                        ),
+                  onTap: () {
+                    setState(() {
+                      _selectedStudioConversationId = c.id;
+                      if (isMobile) _mobileStep = 2;
+                    });
+                  },
+                ),
               ),
-              onTap: () {
-                setState(() {
-                  _selectedStudioConversationId = c.id;
-                  if (isMobile) _mobileStep = 2;
-                });
-              },
             ),
           ),
         );

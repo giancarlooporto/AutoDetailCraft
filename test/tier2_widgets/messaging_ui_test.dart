@@ -64,14 +64,8 @@ void main() {
         final textFinder = find.text('Testing no duplicates');
         expect(textFinder, findsOneWidget);
 
-        // Verify message delete icon is present
-        final deleteMsgIcons = find.byIcon(Icons.delete_outline_rounded);
-        expect(deleteMsgIcons, findsWidgets); // AppBar conversation delete + message bubble delete
-
-        // Tap the message delete button
-        final deleteMsgBtn = find.byTooltip('Delete message');
-        expect(deleteMsgBtn, findsOneWidget);
-        await tester.tap(deleteMsgBtn);
+        // Long press the message bubble to trigger deletion
+        await tester.longPress(textFinder);
         await tester.pumpAndSettle();
 
         // Verify Delete Message confirmation dialog appears
@@ -120,6 +114,10 @@ void main() {
 
         // Check conversation is listed
         expect(find.text('You: Hello from client'), findsOneWidget);
+
+        // Swipe left to reveal iOS delete button
+        await tester.drag(find.text('You: Hello from client'), const Offset(-200, 0));
+        await tester.pumpAndSettle();
 
         // Find delete button on conversation tile
         final deleteBtn = find.byTooltip('Delete conversation');

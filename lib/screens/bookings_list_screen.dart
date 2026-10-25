@@ -455,46 +455,51 @@ class BookingsListScreen extends StatelessWidget {
   }
 
   Widget _buildGuestBookingsView(BuildContext context) {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withAlpha(20),
-                shape: BoxShape.circle,
-                border: Border.all(color: AppTheme.primary.withAlpha(60), width: 2),
+    return RefreshIndicator(
+      color: AppTheme.primary,
+      onRefresh: () async => await repository.refreshBookings(),
+      child: Center(
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withAlpha(20),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppTheme.primary.withAlpha(60), width: 2),
+                ),
+                child: const Icon(Icons.calendar_month_rounded, size: 50, color: AppTheme.primary),
               ),
-              child: const Icon(Icons.calendar_month_rounded, size: 50, color: AppTheme.primary),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'View & Manage Detailing Bookings',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Sign in to track your confirmed appointments, escrow deposits, and digital ceramic warranty certificates.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.5),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.black,
-                minimumSize: const Size(double.infinity, 46),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              const SizedBox(height: 20),
+              const Text(
+                'View & Manage Detailing Bookings',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                textAlign: TextAlign.center,
               ),
-              icon: const Icon(Icons.login_rounded, size: 18),
-              label: const Text('Sign In to View Bookings', style: TextStyle(fontWeight: FontWeight.bold)),
-              onPressed: () => AuthModal.show(context, repository: repository, initialIsSignUp: false),
-            ),
-          ],
+              const SizedBox(height: 8),
+              const Text(
+                'Sign in to track your confirmed appointments, escrow deposits, and digital ceramic warranty certificates.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.5),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.black,
+                  minimumSize: const Size(double.infinity, 46),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.login_rounded, size: 18),
+                label: const Text('Sign In to View Bookings', style: TextStyle(fontWeight: FontWeight.bold)),
+                onPressed: () => AuthModal.show(context, repository: repository, initialIsSignUp: false),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -603,34 +608,63 @@ class BookingsListScreen extends StatelessWidget {
     required IconData emptyIcon,
   }) {
     if (list.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(emptyIcon, size: 44, color: AppTheme.textMuted.withAlpha(120)),
-              const SizedBox(height: 14),
-              Text(
-                emptyTitle,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+      return RefreshIndicator(
+        color: AppTheme.primary,
+        onRefresh: () async => await repository.refreshBookings(),
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(emptyIcon, size: 44, color: AppTheme.textMuted.withAlpha(120)),
+                      const SizedBox(height: 14),
+                      Text(
+                        emptyTitle,
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        emptySubtitle,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 12, color: AppTheme.textMuted, height: 1.4),
+                      ),
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.primary,
+                          side: const BorderSide(color: AppTheme.primary),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        icon: const Icon(Icons.refresh_rounded, size: 16),
+                        label: const Text('Refresh Bookings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        onPressed: () => repository.refreshBookings(),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 6),
-              Text(
-                emptySubtitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 12, color: AppTheme.textMuted, height: 1.4),
-              ),
-            ],
+            ),
           ),
         ),
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: list.length,
-      itemBuilder: (ctx, idx) => _buildBookingCard(context, list[idx]),
+    return RefreshIndicator(
+      color: AppTheme.primary,
+      onRefresh: () async => await repository.refreshBookings(),
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        itemCount: list.length,
+        itemBuilder: (ctx, idx) => _buildBookingCard(context, list[idx]),
+      ),
     );
   }
 
@@ -647,6 +681,13 @@ class BookingsListScreen extends StatelessWidget {
           return Scaffold(
             appBar: AppBar(
               title: const Text('Appointments & Bookings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, size: 20),
+                  tooltip: 'Refresh bookings',
+                  onPressed: () => repository.refreshBookings(),
+                ),
+              ],
             ),
             body: _buildGuestBookingsView(context),
           );
@@ -669,6 +710,13 @@ class BookingsListScreen extends StatelessWidget {
               return Scaffold(
                 appBar: AppBar(
                   title: const Text('Appointments & Bookings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  actions: [
+                    IconButton(
+                      icon: const Icon(Icons.refresh_rounded, size: 20),
+                      tooltip: 'Refresh bookings',
+                      onPressed: () => repository.refreshBookings(),
+                    ),
+                  ],
                   bottom: TabBar(
                     isScrollable: true,
                     indicatorColor: AppTheme.primary,

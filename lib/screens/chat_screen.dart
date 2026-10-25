@@ -415,67 +415,41 @@ class _ChatScreenState extends State<ChatScreen> {
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: Padding(
         padding: const EdgeInsets.only(bottom: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            if (isMine)
-              IconButton(
-                icon: const Icon(Icons.delete_outline_rounded, size: 16, color: AppTheme.textMuted),
-                tooltip: 'Delete message',
-                splashRadius: 14,
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.all(4),
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                onPressed: () => _confirmDeleteMessage(msg),
-              ),
-            GestureDetector(
-              onLongPress: () => _confirmDeleteMessage(msg),
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 320),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: isMine ? AppTheme.primary : AppTheme.surfaceLight,
-                  borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(18),
-                    topRight: const Radius.circular(18),
-                    bottomLeft: Radius.circular(isMine ? 18 : 4),
-                    bottomRight: Radius.circular(isMine ? 4 : 18),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      msg.text,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isMine ? Colors.black : AppTheme.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      time,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: isMine ? Colors.black54 : AppTheme.textMuted,
-                      ),
-                    ),
-                  ],
-                ),
+        child: GestureDetector(
+          onLongPress: () => _confirmDeleteMessage(msg),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 320),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: isMine ? AppTheme.primary : AppTheme.surfaceLight,
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(18),
+                topRight: const Radius.circular(18),
+                bottomLeft: Radius.circular(isMine ? 18 : 4),
+                bottomRight: Radius.circular(isMine ? 4 : 18),
               ),
             ),
-            if (!isMine)
-              IconButton(
-                icon: const Icon(Icons.delete_outline_rounded, size: 16, color: AppTheme.textMuted),
-                tooltip: 'Delete message',
-                splashRadius: 14,
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.all(4),
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                onPressed: () => _confirmDeleteMessage(msg),
-              ),
-          ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  msg.text,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isMine ? Colors.black : AppTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  time,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: isMine ? Colors.black54 : AppTheme.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

@@ -1270,8 +1270,8 @@ void main() {
 
       expect(repo.isInitialized, isTrue);
       expect(repo.isGuestMode, isTrue);
-      expect(repo.jobs.isNotEmpty, isTrue);
-      expect(repo.publicDetailers.isNotEmpty, isTrue);
+      expect(repo.jobs, isA<List<DetailJob>>());
+      expect(repo.publicDetailers, isA<List<UserProfile>>());
     });
 
     test('8.2 createSession preloads custom UserProfile in host mode', () async {

@@ -190,14 +190,14 @@ void main() {
       expect(repo2.inventoryItems.any((i) => i.id == 'inv_item_to_delete'), isFalse);
     });
 
-    test('T5: Initial run hydrates default mock inventory and immediately seeds storage key', () async {
+    test('T5: Initial run initializes clean inventory and immediately seeds storage key', () async {
       // Clear all initial values
       SharedPreferences.setMockInitialValues({});
 
       final repo = JobRepository();
       await repo.init();
 
-      expect(repo.inventoryItems.isNotEmpty, isTrue);
+      expect(repo.inventoryItems, isEmpty);
 
       // Verify that step 2e immediately seeded adc_inventory_items_v1
       final prefs = await SharedPreferences.getInstance();

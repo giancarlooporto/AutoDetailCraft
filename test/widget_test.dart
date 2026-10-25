@@ -13,6 +13,7 @@ import 'package:detail_craft/core/constants/detailing_presets.dart';
 import 'package:detail_craft/screens/main_navigation_screen.dart';
 import 'package:detail_craft/services/job_repository.dart';
 import 'package:detail_craft/services/local_storage_service.dart';
+import 'package:detail_craft/services/mock_data_service.dart';
 import 'package:detail_craft/widgets/fullscreen_image_viewer.dart';
 import 'package:detail_craft/screens/create_job_screen.dart';
 import 'package:detail_craft/models/paint_gauge_point.dart';
@@ -90,6 +91,14 @@ class _MockHttpClientResponse extends Fake implements HttpClientResponse {
 }
 
 void main() {
+  setUp(() {
+    JobRepository.debugSeedSampleData = true;
+  });
+
+  tearDown(() {
+    JobRepository.debugSeedSampleData = false;
+  });
+
   testWidgets('Desktop view loads Turo-style top header and centered feed', (WidgetTester tester) async {
     debugNetworkImageHttpClientProvider = () => _MockHttpClient();
     addTearDown(() {
@@ -212,11 +221,9 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    // Verify side-by-side dropdown buttons exist
+    // Verify location dropdown button exists
     expect(find.byKey(const Key('location_dropdown_btn')), findsOneWidget);
-    expect(find.byKey(const Key('service_dropdown_btn')), findsOneWidget);
     expect(find.text('All Locations'), findsOneWidget);
-    expect(find.text('All Services'), findsOneWidget);
 
     // Verify featured detailers strip exists and starts collapsed on mobile
     expect(find.byKey(const Key('toggle_featured_detailers_btn')), findsOneWidget);
@@ -255,32 +262,26 @@ void main() {
     await tester.tap(find.byIcon(Icons.filter_alt_off_rounded));
     await tester.pumpAndSettle();
 
-    // Verify filter is reset
-    expect(repository.selectedLocationCity, 'All Locations');
-    expect(repository.selectedServiceType, 'All Services');
-
-    // Tap service dropdown button to open menu
-    await tester.tap(find.byKey(const Key('service_dropdown_btn')));
+    // Tap search icon in AppBar to reveal search field on mobile
+    await tester.tap(find.byIcon(Icons.search_rounded));
     await tester.pumpAndSettle();
 
-    // Select Ceramic Coating
-    final ceramicItem = find.text('Ceramic Coating');
-    expect(ceramicItem, findsWidgets);
-    await tester.tap(ceramicItem.last);
+    // Enter search query into search bar
+    await tester.enterText(find.byType(TextField), 'Ceramic Coating');
     await tester.pumpAndSettle();
 
-    // Verify service filter is updated
-    expect(repository.selectedServiceType, 'Ceramic Coating');
+    // Verify query is updated
+    expect(repository.searchQuery, 'Ceramic Coating');
 
     // Verify reset button appears again
     expect(find.byIcon(Icons.filter_alt_off_rounded), findsOneWidget);
     await tester.tap(find.byIcon(Icons.filter_alt_off_rounded));
     await tester.pumpAndSettle();
-    expect(repository.selectedServiceType, 'All Services');
+    expect(repository.selectedLocationCity, 'All Locations');
 
     // Verify that scrolling the feed scrolls featured detailers off screen on small mobile screens
     expect(find.byKey(const Key('toggle_featured_detailers_btn')), findsOneWidget);
-    await tester.drag(find.byType(ListView).first, const Offset(0, -350));
+    await tester.drag(find.byType(ListView).first, const Offset(0, -600));
     await tester.pumpAndSettle();
 
     // After scrolling down, the strip is scrolled out of the viewport, giving full screen to cards
@@ -729,9 +730,8 @@ void main() {
     expect(find.byType(TextField), findsOneWidget);
     expect(find.text('Search transformations, studios, cities...'), findsOneWidget);
 
-    // Verify location & service dropdown buttons are embedded in the bar
+    // Verify location dropdown button is embedded in the bar
     expect(find.byKey(const Key('location_dropdown_btn')), findsOneWidget);
-    expect(find.byKey(const Key('service_dropdown_btn')), findsOneWidget);
 
     // Enter search query
     await tester.enterText(find.byType(TextField), 'Ceramic');
@@ -2146,7 +2146,7 @@ void main() {
 
     // Verify Pane 2 header for Inventory
     expect(find.text('INVENTORY'), findsWidgets);
-    expect(find.text('[ + ADD ]'), findsOneWidget);
+    expect(find.text('[ + ADD ]'), findsWidgets);
     expect(find.text('HARDWARE'), findsWidgets);
     expect(find.text('CHEMICALS'), findsWidgets);
     expect(find.text('RECIPE'), findsWidgets);
@@ -4817,7 +4817,9 @@ void main() {
       clientEmail: 'client@example.com',
       vehicleYearMakeModel: '2023 Porsche 911 GT3',
       vehicleSize: VehicleSize.coupeSedan,
-      package: repo.currentUser.servicePackages.first,
+      package: repo.currentUser.servicePackages.isNotEmpty
+          ? repo.currentUser.servicePackages.first
+          : MockDataService.standardPackages.first,
       locationType: ServiceLocationType.shop,
       clientAddress: 'Austin, TX',
       scheduledDate: DateTime.now().add(const Duration(days: 2)),
@@ -4840,7 +4842,9 @@ void main() {
       clientEmail: 'alex@example.com',
       vehicleYearMakeModel: '2022 BMW M3 Competition',
       vehicleSize: VehicleSize.coupeSedan,
-      package: repo.currentUser.servicePackages.first,
+      package: repo.currentUser.servicePackages.isNotEmpty
+          ? repo.currentUser.servicePackages.first
+          : MockDataService.standardPackages.first,
       locationType: ServiceLocationType.shop,
       clientAddress: '123 Main St, Austin, TX',
       scheduledDate: DateTime.now().add(const Duration(days: 3)),

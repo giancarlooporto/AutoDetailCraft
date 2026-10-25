@@ -55,6 +55,7 @@ class JobRepository extends ChangeNotifier {
   bool _isOwnerLocked = false;
   int _ownerAutoLockMinutes = 5;
   bool? _workingWithTeamOverride;
+  static bool debugSeedSampleData = false;
 
   String _selectedServiceType = 'All Services';
   String _selectedLocationCity = 'All Locations';
@@ -73,7 +74,11 @@ class JobRepository extends ChangeNotifier {
   RealtimeChannel? _interactionsChannel;
   RealtimeChannel? _profilesChannel;
 
-  JobRepository();
+  JobRepository({bool? seedSampleData}) {
+    if (seedSampleData ?? debugSeedSampleData) {
+      _seedSampleData();
+    }
+  }
 
   bool get isInitialized => _isInitialized;
   bool get isInitializing => _isInitializing;
@@ -150,6 +155,9 @@ class JobRepository extends ChangeNotifier {
       _jobs = [];
       _bookings = [];
       _publicDetailers = [];
+      if (debugSeedSampleData) {
+        _seedSampleData();
+      }
 
       // 1. Load active tab index
       _activeTabIndex = await LocalStorageService.loadActiveTab();
@@ -649,21 +657,37 @@ class JobRepository extends ChangeNotifier {
         bookingIds: localIds,
       );
 
-      // Non-destructive union merge: merge cloud bookings with local bookings by id
-      final bookingMap = <String, BookingAppointment>{};
-      for (final b in _bookings) {
-        bookingMap[b.id] = b;
-      }
-      for (final b in cloudBookings) {
-        bookingMap[b.id] = b;
-      }
+      if (cloudBookings.isNotEmpty) {
+        // Non-destructive union merge: merge cloud bookings with local bookings by id
+        final bookingMap = <String, BookingAppointment>{};
+        for (final b in _bookings) {
+          bookingMap[b.id] = b;
+        }
+        bool hasChanges = false;
+        for (final b in cloudBookings) {
+          final existing = bookingMap[b.id];
+          if (existing == null ||
+              existing.status != b.status ||
+              existing.scheduledDate != b.scheduledDate ||
+              existing.clientId != b.clientId ||
+              existing.scheduledTimeSlot != b.scheduledTimeSlot) {
+            bookingMap[b.id] = b;
+            hasChanges = true;
+          }
+        }
 
-      _bookings = bookingMap.values.toList()
-        ..sort((a, b) => b.scheduledDate.compareTo(a.scheduledDate));
-      LocalStorageService.saveBookings(_bookings);
-      notifyListeners();
+        if (hasChanges) {
+          _bookings = bookingMap.values.toList()
+            ..sort((a, b) => b.scheduledDate.compareTo(a.scheduledDate));
+          LocalStorageService.saveBookings(_bookings);
+          notifyListeners();
+        }
+      }
     } catch (_) {}
   }
+
+  /// Public entry point to refresh all customer and studio bookings from Supabase Cloud
+  Future<void> refreshBookings() => _refreshBookingsFromCloud(_currentUser.id);
 
   Future<void> _refreshInteractionsFromCloud(String userId) async {
     try {
@@ -706,9 +730,10 @@ class JobRepository extends ChangeNotifier {
       await LocalStorageService.saveOwnerPinHash(_ownerPinHash);
     }
 
-    // Keep detailer or superAdmin in studio workbench mode
-    final isDetailerOrAdmin = _currentUser.role == UserRole.detailer || _currentUser.role == UserRole.superAdmin;
-    if (isDetailerOrAdmin) {
+    // Only keep in studio workbench mode if user explicitly has a detailer/superAdmin role AND a registered business name
+    final isExplicitStudio = (_currentUser.role == UserRole.detailer || _currentUser.role == UserRole.superAdmin) &&
+        _currentUser.businessName.trim().isNotEmpty;
+    if (isExplicitStudio) {
       _currentUser = _currentUser.copyWith(role: UserRole.detailer, isVerifiedHost: true);
       await LocalStorageService.saveWorkbenchMode('studio');
     } else {
@@ -1052,6 +1077,211 @@ class JobRepository extends ChangeNotifier {
         d.id != (_currentUser.role == UserRole.client ? _currentUser.id : '') &&
         (d.businessName.trim().isNotEmpty || d.servicePackages.isNotEmpty)
     ).toList();
+  }
+
+  @visibleForTesting
+  void setPublicDetailersForTesting(List<UserProfile> detailers) {
+    _publicDetailers = List<UserProfile>.from(detailers);
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void setInventoryItemsForTesting(List<InventoryItem> items) {
+    _inventoryItems = List<InventoryItem>.from(items);
+    notifyListeners();
+  }
+
+  void _seedSampleData() {
+    final detailer = UserProfile(
+      id: 'usr_marcus',
+      role: UserRole.detailer,
+      username: 'marcus_vance',
+      displayName: 'Marcus Vance',
+      businessName: 'Vance Auto Spa',
+      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
+      coverUrl: '',
+      location: 'Austin, Texas',
+      serviceRadius: '25 miles',
+      bio: 'Master detailer specializing in paint correction.',
+      phone: '512-555-0199',
+      instagramHandle: '@vanceautospa',
+      isIdaCertified: true,
+      isVerifiedHost: true,
+      servicePackages: MockDataService.standardPackages,
+      totalJobsCount: 12,
+      averageRating: 5.0,
+      reviewCount: 8,
+      startingPrice: 160.0,
+    );
+
+    if (_publicDetailers.isEmpty) {
+      _publicDetailers = [detailer];
+    }
+
+    if (_jobs.isEmpty) {
+      _jobs = [
+        DetailJob(
+          id: 'job_01',
+          author: detailer,
+          createdAt: DateTime.now().subtract(const Duration(hours: 4)),
+          title: 'Stage 2 Correction on Sticky Jet Black + 5-Year Ceramic',
+          description: 'Extremely soft sticky solid black clear coat. Heavy car-wash brush swirls.',
+          vehicleYear: 2023,
+          vehicleMake: 'Porsche',
+          vehicleModel: '911 GT3 (992)',
+          paintColorName: 'Solid Black (A1)',
+          paintCode: 'A1',
+          paintHardness: PaintHardness.soft,
+          initialPaintThicknessMicrons: 112.0,
+          finalPaintThicknessMicrons: 108.5,
+          defectSeverity: 8,
+          defectStage: DefectStage.stage2,
+          correctionPercentage: 92,
+          serviceType: 'Ceramic Coating',
+          recipeStages: const [
+            RecipeStage(
+              stageName: 'Chemical Decon & Iron Removal',
+              chemical: 'CarPro IronX & TarX',
+              technique: 'Dwell 5 mins out of direct sunlight, agitate with detail brush, high-pressure rinse',
+            ),
+            RecipeStage(
+              stageName: 'Compounding Cut (Stage 1)',
+              machine: 'Rupes LHR15 Mark III (15mm throw)',
+              pad: 'Lake Country Microfiber Cutting Pad 5.5"',
+              chemical: 'Koch Chemie Heavy Cut H9.02',
+              technique: '4 crosshatch passes @ speed 4.5, slow arm movement, wipe with 400gsm microfiber',
+            ),
+            RecipeStage(
+              stageName: 'Finishing Polish (Jeweling Stage 2)',
+              machine: 'Rupes Duetto (12mm throw)',
+              pad: 'Rupes Yellow Fine Foam Pad',
+              chemical: 'Sonax Perfect Finish 04-06',
+              technique: '3 light passes @ speed 3 with minimal pressure to eliminate micro-marring',
+            ),
+          ],
+          beforeImageUrl: '',
+          afterImageUrl: '',
+          defectBadge: 'Heavy Brush Swirls',
+          likesCount: 142,
+          savesCount: 67,
+        ),
+        DetailJob(
+          id: 'job_02',
+          author: detailer,
+          createdAt: DateTime.now().subtract(const Duration(days: 1)),
+          title: 'CeramiClear Hard Paint Wet-Sand & Leveling on AMG G63',
+          description: 'Mercedes Magno/CeramiClear hard clear coat with deep etchings.',
+          vehicleYear: 2024,
+          vehicleMake: 'Mercedes-AMG',
+          vehicleModel: 'G 63 4MATIC',
+          paintColorName: 'Night Black Magno',
+          paintCode: '056',
+          paintHardness: PaintHardness.hard,
+          initialPaintThicknessMicrons: 145.0,
+          finalPaintThicknessMicrons: 139.0,
+          defectSeverity: 9,
+          serviceType: 'Paint Correction',
+          recipeStages: const [],
+          beforeImageUrl: '',
+          afterImageUrl: '',
+          defectBadge: 'Water Spot Acid Etch',
+          likesCount: 98,
+          savesCount: 45,
+        ),
+        DetailJob(
+          id: 'job_03',
+          author: detailer,
+          createdAt: DateTime.now().subtract(const Duration(days: 2)),
+          title: 'Single Stage Vintage Paint Rehydration & Glaze Polish',
+          description: 'Original non-clear coated single stage lacquer.',
+          vehicleYear: 1967,
+          vehicleMake: 'Alfa Romeo',
+          vehicleModel: '33 Stradale',
+          paintColorName: 'Rosso Alfa',
+          paintCode: 'AR-501',
+          paintHardness: PaintHardness.singleStage,
+          initialPaintThicknessMicrons: 95.0,
+          finalPaintThicknessMicrons: 93.0,
+          defectSeverity: 7,
+          serviceType: 'Paint Correction',
+          recipeStages: const [],
+          beforeImageUrl: '',
+          afterImageUrl: '',
+          defectBadge: 'Oxidized Lacquer',
+          likesCount: 215,
+          savesCount: 110,
+        ),
+      ];
+    }
+
+    if (_inventoryItems.isEmpty) {
+      _inventoryItems = [
+        const InventoryItem(
+          id: 'inv_hw_01',
+          name: 'Rupes LHR15 Mark III (15mm)',
+          category: InventoryCategory.hardware,
+          brand: 'Rupes',
+          subCategory: 'Dual Action Polisher',
+          status: 'In Service',
+          location: 'Bay 1 Tool Wall',
+          notes: 'Primary 15mm dual action polisher for heavy and medium paint correction.',
+        ),
+        const InventoryItem(
+          id: 'inv_hw_02',
+          name: 'Flex PXE 80 10.8-EC',
+          category: InventoryCategory.hardware,
+          brand: 'Flex Tools',
+          subCategory: 'Spot & Nano Polisher',
+          status: 'In Service',
+          location: 'Mobile Detail Box Alpha',
+          specs: {
+            'Drive Type': 'Quick-Connect 3mm / 12mm / Rotary',
+          },
+          notes: 'Spindle quick-release bearing noisy.',
+        ),
+        InventoryItem(
+          id: 'inv_chem_01',
+          name: 'Koch Chemie H9.02 Heavy Cut',
+          category: InventoryCategory.chemicals,
+          brand: 'Koch Chemie',
+          subCategory: 'Heavy Cut Compound',
+          status: 'Full',
+          location: 'Chemical Shelf Bay 1',
+          notes: 'Low dusting formula.',
+        ),
+        InventoryItem(
+          id: 'inv_chem_02',
+          name: 'Sonax Profiline Perfect Finish 04-06',
+          category: InventoryCategory.chemicals,
+          brand: 'Sonax',
+          subCategory: 'Finishing Polish',
+          status: 'Half',
+          location: 'Chemical Shelf Bay 1',
+          notes: 'Finishing polish.',
+        ),
+        InventoryItem(
+          id: 'inv_rcp_01',
+          name: 'German Ceramic Clear 2-Stage Formula',
+          category: InventoryCategory.recipe,
+          notes: 'Proven heavy cut formula for rock-hard European factory clears.',
+          recipeStages: [
+            RecipeStage(
+              stageName: 'Heavy Compound Cut',
+              machine: 'Rupes LHR15 Mark III (15mm)',
+              pad: 'Lake Country HDO Microfiber Cutting Pad',
+              chemical: 'Koch Chemie H9.02 Heavy Cut',
+              technique: '4 crosshatch passes @ speed 4.5',
+            ),
+          ],
+        ),
+      ];
+    }
+
+    if (_currentUser.servicePackages.isEmpty) {
+      _currentUser = _currentUser.copyWith(
+        servicePackages: MockDataService.standardPackages,
+      );
+    }
   }
 
   UserProfile get currentUser => _currentUser;
@@ -1804,13 +2034,15 @@ class JobRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool addBooking(BookingAppointment booking, {bool allowOverbooking = false}) {
+  bool addBooking(BookingAppointment booking, {bool allowOverbooking = false, bool syncToCloud = true}) {
     // 1. Guard against duplicate booking insertions (idempotency)
     final existingIdx = _bookings.indexWhere((b) => b.id == booking.id);
     if (existingIdx != -1) {
       _bookings[existingIdx] = booking;
       _persistBookings();
-      SupabaseDbService.saveBooking(booking);
+      if (syncToCloud) {
+        SupabaseDbService.saveBooking(booking);
+      }
       notifyListeners();
       return true;
     }
@@ -1831,16 +2063,21 @@ class JobRepository extends ChangeNotifier {
 
     _bookings.insert(0, booking);
     _persistBookings();
-    SupabaseDbService.saveBooking(booking);
+    if (syncToCloud) {
+      SupabaseDbService.saveBooking(booking);
+    }
     notifyListeners();
     return true;
   }
 
-  /// Asynchronous variant that awaits the Supabase upsert before completing
+  /// Asynchronous variant that awaits the Supabase upsert before completing without duplicate save calls
   Future<bool> addBookingAsync(BookingAppointment booking, {bool allowOverbooking = false}) async {
-    final added = addBooking(booking, allowOverbooking: allowOverbooking);
+    final added = addBooking(booking, allowOverbooking: allowOverbooking, syncToCloud: false);
     if (added) {
-      await SupabaseDbService.saveBooking(booking);
+      final cloudSynced = await SupabaseDbService.saveBooking(booking);
+      if (kDebugMode) {
+        print('[JobRepository] addBookingAsync cloud sync: $cloudSynced for ${booking.id}');
+      }
     }
     return added;
   }
