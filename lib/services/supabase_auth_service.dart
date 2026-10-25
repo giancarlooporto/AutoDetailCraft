@@ -200,6 +200,17 @@ class SupabaseAuthService {
         return (success: false, error: 'User not found.', profile: null);
       }
 
+      // Reject sign-in if account was previously marked deleted
+      final meta = user.userMetadata ?? {};
+      if (meta['is_deleted'] == true || meta['account_status'] == 'deleted') {
+        await client.auth.signOut();
+        return (
+          success: false,
+          error: 'This account has been permanently deleted. Please register for a new account.',
+          profile: null,
+        );
+      }
+
       // 1. Query SupabaseDbService.fetchUserProfile(user.id) FIRST on sign-in before falling back
       final cloudProfile = await SupabaseDbService.fetchUserProfile(user.id);
       final existingLocalProfile = await LocalStorageService.loadUserById(user.id);

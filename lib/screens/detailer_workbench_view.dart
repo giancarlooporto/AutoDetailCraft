@@ -2832,17 +2832,32 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         }
                       },
                     ),
+                    OutlinedButton.icon(
+                      key: const ValueKey('settings_pause_studio_btn'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: repo.currentUser.isStudioPaused ? Colors.greenAccent : Colors.amber,
+                        side: BorderSide(color: repo.currentUser.isStudioPaused ? Colors.greenAccent : Colors.amber),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: Icon(repo.currentUser.isStudioPaused ? Icons.play_circle_fill_rounded : Icons.pause_circle_outline_rounded, size: 16),
+                      label: Text(
+                        repo.currentUser.isStudioPaused ? 'Turn On Studio' : 'Pause Studio',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      onPressed: () => _handleStudioPauseToggle(context, repo),
+                    ),
                     ElevatedButton.icon(
-                      key: const ValueKey('settings_delete_account_btn'),
+                      key: const ValueKey('settings_quit_detailing_btn'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.redAccent,
+                        backgroundColor: Colors.redAccent.withAlpha(220),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      icon: const Icon(Icons.delete_forever_rounded, size: 16),
-                      label: const Text('Delete Account', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      onPressed: () => _confirmDeleteAccount(context, repo),
+                      icon: const Icon(Icons.storefront_outlined, size: 16),
+                      label: const Text('Quit Detailing', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      onPressed: () => _handleQuitDetailing(context, repo),
                     ),
                   ],
                 ),
@@ -2949,15 +2964,93 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     );
   }
 
-  void _confirmDeleteAccount(BuildContext context, JobRepository repo) {
+  void _handleStudioPauseToggle(BuildContext context, JobRepository repo) async {
+    final isPaused = repo.currentUser.isStudioPaused;
+    final sm = ScaffoldMessenger.of(context);
+
+    if (isPaused) {
+      await repo.setStudioPaused(false);
+      if (mounted) {
+        sm.showSnackBar(
+          const SnackBar(
+            content: Text('Studio operations resumed! Your studio is now live in search.'),
+            backgroundColor: AppTheme.surface,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (repo.hasActiveStudioBookings) {
+      _showActiveBookingsBlockerDialog(context, repo, action: 'pause');
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.surface,
-        title: const Text('Delete Account Permanently', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+        title: const Row(
+          children: [
+            Icon(Icons.pause_circle_outline_rounded, color: Colors.amber),
+            SizedBox(width: 8),
+            Text('Pause Studio Operations?'),
+          ],
+        ),
         content: const Text(
-          'This will permanently delete your studio, vehicles, team members, services, and authentication login from Supabase. This action cannot be undone.',
-          style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+          'When turned off, your studio will no longer appear in client search or discovery.\n\nAll your services, custom pricing, inventory, team members, and recipes are safely preserved and will be instantly restored when you turn it back on.',
+          style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.amber,
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await repo.setStudioPaused(true);
+              if (mounted) {
+                sm.showSnackBar(
+                  const SnackBar(
+                    content: Text('Studio is now paused and hidden from search.'),
+                    backgroundColor: AppTheme.surface,
+                  ),
+                );
+              }
+            },
+            child: const Text('Pause Studio', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _handleQuitDetailing(BuildContext context, JobRepository repo) {
+    final sm = ScaffoldMessenger.of(context);
+    if (repo.hasActiveStudioBookings) {
+      _showActiveBookingsBlockerDialog(context, repo, action: 'quit');
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Row(
+          children: [
+            Icon(Icons.storefront_outlined, color: Colors.redAccent),
+            SizedBox(width: 8),
+            Text('Quit Detailing?'),
+          ],
+        ),
+        content: const Text(
+          'This will retire your studio profile and switch your account back to a personal Vehicle Owner (Garage).\n\nYour personal vehicles and garage care history remain active. All your detailing services, inventory, and team settings are safely archived in the cloud if you ever decide to detail again.',
+          style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, height: 1.4),
         ),
         actions: [
           TextButton(
@@ -2970,19 +3063,108 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               foregroundColor: Colors.white,
             ),
             onPressed: () async {
-              final sm = ScaffoldMessenger.of(context);
               Navigator.of(ctx).pop();
-              await repo.deleteAccount();
+              await repo.quitDetailing();
               if (mounted) {
                 sm.showSnackBar(
                   const SnackBar(
-                    content: Text('Your account and data have been permanently deleted.'),
+                    content: Text('Switched to Vehicle Owner mode. Studio data safely archived.'),
                     backgroundColor: AppTheme.surface,
                   ),
                 );
               }
             },
-            child: const Text('Delete Permanently', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text('Quit Detailing', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showActiveBookingsBlockerDialog(BuildContext context, JobRepository repo, {required String action}) {
+    final active = repo.activeStudioBookings;
+    final sm = ScaffoldMessenger.of(context);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent),
+            const SizedBox(width: 8),
+            Text('Active Bookings (${active.length})'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'You cannot ${action == 'pause' ? 'pause operations' : 'quit detailing'} while customers are actively booked with your studio.\n\nUpcoming appointments:',
+                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: active.length,
+                  separatorBuilder: (context, index) => const Divider(color: AppTheme.border, height: 12),
+                  itemBuilder: (_, i) {
+                    final b = active[i];
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(b.clientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.textPrimary)),
+                        Text('${b.package.title} • ${b.vehicleYearMakeModel}', style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                        Text('${DateFormat('EEE, MMM d').format(b.scheduledDate)} at ${b.scheduledTimeSlot}', style: const TextStyle(fontSize: 11, color: AppTheme.primary)),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'If you cancel these appointments, each customer will be notified and guided to book another verified detailer.',
+                style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Keep Appointments', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await repo.cancelAllActiveStudioBookings(
+                reason: action == 'pause'
+                    ? 'Studio operations temporarily paused'
+                    : 'Studio operations retired',
+              );
+              if (action == 'pause') {
+                await repo.setStudioPaused(true);
+              } else {
+                await repo.quitDetailing();
+              }
+              if (mounted) {
+                sm.showSnackBar(
+                  SnackBar(
+                    content: Text('Appointments cancelled & customers notified. ${action == 'pause' ? 'Studio is now paused.' : 'Switched to Vehicle Owner mode.'}'),
+                    backgroundColor: AppTheme.surface,
+                  ),
+                );
+              }
+            },
+            child: const Text('Cancel & Notify Customers', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -9326,6 +9508,47 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   // ==========================================
   // RESPONSIVE BUILD
   // ==========================================
+  Widget _buildPausedStudioBanner(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.amber.withAlpha(28),
+        border: const Border(bottom: BorderSide(color: Colors.amber, width: 1)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.pause_circle_filled_rounded, color: Colors.amber, size: 18),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Studio Paused (Offline) • Hidden from client search. All services & inventory are preserved.',
+              style: TextStyle(color: Colors.amber, fontSize: 11, fontWeight: FontWeight.bold),
+            ),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              backgroundColor: Colors.amber,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            ),
+            onPressed: () async {
+              await widget.repository.setStudioPaused(false);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Studio operations resumed! Your studio is now live in search.')),
+                );
+              }
+            },
+            child: const Text('Turn On', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.repository.isOwnerLocked && !widget.repository.isStaffSession) {
@@ -9360,27 +9583,35 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
             return Scaffold(
               backgroundColor: AppTheme.background,
-              body: Row(
+              body: Column(
                 children: [
-                  if (!_isFocusMode) ...[
-                    // Pane 1: Studio Hub
-                    SizedBox(
-                      width: pane1Width,
-                      child: _buildPane1(context, isMobile: false),
-                    ),
-                    const VerticalDivider(width: 1, color: AppTheme.border),
-
-                    // Pane 2: Subcategory / Item List
-                    SizedBox(
-                      width: pane2Width,
-                      child: _buildPane2(context, isMobile: false),
-                    ),
-                    const VerticalDivider(width: 1, color: AppTheme.border),
-                  ],
-
-                  // Pane 3: Workspace Canvas / Inspector (Expanded for 100% full screen focus)
+                  if (widget.repository.currentUser.isStudioPaused)
+                    _buildPausedStudioBanner(context),
                   Expanded(
-                    child: _buildPane3(context, isMobile: false),
+                    child: Row(
+                      children: [
+                        if (!_isFocusMode) ...[
+                          // Pane 1: Studio Hub
+                          SizedBox(
+                            width: pane1Width,
+                            child: _buildPane1(context, isMobile: false),
+                          ),
+                          const VerticalDivider(width: 1, color: AppTheme.border),
+
+                          // Pane 2: Subcategory / Item List
+                          SizedBox(
+                            width: pane2Width,
+                            child: _buildPane2(context, isMobile: false),
+                          ),
+                          const VerticalDivider(width: 1, color: AppTheme.border),
+                        ],
+
+                        // Pane 3: Workspace Canvas / Inspector (Expanded for 100% full screen focus)
+                        Expanded(
+                          child: _buildPane3(context, isMobile: false),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -9398,7 +9629,12 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             child: Scaffold(
               backgroundColor: AppTheme.background,
               body: SafeArea(
-                child: IndexedStack(
+                child: Column(
+                  children: [
+                    if (widget.repository.currentUser.isStudioPaused)
+                      _buildPausedStudioBanner(context),
+                    Expanded(
+                      child: IndexedStack(
                   index: _mobileStep,
                   children: [
                     _buildPane1(context, isMobile: true),
@@ -9407,8 +9643,11 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   ],
                 ),
               ),
-            ),
-          );
+            ],
+          ),
+        ),
+      ),
+    );
         },
       ),
     );

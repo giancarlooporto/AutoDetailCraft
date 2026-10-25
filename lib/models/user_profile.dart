@@ -182,6 +182,7 @@ class UserProfile {
   final int followingCount;
   final double startingPrice;
   final String? ownerPinHash; // salted PBKDF2 hash only, never the raw PIN
+  final bool isStudioPaused; // Detailer vacation/pause mode — hides studio from public search
 
   const UserProfile({
     required this.id,
@@ -213,6 +214,7 @@ class UserProfile {
     this.followingCount = 0,
     this.startingPrice = 0.0,
     this.ownerPinHash,
+    this.isStudioPaused = false,
   });
 
   UserProfile copyWith({
@@ -245,6 +247,7 @@ class UserProfile {
     int? followingCount,
     double? startingPrice,
     String? ownerPinHash,
+    bool? isStudioPaused,
   }) {
     return UserProfile(
       id: id ?? this.id,
@@ -276,6 +279,7 @@ class UserProfile {
       followingCount: followingCount ?? this.followingCount,
       startingPrice: startingPrice ?? this.startingPrice,
       ownerPinHash: ownerPinHash ?? this.ownerPinHash,
+      isStudioPaused: isStudioPaused ?? this.isStudioPaused,
     );
   }
 
@@ -310,6 +314,8 @@ class UserProfile {
       'followingCount': followingCount,
       'startingPrice': startingPrice,
       'owner_pin_hash': ownerPinHash,
+      'isStudioPaused': isStudioPaused,
+      'is_studio_paused': isStudioPaused,
     };
   }
 
@@ -400,6 +406,7 @@ class UserProfile {
       followingCount: json['followingCount'] as int? ?? 0,
       startingPrice: (json['startingPrice'] as num?)?.toDouble() ?? 150.0,
       ownerPinHash: json['owner_pin_hash'] as String?,
+      isStudioPaused: (json['isStudioPaused'] ?? json['is_studio_paused']) as bool? ?? false,
     );
   }
 }

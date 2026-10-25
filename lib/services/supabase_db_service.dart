@@ -248,6 +248,7 @@ class SupabaseDbService {
         averageRating: (res['rating'] as num?)?.toDouble() ?? 5.0,
         reviewCount: res['review_count'] as int? ?? 0,
         ownerPinHash: ownerPinHash,
+        isStudioPaused: (res['is_studio_paused'] ?? res['isStudioPaused']) as bool? ?? false,
       );
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error parsing UserProfile: $e');
@@ -349,6 +350,7 @@ class SupabaseDbService {
         'review_count': user.reviewCount,
         'total_jobs_count': user.totalJobsCount,
         'starting_price': user.startingPrice,
+        'is_studio_paused': user.isStudioPaused,
         'service_packages': user.servicePackages.map((p) => p.toJson()).toList(),
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
@@ -361,14 +363,16 @@ class SupabaseDbService {
             pe.code == '42703' ||
             (msg.contains('column') && msg.contains('schema cache')) ||
             msg.contains('is_insurance_verified') ||
-            msg.contains('insurance_policy_number');
+            msg.contains('insurance_policy_number') ||
+            msg.contains('is_studio_paused');
         if (isSchemaError) {
           if (kDebugMode) {
-            print('[SupabaseDbService] Profile upsert schema mismatch (${pe.code}: ${pe.message}). Retrying without optional insurance fields...');
+            print('[SupabaseDbService] Profile upsert schema mismatch (${pe.code}: ${pe.message}). Retrying without optional fields...');
           }
           final fallbackPayload = Map<String, dynamic>.from(fullPayload)
             ..remove('is_insurance_verified')
-            ..remove('insurance_policy_number');
+            ..remove('insurance_policy_number')
+            ..remove('is_studio_paused');
           await client.from('profiles').upsert(fallbackPayload);
           if (kDebugMode) {
             print('[SupabaseDbService] Fallback profile upsert succeeded.');
@@ -424,6 +428,13 @@ class SupabaseDbService {
     final client = _client;
     if (client == null) return;
     if (userId == 'usr_you') return;
+
+    // 0. Mark user metadata as deleted so Supabase Auth blocks any future login attempts
+    try {
+      await client.auth.updateUser(
+        UserAttributes(data: {'account_status': 'deleted', 'is_deleted': true}),
+      );
+    } catch (_) {}
 
     try {
       // 1. Attempt server-side Postgres RPC function (purges auth.users & cascades)

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/detail_job.dart';
 import '../models/user_profile.dart';
@@ -971,6 +972,14 @@ class JobRepository extends ChangeNotifier {
   List<BookingAppointment> get studioBookings =>
       _bookings.where((b) => b.detailerId == _currentUser.id).toList();
 
+  // Active Studio Bookings: Upcoming bookings that are not yet completed or cancelled
+  List<BookingAppointment> get activeStudioBookings => _bookings.where((b) =>
+      b.detailerId == _currentUser.id &&
+      b.status != BookingStatus.completed &&
+      b.status != BookingStatus.cancelled).toList();
+
+  bool get hasActiveStudioBookings => activeStudioBookings.isNotEmpty;
+
   // Client Bookings: Only personal bookings made by this user as a customer
   List<BookingAppointment> get clientBookings {
     final cleanAuthEmail = SupabaseAuthService.currentAuthUser?.email?.trim().toLowerCase() ??
@@ -990,12 +999,13 @@ class JobRepository extends ChangeNotifier {
   DetailerCalendarPreferences get calendarPreferences => _calendarPreferences;
   
   // All public detailers including the current user when offering services or registered as studio!
+  // Excludes any detailer who has paused their studio or retired to client role.
   List<UserProfile> get publicDetailers {
     final list = List<UserProfile>.from(_publicDetailers);
     final isStudio = _currentUser.role == UserRole.detailer ||
         _currentUser.role == UserRole.superAdmin ||
         _currentUser.servicePackages.isNotEmpty;
-    if ((_isLoggedIn || _currentUser.servicePackages.isNotEmpty) && isStudio) {
+    if ((_isLoggedIn || _currentUser.servicePackages.isNotEmpty) && isStudio && !_currentUser.isStudioPaused) {
       final existingIndex = list.indexWhere((p) => p.id == _currentUser.id);
       if (existingIndex != -1) {
         list[existingIndex] = _currentUser;
@@ -1003,7 +1013,7 @@ class JobRepository extends ChangeNotifier {
         list.insert(0, _currentUser);
       }
     }
-    return list;
+    return list.where((d) => !d.isStudioPaused && d.role != UserRole.client).toList();
   }
 
   UserProfile get currentUser => _currentUser;
@@ -1303,6 +1313,78 @@ class JobRepository extends ChangeNotifier {
     try {
       await _refreshPublicDetailersFromCloud();
     } catch (_) {}
+  }
+
+  /// Toggles studio paused/vacation status.
+  /// When paused, all services and inventory are preserved, but the studio is hidden from search.
+  Future<({bool success, String? error})> setStudioPaused(bool paused) async {
+    if (paused && hasActiveStudioBookings) {
+      return (
+        success: false,
+        error: 'Cannot pause studio operations while you have active customer appointments. Please complete or cancel all bookings first.',
+      );
+    }
+
+    final updated = _currentUser.copyWith(isStudioPaused: paused);
+    await updateCurrentUser(updated);
+    return (success: true, error: null);
+  }
+
+  /// Retires studio detailing profile and reverts the user to a regular Vehicle Owner (Client mode).
+  /// Preserves all services, inventory, and garage vehicles safely.
+  Future<({bool success, String? error})> quitDetailing() async {
+    if (hasActiveStudioBookings) {
+      return (
+        success: false,
+        error: 'Cannot quit detailing while you have active customer appointments. Please complete or cancel all bookings first.',
+      );
+    }
+
+    final updated = _currentUser.copyWith(
+      role: UserRole.client,
+      isStudioPaused: true,
+    );
+    await LocalStorageService.saveWorkbenchMode('garage');
+    await updateCurrentUser(updated);
+    return (success: true, error: null);
+  }
+
+  /// Cancels an active studio booking and notifies the customer with a direct message instructing them to book another detailer.
+  Future<void> cancelStudioBookingWithClientNotification(
+    String bookingId, {
+    String reason = 'Studio operations paused by detailer',
+  }) async {
+    final idx = _bookings.indexWhere((b) => b.id == bookingId);
+    if (idx == -1) return;
+    final booking = _bookings[idx];
+
+    // 1. Mark booking as cancelled
+    cancelBooking(bookingId);
+
+    // 2. Send notification message to customer
+    final targetClientId = booking.clientId;
+    if (targetClientId != null && targetClientId.isNotEmpty && targetClientId != 'usr_you') {
+      try {
+        final convId = await openOrCreateConversation(targetClientId);
+        if (convId != null && convId.isNotEmpty) {
+          final dateStr = DateFormat('EEE, MMM d, yyyy').format(booking.scheduledDate);
+          final notificationText = '⚠️ APPOINTMENT CANCELLED: Your booking for "${booking.package.title}" on $dateStr (${booking.scheduledTimeSlot}) has been cancelled by ${booking.detailerBusinessName} ($reason). Please explore other verified local detailers on AutoDetailCraft to rebook your vehicle service.';
+          await sendMessage(convId, notificationText);
+        }
+      } catch (e) {
+        if (kDebugMode) print('[JobRepository] Error sending cancellation notice to client: $e');
+      }
+    }
+  }
+
+  /// Cancels all active studio bookings and sends notifications to all affected clients
+  Future<void> cancelAllActiveStudioBookings({
+    String reason = 'Studio operations paused by detailer',
+  }) async {
+    final active = List<BookingAppointment>.from(activeStudioBookings);
+    for (final b in active) {
+      await cancelStudioBookingWithClientNotification(b.id, reason: reason);
+    }
   }
 
   // Add / Edit / Remove vehicle in user's garage (Persisted)

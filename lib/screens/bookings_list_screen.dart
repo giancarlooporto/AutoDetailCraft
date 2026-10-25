@@ -282,6 +282,23 @@ class BookingsListScreen extends StatelessWidget {
                   ),
                 ],
               ),
+              if (booking.status == BookingStatus.cancelled) ...[
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.black,
+                    minimumSize: const Size.fromHeight(44),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.explore_rounded, size: 18, color: Colors.black),
+                  label: const Text('Book Another Detailer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    repository.setActiveTab(0);
+                  },
+                ),
+              ],
               if (booking.status != BookingStatus.cancelled && booking.status != BookingStatus.completed) ...[
                 const SizedBox(height: 12),
                 Row(
@@ -555,6 +572,23 @@ class BookingsListScreen extends StatelessWidget {
                 ),
               ],
             ),
+            if (booking.status == BookingStatus.cancelled) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.primary,
+                    side: const BorderSide(color: AppTheme.primary),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  icon: const Icon(Icons.explore_rounded, size: 15),
+                  label: const Text('Book Another Detailer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  onPressed: () => repository.setActiveTab(0),
+                ),
+              ),
+            ],
           ],
         ),
       ),
