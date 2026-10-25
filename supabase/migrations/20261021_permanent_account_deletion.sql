@@ -59,9 +59,12 @@ begin
   -- 1. Delete user vehicles
   delete from public.vehicles where user_id = v_user_id;
 
-  -- 2. Delete bookings (as client or as studio host)
+  -- 2. Delete bookings (as client or as studio host, matching user id or email)
   if exists (select from pg_tables where schemaname = 'public' and tablename = 'bookings') then
-    delete from public.bookings where client_id = v_user_id::text or detailer_id = v_user_id::text;
+    delete from public.bookings
+      where client_id = v_user_id::text
+         or detailer_id = v_user_id::text
+         or client_email = (select email from auth.users where id = v_user_id);
   end if;
 
   -- 3. Delete team members owned by this studio

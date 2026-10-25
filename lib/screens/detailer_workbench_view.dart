@@ -3821,6 +3821,13 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                       label: const Text('Cancel Booking'),
                       onPressed: () => _confirmCancelBooking(context, b),
                     ),
+                  if (b.status == BookingStatus.cancelled)
+                    TextButton.icon(
+                      style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                      icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                      label: const Text('Delete / Dismiss'),
+                      onPressed: () => _confirmDeleteBooking(context, b),
+                    ),
                 ],
               ),
             ],
@@ -3869,6 +3876,51 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               );
             },
             child: const Text('Confirm Cancellation', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteBooking(BuildContext context, BookingAppointment b) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Colors.redAccent),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_forever_rounded, color: Colors.redAccent),
+            SizedBox(width: 8),
+            Text('Delete Cancelled Booking?'),
+          ],
+        ),
+        content: Text(
+          'Permanently remove the cancelled booking for ${b.clientName} (${b.vehicleYearMakeModel}) from your studio records?',
+          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Keep', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              widget.repository.deleteBooking(b.id);
+              setState(() {});
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Booking removed from studio records.'),
+                  backgroundColor: AppTheme.surface,
+                ),
+              );
+            },
+            child: const Text('Delete Permanently', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),

@@ -779,10 +779,37 @@ class JobRepository extends ChangeNotifier {
   Future<void> deleteAccount() async {
     _unsubscribeFromRealtime();
     final userId = _currentUser.id;
+    final userEmail = SupabaseAuthService.currentAuthUser?.email?.trim().toLowerCase() ??
+        (_currentUser.username.contains('@') ? _currentUser.username.trim().toLowerCase() : null);
 
-    // 1. Permanently purge user profile, garage, team, and auth from Supabase while authenticated
+    // 0. Auto-cancel active client bookings with detailers and notify the detailers
+    final clientBookingsToCancel = _bookings.where((b) {
+      final matchesId = b.clientId == userId;
+      final matchesEmail = userEmail != null && b.clientEmail.trim().toLowerCase() == userEmail;
+      return matchesId || matchesEmail;
+    }).toList();
+
+    for (final b in clientBookingsToCancel) {
+      if (b.status != BookingStatus.completed && b.status != BookingStatus.cancelled) {
+        cancelBooking(b.id);
+        if (b.detailerId.isNotEmpty && b.detailerId != 'usr_you' && b.detailerId != userId) {
+          try {
+            final convId = await openOrCreateConversation(b.detailerId);
+            if (convId != null && convId.isNotEmpty) {
+              final dateStr = DateFormat('EEE, MMM d, yyyy').format(b.scheduledDate);
+              await sendMessage(
+                convId,
+                '⚠️ APPOINTMENT CANCELLED: Customer (${b.clientName}) has closed and deleted their account. Their booking for "${b.package.title}" on $dateStr (${b.scheduledTimeSlot}) has been automatically cancelled, and your calendar slot is now available.',
+              );
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
+    // 1. Permanently purge user profile, garage, team, bookings, and auth from Supabase while authenticated
     if (_isLoggedIn) {
-      await SupabaseDbService.deleteAccountFromCloud(userId);
+      await SupabaseDbService.deleteAccountFromCloud(userId, userEmail: userEmail);
     }
 
     // 2. Sign out auth session
@@ -1807,6 +1834,15 @@ class JobRepository extends ChangeNotifier {
 
   void cancelBooking(String bookingId) {
     updateBookingStatus(bookingId, BookingStatus.cancelled);
+  }
+
+  void deleteBooking(String bookingId) {
+    _bookings.removeWhere((b) => b.id == bookingId);
+    _persistBookings();
+    if (_isLoggedIn) {
+      SupabaseDbService.deleteBooking(bookingId);
+    }
+    notifyListeners();
   }
 
   bool rescheduleBooking(String bookingId, DateTime newDate, String newSlot) {

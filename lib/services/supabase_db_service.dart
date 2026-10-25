@@ -424,7 +424,7 @@ class SupabaseDbService {
   }
 
   /// Permanently deletes the user's account and all associated cloud data from Supabase.
-  static Future<void> deleteAccountFromCloud(String userId) async {
+  static Future<void> deleteAccountFromCloud(String userId, {String? userEmail}) async {
     final client = _client;
     if (client == null) return;
     if (userId == 'usr_you') return;
@@ -447,7 +447,11 @@ class SupabaseDbService {
 
     // 2. Direct table deletion fallback:
     try {
-      await client.from('bookings').delete().or('client_id.eq.$userId,detailer_id.eq.$userId');
+      if (userEmail != null && userEmail.isNotEmpty) {
+        await client.from('bookings').delete().or('client_id.eq.$userId,detailer_id.eq.$userId,client_email.eq.$userEmail');
+      } else {
+        await client.from('bookings').delete().or('client_id.eq.$userId,detailer_id.eq.$userId');
+      }
     } catch (_) {}
 
     try {
@@ -1361,6 +1365,19 @@ class SupabaseDbService {
       if (kDebugMode) print('[SupabaseDbService] Updated booking status: $bookingId -> ${newStatus.name}');
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error updating booking status: $e');
+    }
+  }
+
+  /// Deletes a booking appointment from Supabase
+  static Future<void> deleteBooking(String bookingId) async {
+    final client = _client;
+    if (client == null) return;
+
+    try {
+      await client.from('bookings').delete().eq('id', bookingId);
+      if (kDebugMode) print('[SupabaseDbService] Deleted booking: $bookingId');
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error deleting booking: $e');
     }
   }
 
