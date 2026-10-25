@@ -49,17 +49,6 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
   final TextEditingController _customMakeCtrl = TextEditingController();
   final TextEditingController _customModelCtrl = TextEditingController();
   final TextEditingController _customColorCtrl = TextEditingController();
-  final List<String> _samplePresets = [
-    'https://images.unsplash.com/photo-1614162692292-7ac56d7f7f1e?w=900&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=900&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1563720223185-11003d516935?w=900&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=900&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?w=900&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1592198084033-aade902d1aae?w=900&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1558441719-ef0ce0f6244f?w=900&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1519641471654-76ce0107ad1b?w=900&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1584345604476-8ec5e12e42dd?w=900&auto=format&fit=crop&q=80',
-  ];
 
   @override
   void initState() {
@@ -92,7 +81,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
       _selectedMake = VehicleDatabase.allMakes.first; // First alphabetically (Acura)
       _selectedModel = '';
       _selectedColor = '';
-      _imageUrl = 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=900&auto=format&fit=crop&q=80';
+      _imageUrl = '';
       _loadMakes();
       _loadModels();
     }
@@ -172,10 +161,6 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
           _selectedColor = _availableColors.first;
         }
       }
-
-      if (_uploadedImageBytes == null) {
-        _imageUrl = VehicleApiService.getStudioImageFor(_selectedMake, _selectedModel);
-      }
     });
   }
 
@@ -216,9 +201,6 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
       _availableColors = VehicleApiService.getFactoryColorsFor(_selectedMake, newModel);
       if (_availableColors.isNotEmpty) {
         _selectedColor = _availableColors.first;
-      }
-      if (_uploadedImageBytes == null) {
-        _imageUrl = VehicleApiService.getStudioImageFor(_selectedMake, newModel);
       }
     });
   }
@@ -381,31 +363,6 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
             Expanded(
               child: ListView(
                 children: [
-              // NHTSA Database verification badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: AppTheme.primary.withAlpha(20),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppTheme.primary.withAlpha(50)),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.verified_rounded, size: 13, color: AppTheme.primary),
-                    SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Live NHTSA vPIC Database (Official US DOT Vehicle Registry)',
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
               // STEP 1: YEAR FIRST (1950 - 2026)
               const Text('1. Production Year', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
               const SizedBox(height: 6),
@@ -616,7 +573,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
                 runSpacing: 4,
                 children: [
                   const Text('5. Vehicle Photo', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
-                  if (_uploadedImageBytes != null)
+                  if (_uploadedImageBytes != null || _imageUrl.isNotEmpty)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(color: Colors.green.withAlpha(30), borderRadius: BorderRadius.circular(4)),
@@ -624,7 +581,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
                         children: [
                           Icon(Icons.cloud_done_rounded, size: 11, color: Colors.greenAccent),
                           SizedBox(width: 4),
-                          Text('Photo Ready', style: TextStyle(fontSize: 10, color: Colors.greenAccent, fontWeight: FontWeight.bold)),
+                          Text('Photo Attached', style: TextStyle(fontSize: 10, color: Colors.greenAccent, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),
@@ -638,76 +595,88 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
                   decoration: BoxDecoration(
                     color: AppTheme.surfaceLight,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _uploadedImageBytes != null ? AppTheme.primary : AppTheme.border, width: _uploadedImageBytes != null ? 2 : 1),
+                    border: Border.all(
+                      color: (_uploadedImageBytes != null || _imageUrl.isNotEmpty) ? AppTheme.primary : AppTheme.border,
+                      width: (_uploadedImageBytes != null || _imageUrl.isNotEmpty) ? 2 : 1,
+                    ),
                     image: _uploadedImageBytes != null
                         ? DecorationImage(image: MemoryImage(_uploadedImageBytes!), fit: BoxFit.cover, alignment: Alignment.center)
-                        : DecorationImage(image: NetworkImage(_imageUrl), fit: BoxFit.cover, alignment: Alignment.center),
+                        : (_imageUrl.isNotEmpty
+                            ? DecorationImage(image: NetworkImage(_imageUrl), fit: BoxFit.cover, alignment: Alignment.center)
+                            : null),
                   ),
-                  child: Align(
-                  alignment: Alignment.bottomRight,
-                  child: Container(
-                    margin: const EdgeInsets.all(8),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Button 1: Upload Original Photo
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.primary,
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          icon: const Icon(Icons.upload_file_rounded, size: 15, color: Colors.black),
-                          label: const Text('Upload My Photo', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                          onPressed: _pickOriginalPhoto,
-                        ),
-                        const SizedBox(width: 6),
-
-                        // Button 2: Choose Presets
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.black.withAlpha(210),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: PopupMenuButton<String>(
-                            icon: const Icon(Icons.image_search_rounded, size: 16, color: Colors.white),
-                            tooltip: 'Select Studio Preset',
-                            onSelected: (url) => setState(() {
-                              _uploadedImageBytes = null;
-                              _imageUrl = url;
-                            }),
-                            itemBuilder: (ctx) => [
-                              const PopupMenuItem(
-                                enabled: false,
-                                child: Text('Select High-Res Studio Preset:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textMuted)),
+                  child: (_uploadedImageBytes == null && _imageUrl.isEmpty)
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.directions_car_filled_rounded, size: 48, color: AppTheme.textMuted.withAlpha(120)),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'No Vehicle Photo',
+                                style: TextStyle(color: AppTheme.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
                               ),
-                              ..._samplePresets.map(
-                                (url) => PopupMenuItem(
-                                  value: url,
-                                  child: Row(
-                                    children: [
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(4),
-                                        child: Image.network(url, width: 40, height: 26, fit: BoxFit.cover),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      const Text('Select Preset Photo', style: TextStyle(fontSize: 12)),
-                                    ],
-                                  ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Default vehicle icon will be displayed in garage',
+                                style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                              ),
+                              const SizedBox(height: 12),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.primary,
+                                  foregroundColor: Colors.black,
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                 ),
+                                icon: const Icon(Icons.upload_file_rounded, size: 16, color: Colors.black),
+                                label: const Text('Upload Photo', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                onPressed: _pickOriginalPhoto,
                               ),
                             ],
                           ),
+                        )
+                      : Align(
+                          alignment: Alignment.bottomRight,
+                          child: Container(
+                            margin: const EdgeInsets.all(8),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.primary,
+                                    foregroundColor: Colors.black,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  icon: const Icon(Icons.refresh_rounded, size: 15, color: Colors.black),
+                                  label: const Text('Change Photo', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  onPressed: _pickOriginalPhoto,
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withAlpha(190),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: IconButton(
+                                    icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent),
+                                    tooltip: 'Remove Photo',
+                                    onPressed: () => setState(() {
+                                      _uploadedImageBytes = null;
+                                      _imageUrl = '';
+                                    }),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                      ],
-                    ),
-                  ),
                 ),
               ),
-            ),
-              const SizedBox(height: 4),
-              const Text('📸 Upload your own high-resolution car photo or choose a studio preset', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+              const SizedBox(height: 6),
+              const Text('📸 Upload your own vehicle photo or leave blank for default icon (optional)', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
               const SizedBox(height: 12),
             ],
           ),

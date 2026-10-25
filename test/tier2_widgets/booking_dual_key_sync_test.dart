@@ -205,6 +205,7 @@ void main() {
               body: BookingFlowScreen(
                 detailer: studioDetailer,
                 repository: repo,
+                initialDate: DateTime.now().add(const Duration(days: 3)),
               ),
             ),
           ),
@@ -251,6 +252,7 @@ void main() {
               body: BookingFlowScreen(
                 detailer: studioDetailer,
                 repository: repo,
+                initialDate: DateTime.now().add(const Duration(days: 3)),
               ),
             ),
           ),

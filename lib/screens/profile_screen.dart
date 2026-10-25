@@ -796,17 +796,24 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         fit: BoxFit.cover,
                         alignment: Alignment.center,
                       )
-                    : Image.network(
-                        veh.imageUrl,
-                        fit: BoxFit.cover,
-                        alignment: Alignment.center,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          color: AppTheme.surfaceLight,
-                          child: const Center(
-                            child: Icon(Icons.directions_car_filled_rounded, size: 48, color: AppTheme.textMuted),
-                          ),
-                        ),
-                      ),
+                    : (veh.imageUrl.isNotEmpty
+                        ? Image.network(
+                            veh.imageUrl,
+                            fit: BoxFit.cover,
+                            alignment: Alignment.center,
+                            errorBuilder: (context, error, stackTrace) => Container(
+                              color: AppTheme.surfaceLight,
+                              child: const Center(
+                                child: Icon(Icons.directions_car_filled_rounded, size: 48, color: AppTheme.textMuted),
+                              ),
+                            ),
+                          )
+                        : Container(
+                            color: AppTheme.surfaceLight,
+                            child: const Center(
+                              child: Icon(Icons.directions_car_filled_rounded, size: 48, color: AppTheme.textMuted),
+                            ),
+                          )),
               ),
             ),
           ),

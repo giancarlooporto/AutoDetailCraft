@@ -163,33 +163,9 @@ class VehicleApiService {
     ];
   }
 
-  /// Provides authentic studio cover images based on vehicle style
+  /// Returns empty string by default as all vehicle photos are user-provided
   static String getStudioImageFor(String make, String model) {
-    final curatedSpecs = VehicleDatabase.getModelsForMake(make);
-    for (final spec in curatedSpecs) {
-      if (model.toLowerCase().contains(spec.model.split(' ').first.toLowerCase()) ||
-          spec.model.toLowerCase().contains(model.toLowerCase())) {
-        return spec.defaultImage;
-      }
-    }
-
-    final m = make.toLowerCase();
-    final mod = model.toLowerCase();
-
-    if (mod.contains('truck') || mod.contains('raptor') || mod.contains('silverado') || mod.contains('f-150') || mod.contains('ram') || mod.contains('tundra') || mod.contains('tacoma') || mod.contains('sierra')) {
-      return 'https://images.unsplash.com/photo-1558441719-ef0ce0f6244f?w=900&auto=format&fit=crop&q=80';
-    }
-    if (mod.contains('suv') || mod.contains('rav4') || mod.contains('cr-v') || mod.contains('tahoe') || mod.contains('explorer') || mod.contains('grand cherokee') || mod.contains('wrangler') || mod.contains('bronco') || mod.contains('escalade') || mod.contains('telluride')) {
-      return 'https://images.unsplash.com/photo-1519641471654-76ce0107ad1b?w=900&auto=format&fit=crop&q=80';
-    }
-    if (m.contains('porsche') || m.contains('ferrari') || m.contains('lamborghini') || m.contains('mclaren') || m.contains('corvette') || m.contains('supercar')) {
-      return 'https://images.unsplash.com/photo-1614162692292-7ac56d7f7f1e?w=900&auto=format&fit=crop&q=80';
-    }
-    if (m.contains('tesla') || m.contains('electric') || mod.contains('ioniq') || mod.contains('ev')) {
-      return 'https://images.unsplash.com/photo-1563720223185-11003d516935?w=900&auto=format&fit=crop&q=80';
-    }
-
-    return 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=900&auto=format&fit=crop&q=80';
+    return '';
   }
 
   static String _sanitizeMakeForNhtsa(String make) {
