@@ -105,10 +105,15 @@ begin
     delete from public.verification_requests where user_id = v_user_id::text;
   end if;
 
-  -- 11. Delete public profile (also removes custom service_packages, bio, credentials)
+  -- 11. Delete owner PINs (if table exists)
+  if exists (select from pg_tables where schemaname = 'public' and tablename = 'owner_pins') then
+    delete from public.owner_pins where user_id = v_user_id;
+  end if;
+
+  -- 12. Delete public profile (also removes custom service_packages, bio, credentials)
   delete from public.profiles where id = v_user_id;
 
-  -- 12. Delete authentication record from Supabase Auth
+  -- 13. Delete authentication record from Supabase Auth
   delete from auth.users where id = v_user_id;
 end;
 $$;

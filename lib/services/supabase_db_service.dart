@@ -429,13 +429,6 @@ class SupabaseDbService {
     if (client == null) return;
     if (userId == 'usr_you') return;
 
-    // 0. Mark user metadata as deleted so Supabase Auth blocks any future login attempts
-    try {
-      await client.auth.updateUser(
-        UserAttributes(data: {'account_status': 'deleted', 'is_deleted': true}),
-      );
-    } catch (_) {}
-
     try {
       // 1. Attempt server-side Postgres RPC function (purges auth.users & cascades)
       await client.rpc('delete_user_account');
@@ -444,6 +437,13 @@ class SupabaseDbService {
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] RPC delete_user_account error (falling back to direct deletes): $e');
     }
+
+    // Fallback: If RPC function is not installed in Supabase yet, mark user metadata as deleted
+    try {
+      await client.auth.updateUser(
+        UserAttributes(data: {'account_status': 'deleted', 'is_deleted': true}),
+      );
+    } catch (_) {}
 
     // 2. Direct table deletion fallback:
     try {

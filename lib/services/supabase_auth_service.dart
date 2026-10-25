@@ -173,6 +173,65 @@ class SupabaseAuthService {
           profile: null,
         );
       }
+      if (msg.toLowerCase().contains('already registered') || msg.toLowerCase().contains('already exists')) {
+        // Self-healing recovery for accounts previously deleted but not yet purged from auth.users:
+        try {
+          final loginRes = await client.auth.signInWithPassword(
+            email: email.trim(),
+            password: password.trim(),
+          );
+          final existingUser = loginRes.user;
+          if (existingUser != null) {
+            final meta = existingUser.userMetadata ?? {};
+            final wasDeleted = meta['is_deleted'] == true || meta['account_status'] == 'deleted';
+            final cloudProfile = await SupabaseDbService.fetchUserProfile(existingUser.id);
+
+            // If the account was previously deleted OR had its profile deleted from public schema:
+            if (wasDeleted || cloudProfile == null) {
+              // 1. Try server-side deletion via RPC if available
+              try {
+                await client.rpc('delete_user_account');
+                // Retrying fresh sign-up now that auth.users is cleared
+                return await signUp(
+                  email: email,
+                  password: password,
+                  displayName: displayName,
+                  phone: phone,
+                );
+              } catch (_) {}
+
+              // 2. Fallback reactivation: reset metadata to active and create a fresh profile
+              await client.auth.updateUser(
+                UserAttributes(data: {
+                  'account_status': 'active',
+                  'is_deleted': false,
+                  'display_name': displayName.trim(),
+                }),
+              );
+
+              final freshProfile = UserProfile(
+                id: existingUser.id,
+                role: UserRole.client,
+                username: email.split('@').first,
+                displayName: displayName.trim().isNotEmpty ? displayName.trim() : email.split('@').first,
+                phone: phone ?? '',
+                myGarage: const [],
+                servicePackages: const [],
+                teamMembers: const [],
+              );
+              await SupabaseDbService.saveUserProfile(freshProfile);
+              await LocalStorageService.saveCurrentUser(freshProfile);
+              return (success: true, error: null, profile: freshProfile);
+            }
+          }
+        } catch (_) {}
+
+        return (
+          success: false,
+          error: 'This email is already registered in Supabase. If you previously deleted this account, please delete the user row in your Supabase Dashboard under Authentication > Users to recreate it, or enter your previous password.',
+          profile: null,
+        );
+      }
       return (success: false, error: e.message, profile: null);
     } catch (e) {
       return (success: false, error: e.toString(), profile: null);
@@ -203,10 +262,21 @@ class SupabaseAuthService {
       // Reject sign-in if account was previously marked deleted
       final meta = user.userMetadata ?? {};
       if (meta['is_deleted'] == true || meta['account_status'] == 'deleted') {
+        // Attempt to purge lingering auth.users record via RPC on server
+        try {
+          await client.rpc('delete_user_account');
+          await client.auth.signOut();
+          return (
+            success: false,
+            error: 'This account was deleted and has now been permanently removed from Supabase. You can now register for a new account with this email address.',
+            profile: null,
+          );
+        } catch (_) {}
+
         await client.auth.signOut();
         return (
           success: false,
-          error: 'This account has been permanently deleted. Please register for a new account.',
+          error: 'This account was deleted. To register again with this email, delete the user in your Supabase Dashboard under Authentication > Users or run the deletion migration SQL.',
           profile: null,
         );
       }
