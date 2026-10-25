@@ -436,6 +436,22 @@ class SupabaseDbService {
 
     // 2. Direct table deletion fallback:
     try {
+      await client.from('bookings').delete().or('client_id.eq.$userId,detailer_id.eq.$userId');
+    } catch (_) {}
+
+    try {
+      await client.from('shift_requests').delete().eq('detailer_id', userId);
+    } catch (_) {}
+
+    try {
+      await client.from('messages').delete().eq('sender_id', userId);
+    } catch (_) {}
+
+    try {
+      await client.from('conversations').delete().or('participant_a.eq.$userId,participant_b.eq.$userId');
+    } catch (_) {}
+
+    try {
       await client.from('vehicles').delete().eq('user_id', userId);
     } catch (_) {}
 
@@ -453,6 +469,14 @@ class SupabaseDbService {
 
     try {
       await client.from('availability_blocks').delete().or('user_id.eq.$userId,detailer_id.eq.$userId');
+    } catch (_) {}
+
+    try {
+      await client.from('verification_requests').delete().eq('user_id', userId);
+    } catch (_) {}
+
+    try {
+      await client.from('user_interactions').delete().eq('user_id', userId);
     } catch (_) {}
 
     try {

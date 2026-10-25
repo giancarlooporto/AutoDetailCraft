@@ -59,38 +59,56 @@ begin
   -- 1. Delete user vehicles
   delete from public.vehicles where user_id = v_user_id;
 
-  -- 2. Delete team members owned by this studio
+  -- 2. Delete bookings (as client or as studio host)
+  if exists (select from pg_tables where schemaname = 'public' and tablename = 'bookings') then
+    delete from public.bookings where client_id = v_user_id::text or detailer_id = v_user_id::text;
+  end if;
+
+  -- 3. Delete team members owned by this studio
   delete from public.team_members where studio_id = v_user_id;
 
-  -- 3. Delete inventory items (if table exists)
+  -- 4. Delete shift requests
+  if exists (select from pg_tables where schemaname = 'public' and tablename = 'shift_requests') then
+    delete from public.shift_requests where detailer_id = v_user_id::text;
+  end if;
+
+  -- 5. Delete chat messages and conversations
+  if exists (select from pg_tables where schemaname = 'public' and tablename = 'messages') then
+    delete from public.messages where sender_id = v_user_id::text;
+  end if;
+  if exists (select from pg_tables where schemaname = 'public' and tablename = 'conversations') then
+    delete from public.conversations where participant_a = v_user_id::text or participant_b = v_user_id::text;
+  end if;
+
+  -- 6. Delete inventory items (if table exists)
   if exists (select from pg_tables where schemaname = 'public' and tablename = 'inventory_items') then
     delete from public.inventory_items where user_id = v_user_id;
   end if;
 
-  -- 4. Delete availability blocks (if table exists)
+  -- 7. Delete availability blocks (if table exists)
   if exists (select from pg_tables where schemaname = 'public' and tablename = 'availability_blocks') then
     delete from public.availability_blocks where user_id = v_user_id or detailer_id = v_user_id;
   end if;
 
-  -- 5. Delete user interactions (if table exists)
+  -- 8. Delete user interactions (if table exists)
   if exists (select from pg_tables where schemaname = 'public' and tablename = 'user_interactions') then
     delete from public.user_interactions where user_id = v_user_id;
   end if;
 
-  -- 6. Delete published jobs
+  -- 9. Delete published jobs
   if exists (select from pg_tables where schemaname = 'public' and tablename = 'jobs') then
     delete from public.jobs where author_id = v_user_id;
   end if;
 
-  -- 7. Delete verification requests (if table exists)
+  -- 10. Delete verification requests (if table exists)
   if exists (select from pg_tables where schemaname = 'public' and tablename = 'verification_requests') then
-    delete from public.verification_requests where detailer_user_id = v_user_id;
+    delete from public.verification_requests where user_id = v_user_id::text;
   end if;
 
-  -- 8. Delete public profile
+  -- 11. Delete public profile (also removes custom service_packages, bio, credentials)
   delete from public.profiles where id = v_user_id;
 
-  -- 9. Delete authentication record from Supabase Auth
+  -- 12. Delete authentication record from Supabase Auth
   delete from auth.users where id = v_user_id;
 end;
 $$;
