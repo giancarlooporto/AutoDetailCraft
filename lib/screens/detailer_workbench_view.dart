@@ -794,12 +794,39 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                                       const SizedBox(width: 4),
                                       const Icon(Icons.verified_rounded, size: 14, color: AppTheme.primary),
                                     ],
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                      decoration: BoxDecoration(
+                                        color: user.isStudioPaused ? Colors.amber.withAlpha(40) : Colors.greenAccent.withAlpha(30),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(
+                                          color: user.isStudioPaused ? Colors.amber : Colors.greenAccent,
+                                          width: 0.8,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        user.isStudioPaused ? 'PAUSED' : 'LIVE',
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                          color: user.isStudioPaused ? Colors.amber : Colors.greenAccent,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    ),
                                   ],
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  user.location.isNotEmpty ? user.location : 'Studio OS',
-                                  style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted),
+                                  user.isStudioPaused
+                                      ? 'Studio Paused (Offline)'
+                                      : (user.location.isNotEmpty ? user.location : 'Studio OS'),
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: user.isStudioPaused ? Colors.amber : AppTheme.textMuted,
+                                    fontWeight: user.isStudioPaused ? FontWeight.w600 : FontWeight.normal,
+                                  ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -2805,6 +2832,52 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary, height: 1.4),
                 ),
                 const SizedBox(height: 16),
+                // Studio Status Overview Card
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: repo.currentUser.isStudioPaused
+                        ? Colors.amber.withAlpha(20)
+                        : Colors.greenAccent.withAlpha(15),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: repo.currentUser.isStudioPaused ? Colors.amber : Colors.greenAccent.withAlpha(120),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        repo.currentUser.isStudioPaused ? Icons.pause_circle_filled_rounded : Icons.check_circle_rounded,
+                        color: repo.currentUser.isStudioPaused ? Colors.amber : Colors.greenAccent,
+                        size: 24,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              repo.currentUser.isStudioPaused ? 'Studio Status: PAUSED (Offline)' : 'Studio Status: LIVE (Accepting Bookings)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: repo.currentUser.isStudioPaused ? Colors.amber : Colors.greenAccent,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              repo.currentUser.isStudioPaused
+                                  ? 'Your studio is hidden from search & public discovery. All services & inventory are safely preserved.'
+                                  : 'Your studio is publicly visible and accepting bookings from clients in search & discovery.',
+                              style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 Wrap(
                   spacing: 12,
                   runSpacing: 10,
@@ -2842,7 +2915,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                       ),
                       icon: Icon(repo.currentUser.isStudioPaused ? Icons.play_circle_fill_rounded : Icons.pause_circle_outline_rounded, size: 16),
                       label: Text(
-                        repo.currentUser.isStudioPaused ? 'Turn On Studio' : 'Pause Studio',
+                        repo.currentUser.isStudioPaused ? 'Resume Studio' : 'Pause Studio',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                       onPressed: () => _handleStudioPauseToggle(context, repo),
@@ -2969,8 +3042,20 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     final sm = ScaffoldMessenger.of(context);
 
     if (isPaused) {
-      await repo.setStudioPaused(false);
+      final res = await repo.setStudioPaused(false);
+      if (!res.success) {
+        if (mounted) {
+          sm.showSnackBar(
+            SnackBar(
+              content: Text(res.error ?? 'Could not resume studio.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+        return;
+      }
       if (mounted) {
+        setState(() {});
         sm.showSnackBar(
           const SnackBar(
             content: Text('Studio operations resumed! Your studio is now live in search.'),
@@ -3252,8 +3337,20 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   onPressed: () async {
                     Navigator.of(ctx).pop();
                     if (action == 'pause') {
-                      await repo.setStudioPaused(true);
+                      final res = await repo.setStudioPaused(true);
+                      if (!res.success) {
+                        if (mounted) {
+                          sm.showSnackBar(
+                            SnackBar(
+                              content: Text(res.error ?? 'Could not pause studio.'),
+                              backgroundColor: Colors.redAccent,
+                            ),
+                          );
+                        }
+                        return;
+                      }
                       if (mounted) {
+                        setState(() {});
                         sm.showSnackBar(
                           const SnackBar(
                             content: Text('Studio operations paused and hidden from search.'),
@@ -3262,8 +3359,20 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         );
                       }
                     } else {
-                      await repo.quitDetailing();
+                      final res = await repo.quitDetailing();
+                      if (!res.success) {
+                        if (mounted) {
+                          sm.showSnackBar(
+                            SnackBar(
+                              content: Text(res.error ?? 'Could not quit detailing.'),
+                              backgroundColor: Colors.redAccent,
+                            ),
+                          );
+                        }
+                        return;
+                      }
                       if (mounted) {
+                        setState(() {});
                         sm.showSnackBar(
                           const SnackBar(
                             content: Text('Studio data deleted. Reverted to Vehicle Owner (Client) mode.'),

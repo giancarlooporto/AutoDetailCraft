@@ -160,7 +160,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     ),
                   ),
                   title: Text(
-                    user.isStudioPaused ? 'Turn On Studio (Resume)' : 'Pause Studio (Turn Off)',
+                    user.isStudioPaused ? 'Resume Studio' : 'Pause Studio',
                     style: TextStyle(
                       color: user.isStudioPaused ? Colors.greenAccent : Colors.amber,
                       fontWeight: FontWeight.bold,
@@ -169,7 +169,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   ),
                   subtitle: Text(
                     user.isStudioPaused
-                        ? 'Studio is currently hidden. Tap to resume public bookings.'
+                        ? 'Studio is currently paused. Tap to resume public bookings.'
                         : 'Temporarily hide from search. Services & inventory are saved.',
                     style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
                   ),
@@ -277,8 +277,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     final sm = ScaffoldMessenger.of(context);
 
     if (isPaused) {
-      await repo.setStudioPaused(false);
+      final res = await repo.setStudioPaused(false);
+      if (!res.success) {
+        if (mounted) {
+          sm.showSnackBar(
+            SnackBar(
+              content: Text(res.error ?? 'Could not resume studio.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+        return;
+      }
       if (mounted) {
+        setState(() {});
         sm.showSnackBar(
           const SnackBar(
             content: Text('Studio operations resumed! Your studio is now live in search.'),
@@ -321,8 +333,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             ),
             onPressed: () async {
               Navigator.of(ctx).pop();
-              await repo.setStudioPaused(true);
+              final res = await repo.setStudioPaused(true);
+              if (!res.success) {
+                if (mounted) {
+                  sm.showSnackBar(
+                    SnackBar(
+                      content: Text(res.error ?? 'Could not pause studio.'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                }
+                return;
+              }
               if (mounted) {
+                setState(() {});
                 sm.showSnackBar(
                   const SnackBar(
                     content: Text('Studio is now paused and hidden from search.'),
@@ -374,8 +398,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             ),
             onPressed: () async {
               Navigator.of(ctx).pop();
-              await repo.quitDetailing();
+              final res = await repo.quitDetailing();
+              if (!res.success) {
+                if (mounted) {
+                  sm.showSnackBar(
+                    SnackBar(
+                      content: Text(res.error ?? 'Could not quit detailing.'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                }
+                return;
+              }
               if (mounted) {
+                setState(() {});
                 sm.showSnackBar(
                   const SnackBar(
                     content: Text('Studio data deleted. Reverted to Vehicle Owner (Client) mode.'),
@@ -563,8 +599,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   onPressed: () async {
                     Navigator.of(ctx).pop();
                     if (action == 'pause') {
-                      await repo.setStudioPaused(true);
+                      final res = await repo.setStudioPaused(true);
+                      if (!res.success) {
+                        if (mounted) {
+                          sm.showSnackBar(
+                            SnackBar(
+                              content: Text(res.error ?? 'Could not pause studio.'),
+                              backgroundColor: Colors.redAccent,
+                            ),
+                          );
+                        }
+                        return;
+                      }
                       if (mounted) {
+                        setState(() {});
                         sm.showSnackBar(
                           const SnackBar(
                             content: Text('Studio operations paused and hidden from search.'),
@@ -573,8 +621,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         );
                       }
                     } else {
-                      await repo.quitDetailing();
+                      final res = await repo.quitDetailing();
+                      if (!res.success) {
+                        if (mounted) {
+                          sm.showSnackBar(
+                            SnackBar(
+                              content: Text(res.error ?? 'Could not quit detailing.'),
+                              backgroundColor: Colors.redAccent,
+                            ),
+                          );
+                        }
+                        return;
+                      }
                       if (mounted) {
+                        setState(() {});
                         sm.showSnackBar(
                           const SnackBar(
                             content: Text('Studio data deleted. Reverted to Vehicle Owner (Client) mode.'),
