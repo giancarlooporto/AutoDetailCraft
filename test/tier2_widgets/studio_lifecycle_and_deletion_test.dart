@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:detail_craft/models/user_profile.dart';
+import 'package:detail_craft/models/user_vehicle.dart';
 import 'package:detail_craft/models/booking_models.dart';
+import 'package:detail_craft/models/inventory_item.dart';
 import 'package:detail_craft/services/job_repository.dart';
 
 void main() {
@@ -103,7 +105,7 @@ void main() {
       expect(repo.publicDetailers.any((d) => d.id == 'studio_host_01'), isTrue);
     });
 
-    test('Quit detailing safely transitions user to client mode with archived studio data', () async {
+    test('Quit detailing deletes studio services & inventory while reverting to client mode and preserving garage vehicles', () async {
       final repo = JobRepository();
       await repo.init();
 
@@ -116,6 +118,15 @@ void main() {
         includes: ['Compound', 'Polish'],
       );
 
+      const personalCar = UserVehicle(
+        id: 'veh_personal_01',
+        year: 2022,
+        make: 'BMW',
+        model: 'M3 Competition',
+        colorName: 'Isle of Man Green',
+        imageUrl: '',
+      );
+
       final studioDetailer = UserProfile(
         id: 'studio_host_02',
         role: UserRole.detailer,
@@ -124,22 +135,37 @@ void main() {
         businessName: 'Miller Detailing Co',
         location: 'Dallas, TX',
         servicePackages: const [testPkg],
+        myGarage: const [personalCar],
       );
       await repo.updateCurrentUser(studioDetailer);
+
+      // Add inventory item to studio
+      const item = InventoryItem(
+        id: 'inv_comp_01',
+        name: 'Menzerna Heavy Cut 400',
+        category: InventoryCategory.chemicals,
+      );
+      repo.addInventoryItem(item);
+      expect(repo.inventoryItems.length, 1);
 
       // No active bookings -> quit succeeds
       final quitResult = await repo.quitDetailing();
       expect(quitResult.success, isTrue);
 
-      // User role is now client
+      // 1. User role is now reverted to client (Vehicle Owner)
       expect(repo.currentUser.role, equals(UserRole.client));
-      expect(repo.currentUser.isStudioPaused, isTrue);
 
-      // Studio packages and data are preserved!
-      expect(repo.currentUser.servicePackages.length, 1);
-      expect(repo.currentUser.servicePackages.first.title, 'Multi-Stage Correction');
+      // 2. Studio services are deleted from studio side
+      expect(repo.currentUser.servicePackages.isEmpty, isTrue);
 
-      // Studio is hidden from search
+      // 3. Studio inventory is deleted from studio side
+      expect(repo.inventoryItems.isEmpty, isTrue);
+
+      // 4. Client mode is NOT deleted: personal vehicles in garage are preserved!
+      expect(repo.currentUser.myGarage.length, 1);
+      expect(repo.currentUser.myGarage.first.model, 'M3 Competition');
+
+      // 5. Studio is hidden from public discovery / search
       expect(repo.publicDetailers.any((d) => d.id == 'studio_host_02'), isFalse);
     });
   });

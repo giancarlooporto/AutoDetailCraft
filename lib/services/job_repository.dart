@@ -1330,22 +1330,64 @@ class JobRepository extends ChangeNotifier {
     return (success: true, error: null);
   }
 
-  /// Retires studio detailing profile and reverts the user to a regular Vehicle Owner (Client mode).
-  /// Preserves all services, inventory, and garage vehicles safely.
+  /// Quits detailing by deleting all studio-side data (services, inventory, team, presets, studio jobs)
+  /// and reverting the user to Client mode (Vehicle Owner).
+  /// Personal vehicles in the garage and client bookings are strictly preserved.
   Future<({bool success, String? error})> quitDetailing() async {
     if (hasActiveStudioBookings) {
       return (
         success: false,
-        error: 'Cannot quit detailing while you have active customer appointments. Please complete or cancel all bookings first.',
+        error: 'Cannot quit detailing while you have active customer appointments. Please cancel and notify customers first before quitting.',
       );
     }
 
+    // 1. Delete all studio inventory
+    _inventoryItems = [];
+    await LocalStorageService.saveInventoryItems([]);
+
+    // 2. Clear custom studio recipe presets
+    _customPresets = [];
+    await LocalStorageService.saveCustomPresets([]);
+
+    // 3. Clear team members in local storage
+    await LocalStorageService.saveTeamMembers([]);
+
+    // 4. Remove studio-authored jobs
+    _jobs.removeWhere((j) => j.author.id == _currentUser.id);
+    await LocalStorageService.saveCustomJobs(_jobs);
+
+    // 5. Purge cloud studio records (inventory, team members, jobs, availability blocks)
+    await SupabaseDbService.deleteStudioData(_currentUser.id);
+
+    // 6. Clear studio bookings (only studio side; clientBookings are preserved)
+    _bookings.removeWhere((b) => b.detailerId == _currentUser.id);
+    await LocalStorageService.saveBookings(_bookings);
+
+    // 7. Clear service packages from local storage
+    await LocalStorageService.saveServicePackages([]);
+
+    // 8. Reset profile to client mode, wiping all studio attributes
     final updated = _currentUser.copyWith(
       role: UserRole.client,
-      isStudioPaused: true,
+      businessName: '',
+      bio: '',
+      startingPrice: 0.0,
+      isStudioPaused: false,
+      isVerifiedHost: false,
+      isIdaCertified: false,
+      isInsuranceVerified: false,
+      insurancePolicyNumber: '',
+      certifications: [],
+      servicePackages: [],
+      teamMembers: [],
     );
     await LocalStorageService.saveWorkbenchMode('garage');
     await updateCurrentUser(updated);
+
+    // 9. Clean up public detailers list immediately so studio disappears from search
+    _publicDetailers.removeWhere((d) => d.id == _currentUser.id);
+    notifyListeners();
+
     return (success: true, error: null);
   }
 

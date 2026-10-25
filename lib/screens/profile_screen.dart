@@ -186,7 +186,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     child: const Icon(Icons.storefront_outlined, color: Colors.redAccent, size: 18),
                   ),
                   title: const Text('Quit Detailing', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 14)),
-                  subtitle: const Text('Switch to personal Vehicle Owner. Services & inventory remain saved.', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                  subtitle: const Text('Deletes studio services & inventory. Reverts to Vehicle Owner (Client).', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
                   onTap: () {
                     Navigator.of(ctx).pop();
                     _handleQuitDetailing(context);
@@ -359,7 +359,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           ],
         ),
         content: const Text(
-          'This will retire your studio profile and switch your account back to a personal Vehicle Owner (Garage).\n\nYour personal vehicles and garage care history remain active. All your detailing services, inventory, and team settings are safely archived in the cloud if you ever decide to detail again.',
+          'Quitting detailing will permanently delete everything from your studio side:\n\n• All Services & Custom Packages\n• All Inventory (Hardware, Chemicals, Recipes)\n• Studio Profile & Team Settings\n\nYour account will revert to Client mode (Vehicle Owner).\nYour personal vehicles in your garage and personal bookings will NOT be deleted.',
           style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, height: 1.4),
         ),
         actions: [
@@ -378,13 +378,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               if (mounted) {
                 sm.showSnackBar(
                   const SnackBar(
-                    content: Text('Switched to Vehicle Owner mode. Studio data safely archived.'),
+                    content: Text('Studio data deleted. Reverted to Vehicle Owner (Client) mode.'),
                     backgroundColor: AppTheme.surface,
                   ),
                 );
               }
             },
-            child: const Text('Quit Detailing', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text('Delete Studio & Revert to Client', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -393,91 +393,205 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
   void _showActiveBookingsBlockerDialog(BuildContext context, {required String action}) {
     final repo = widget.repository;
-    final active = repo.activeStudioBookings;
     final sm = ScaffoldMessenger.of(context);
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surface,
-        title: Row(
-          children: [
-            const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent),
-            const SizedBox(width: 8),
-            Text('Active Bookings (${active.length})'),
-          ],
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'You cannot ${action == 'pause' ? 'pause operations' : 'quit detailing'} while customers are actively booked with your studio.\n\nUpcoming appointments:',
-                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-              ),
-              const SizedBox(height: 12),
-              Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: active.length,
-                  separatorBuilder: (context, index) => const Divider(color: AppTheme.border, height: 12),
-                  itemBuilder: (_, i) {
-                    final b = active[i];
-                    return Column(
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) {
+          final active = repo.activeStudioBookings;
+          final hasActive = active.isNotEmpty;
+
+          return AlertDialog(
+            backgroundColor: AppTheme.surface,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [
+                Icon(
+                  hasActive ? Icons.warning_amber_rounded : Icons.check_circle_rounded,
+                  color: hasActive ? Colors.orangeAccent : Colors.greenAccent,
+                  size: 24,
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Cancel & Notify Customers first before Pausing or Quitting',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: hasActive
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(b.clientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.textPrimary)),
-                        Text('${b.package.title} • ${b.vehicleYearMakeModel}', style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                        Text('${DateFormat('EEE, MMM d').format(b.scheduledDate)} at ${b.scheduledTimeSlot}', style: const TextStyle(fontSize: 11, color: AppTheme.primary)),
+                        Text(
+                          'Detailers cannot ${action == 'pause' ? 'pause operations' : 'quit detailing'} while customers are still booked. You have ${active.length} active upcoming appointment${active.length == 1 ? '' : 's'}.\n\nYou must cancel and notify each customer before ${action == 'pause' ? 'pausing' : 'quitting'}:',
+                          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13, height: 1.4),
+                        ),
+                        const SizedBox(height: 12),
+                        Flexible(
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: active.length,
+                            separatorBuilder: (context, index) => const Divider(color: AppTheme.border, height: 12),
+                            itemBuilder: (_, i) {
+                              final b = active[i];
+                              return Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.surfaceLight,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: AppTheme.border),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            b.clientName,
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.textPrimary),
+                                          ),
+                                        ),
+                                        Text(
+                                          DateFormat('MMM d, h:mm a').format(b.scheduledDate),
+                                          style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.w600),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '${b.package.title} • ${b.vehicleYearMakeModel} (${b.scheduledTimeSlot})',
+                                      style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: OutlinedButton.icon(
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: Colors.redAccent,
+                                          side: const BorderSide(color: Colors.redAccent),
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                          minimumSize: Size.zero,
+                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        ),
+                                        icon: const Icon(Icons.cancel_schedule_send_rounded, size: 14),
+                                        label: const Text('Notify & Cancel', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                        onPressed: () async {
+                                          await repo.cancelStudioBookingWithClientNotification(
+                                            b.id,
+                                            reason: action == 'pause'
+                                                ? 'Studio operations temporarily paused'
+                                                : 'Studio operations retiring',
+                                          );
+                                          setDialogState(() {});
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Each customer receives a direct message informing them that the appointment is cancelled and guiding them to rebook another detailer.',
+                          style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                        ),
                       ],
-                    );
-                  },
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(height: 12),
+                        const Icon(Icons.check_circle_outline_rounded, color: Colors.greenAccent, size: 48),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'All customer appointments have been cancelled and customers notified.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          action == 'pause'
+                              ? 'You can now safely pause your studio operations.'
+                              : 'You can now proceed to quit detailing and delete all studio data.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                        ),
+                      ],
+                    ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(
+                  hasActive ? 'Close (Keep Bookings)' : 'Close',
+                  style: const TextStyle(color: AppTheme.textSecondary),
                 ),
               ),
-              const SizedBox(height: 12),
-              const Text(
-                'If you cancel these appointments, each customer will be notified and guided to book another verified detailer.',
-                style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Keep Appointments', style: TextStyle(color: AppTheme.textSecondary)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              await repo.cancelAllActiveStudioBookings(
-                reason: action == 'pause'
-                    ? 'Studio operations temporarily paused'
-                    : 'Studio operations retired',
-              );
-              if (action == 'pause') {
-                await repo.setStudioPaused(true);
-              } else {
-                await repo.quitDetailing();
-              }
-              if (mounted) {
-                sm.showSnackBar(
-                  SnackBar(
-                    content: Text('Appointments cancelled & customers notified. ${action == 'pause' ? 'Studio is now paused.' : 'Switched to Vehicle Owner mode.'}'),
-                    backgroundColor: AppTheme.surface,
+              if (hasActive)
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white,
                   ),
-                );
-              }
-            },
-            child: const Text('Cancel & Notify Customers', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
+                  icon: const Icon(Icons.cancel_schedule_send_rounded, size: 15),
+                  label: const Text('Cancel & Notify All Customers', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  onPressed: () async {
+                    await repo.cancelAllActiveStudioBookings(
+                      reason: action == 'pause'
+                          ? 'Studio operations temporarily paused'
+                          : 'Studio operations retiring',
+                    );
+                    setDialogState(() {});
+                  },
+                ),
+              if (!hasActive)
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: action == 'pause' ? Colors.amber : Colors.redAccent,
+                    foregroundColor: action == 'pause' ? Colors.black : Colors.white,
+                  ),
+                  onPressed: () async {
+                    Navigator.of(ctx).pop();
+                    if (action == 'pause') {
+                      await repo.setStudioPaused(true);
+                      if (mounted) {
+                        sm.showSnackBar(
+                          const SnackBar(
+                            content: Text('Studio operations paused and hidden from search.'),
+                            backgroundColor: AppTheme.surface,
+                          ),
+                        );
+                      }
+                    } else {
+                      await repo.quitDetailing();
+                      if (mounted) {
+                        sm.showSnackBar(
+                          const SnackBar(
+                            content: Text('Studio data deleted. Reverted to Vehicle Owner (Client) mode.'),
+                            backgroundColor: AppTheme.surface,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  child: Text(
+                    action == 'pause' ? 'Pause Studio Now' : 'Delete Studio & Revert to Client',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }

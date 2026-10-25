@@ -498,6 +498,37 @@ class SupabaseDbService {
     }
   }
 
+  /// Deletes all studio-side records (inventory items, team members, studio jobs, availability blocks)
+  /// from Supabase while keeping client profile, garage vehicles, and personal bookings intact.
+  static Future<void> deleteStudioData(String userId) async {
+    final client = _client;
+    if (client == null || userId == 'usr_you') return;
+
+    try {
+      await client.from('inventory_items').delete().or('user_id.eq.$userId,studio_id.eq.$userId');
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error deleting studio inventory items: $e');
+    }
+
+    try {
+      await client.from('team_members').delete().eq('studio_id', userId);
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error deleting studio team members: $e');
+    }
+
+    try {
+      await client.from('jobs').delete().eq('author_id', userId);
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error deleting studio jobs: $e');
+    }
+
+    try {
+      await client.from('availability_blocks').delete().or('user_id.eq.$userId,detailer_id.eq.$userId');
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error deleting studio availability blocks: $e');
+    }
+  }
+
   /// Submit a verification request (Insurance or IDA cert)
   static Future<void> submitVerificationRequest(VerificationRequest req) async {
     final client = _client;
