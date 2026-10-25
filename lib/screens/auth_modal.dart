@@ -317,12 +317,33 @@ class _AuthModalState extends State<AuthModal> {
       setState(() => _isLoading = false);
 
       if (res.success) {
-        setState(() {
-          _isVerifyingOtp = true;
-          _pendingEmail = email;
-          _errorMessage = null;
-        });
-        _startResendCooldown();
+        if (SupabaseAuthService.isLoggedIn && res.profile != null) {
+          // Instant session granted (Confirm email is OFF or auto-confirmed in Supabase)
+          await widget.repository.loginUser(res.profile!);
+          if (!mounted) return;
+          Navigator.of(context).pop();
+          widget.onSuccess?.call();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle_rounded, color: AppTheme.primary),
+                  const SizedBox(width: 8),
+                  Text('Welcome to AutoDetailCraft, ${res.profile!.displayName}!'),
+                ],
+              ),
+              backgroundColor: AppTheme.surface,
+            ),
+          );
+        } else {
+          // Email confirmation is required by Supabase
+          setState(() {
+            _isVerifyingOtp = true;
+            _pendingEmail = email;
+            _errorMessage = null;
+          });
+          _startResendCooldown();
+        }
       } else {
         setState(() => _errorMessage = res.error ?? 'Sign up failed.');
       }
