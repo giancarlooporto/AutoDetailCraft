@@ -4,6 +4,7 @@ import 'package:detail_craft/models/user_profile.dart';
 import 'package:detail_craft/models/user_vehicle.dart';
 import 'package:detail_craft/models/booking_models.dart';
 import 'package:detail_craft/models/inventory_item.dart';
+import 'package:detail_craft/models/message_model.dart';
 import 'package:detail_craft/services/job_repository.dart';
 import 'package:detail_craft/services/local_storage_service.dart';
 
@@ -149,6 +150,19 @@ void main() {
       repo.addInventoryItem(item);
       expect(repo.inventoryItems.length, 1);
 
+      // Add a studio conversation
+      final studioConv = Conversation(
+        id: 'conv_client_to_studio',
+        participantA: 'client_123',
+        participantB: 'studio_host_02',
+        updatedAt: DateTime.now(),
+        otherUserName: 'Customer Alice',
+        otherUserAvatar: '',
+      );
+      await LocalStorageService.saveConversations([studioConv]);
+      await repo.loadConversations();
+      expect(repo.studioConversations.length, 1);
+
       // No active bookings -> quit succeeds
       final quitResult = await repo.quitDetailing();
       expect(quitResult.success, isTrue);
@@ -162,12 +176,21 @@ void main() {
       // 3. Studio inventory is deleted from studio side
       expect(repo.inventoryItems.isEmpty, isTrue);
 
-      // 4. Client mode is NOT deleted: personal vehicles in garage are preserved!
+      // 4. Studio messages & conversations are deleted
+      expect(repo.studioConversations.isEmpty, isTrue);
+
+      // 5. Client mode is NOT deleted: personal vehicles in garage are preserved!
       expect(repo.currentUser.myGarage.length, 1);
       expect(repo.currentUser.myGarage.first.model, 'M3 Competition');
 
-      // 5. Studio is hidden from public discovery / search
+      // 6. Studio is hidden from public discovery / search / explore
       expect(repo.publicDetailers.any((d) => d.id == 'studio_host_02'), isFalse);
+
+      // 7. Re-entering detailer mode later starts with clean state (no old studio messages or services)
+      repo.toggleHostMode(targetRole: UserRole.detailer);
+      expect(repo.studioConversations.isEmpty, isTrue);
+      expect(repo.currentUser.servicePackages.isEmpty, isTrue);
+      expect(repo.inventoryItems.isEmpty, isTrue);
     });
 
     test('Studio pause state persistence survives cloud refresh without reverting to live', () async {

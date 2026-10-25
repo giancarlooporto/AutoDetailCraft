@@ -1045,7 +1045,12 @@ class JobRepository extends ChangeNotifier {
         list.insert(0, _currentUser);
       }
     }
-    return list.where((d) => !d.isStudioPaused && d.role != UserRole.client).toList();
+    return list.where((d) =>
+        !d.isStudioPaused &&
+        d.role != UserRole.client &&
+        d.id != (_currentUser.role == UserRole.client ? _currentUser.id : '') &&
+        (d.businessName.trim().isNotEmpty || d.servicePackages.isNotEmpty)
+    ).toList();
   }
 
   UserProfile get currentUser => _currentUser;
@@ -1385,20 +1390,31 @@ class JobRepository extends ChangeNotifier {
     await LocalStorageService.saveTeamMembers([]);
 
     // 4. Remove studio-authored jobs
-    _jobs.removeWhere((j) => j.author.id == _currentUser.id);
+    _jobs.removeWhere((j) => j.author.id == _currentUser.id || j.author.username == _currentUser.username);
     await LocalStorageService.saveCustomJobs(_jobs);
 
-    // 5. Purge cloud studio records (inventory, team members, jobs, availability blocks)
-    await SupabaseDbService.deleteStudioData(_currentUser.id);
+    // 5. Gather and delete all studio conversations and messages
+    final studioConvIds = studioConversations.map((c) => c.id).toList();
+    for (final convId in studioConvIds) {
+      await LocalStorageService.saveMessages(convId, []);
+    }
+    _conversations.removeWhere((c) => studioConvIds.contains(c.id));
+    await LocalStorageService.saveConversations(_conversations);
 
-    // 6. Clear studio bookings (only studio side; clientBookings are preserved)
+    // 6. Purge cloud studio records (inventory, team members, jobs, availability blocks, messages, and reset cloud profile)
+    await SupabaseDbService.deleteStudioData(
+      _currentUser.id,
+      studioConversationIds: studioConvIds,
+    );
+
+    // 7. Clear studio bookings (only studio side; clientBookings are preserved)
     _bookings.removeWhere((b) => b.detailerId == _currentUser.id);
     await LocalStorageService.saveBookings(_bookings);
 
-    // 7. Clear service packages from local storage
+    // 8. Clear service packages from local storage
     await LocalStorageService.saveServicePackages([]);
 
-    // 8. Reset profile to client mode, wiping all studio attributes
+    // 9. Reset profile to client mode, wiping all studio attributes
     final updated = _currentUser.copyWith(
       role: UserRole.client,
       businessName: '',
@@ -1409,15 +1425,18 @@ class JobRepository extends ChangeNotifier {
       isIdaCertified: false,
       isInsuranceVerified: false,
       insurancePolicyNumber: '',
+      ownerPinHash: null,
       certifications: [],
       servicePackages: [],
       teamMembers: [],
     );
+    _ownerPinHash = null;
+    await LocalStorageService.saveOwnerPinHash(null);
     await LocalStorageService.saveWorkbenchMode('garage');
     await updateCurrentUser(updated);
 
-    // 9. Clean up public detailers list immediately so studio disappears from search
-    _publicDetailers.removeWhere((d) => d.id == _currentUser.id);
+    // 10. Clean up public detailers list immediately so studio disappears from search & explore
+    _publicDetailers.removeWhere((d) => d.id == _currentUser.id || d.username == _currentUser.username);
     notifyListeners();
 
     return (success: true, error: null);

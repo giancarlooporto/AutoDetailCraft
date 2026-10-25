@@ -286,13 +286,13 @@ class SupabaseDbService {
             if (decoded is List) hasPackages = decoded.isNotEmpty;
           } catch (_) {}
         }
-        final isDetailer = role == 'detailer' ||
-            role == 'super_admin' ||
-            role == 'superAdmin' ||
-            hasPackages;
+        final rawBusiness = (profileMap['business_name'] as String? ?? '').trim();
+        final hasBusiness = rawBusiness.isNotEmpty && rawBusiness != 'My Detailing Studio';
+        final isDetailer = (role == 'detailer' || role == 'super_admin' || role == 'superAdmin') &&
+            (hasPackages || hasBusiness);
         if (isDetailer) {
           final p = _buildUserProfileFromMap(profileMap);
-          if (p != null) {
+          if (p != null && p.role != UserRole.client && (p.businessName.trim().isNotEmpty || p.servicePackages.isNotEmpty)) {
             profiles.add(p);
           }
         }
@@ -517,7 +517,10 @@ class SupabaseDbService {
 
   /// Deletes all studio-side records (inventory items, team members, studio jobs, availability blocks)
   /// from Supabase while keeping client profile, garage vehicles, and personal bookings intact.
-  static Future<void> deleteStudioData(String userId) async {
+  static Future<void> deleteStudioData(
+    String userId, {
+    List<String> studioConversationIds = const [],
+  }) async {
     final client = _client;
     if (client == null || userId == 'usr_you') return;
 
@@ -534,7 +537,7 @@ class SupabaseDbService {
     }
 
     try {
-      await client.from('jobs').delete().eq('author_id', userId);
+      await client.from('jobs').delete().or('author_id.eq.$userId,user_id.eq.$userId');
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error deleting studio jobs: $e');
     }
@@ -543,6 +546,48 @@ class SupabaseDbService {
       await client.from('availability_blocks').delete().or('user_id.eq.$userId,detailer_id.eq.$userId');
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error deleting studio availability blocks: $e');
+    }
+
+    // Delete studio conversations and all their messages
+    try {
+      final idsToDelete = Set<String>.from(studioConversationIds);
+      if (idsToDelete.isEmpty) {
+        final convsRes = await client
+            .from('conversations')
+            .select('id')
+            .or('participant_a.eq.$userId,participant_b.eq.$userId');
+        for (final row in convsRes) {
+          final cId = row['id'] as String?;
+          if (cId != null) idsToDelete.add(cId);
+        }
+      }
+      for (final convId in idsToDelete) {
+        try {
+          await client.from('messages').delete().eq('conversation_id', convId);
+          await client.from('conversations').delete().eq('id', convId);
+        } catch (_) {}
+      }
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error deleting studio messages & conversations: $e');
+    }
+
+    // Reset profile in Supabase cloud DB to client role and clear studio attributes
+    try {
+      await client.from('profiles').update({
+        'role': 'client',
+        'business_name': '',
+        'bio': '',
+        'starting_price': 0.0,
+        'service_packages': [],
+        'is_verified_host': false,
+        'is_ida_certified': false,
+        'is_insurance_verified': false,
+        'insurance_policy_number': '',
+        'is_studio_paused': false,
+        'service_radius': '25 miles',
+      }).eq('id', userId);
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error resetting profile to client role on studio deletion: $e');
     }
   }
 
