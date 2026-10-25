@@ -157,15 +157,17 @@ class SupabaseDbService {
 
       String? ownerPinHash = res['owner_pin_hash'] as String?;
       List<TeamMember> backupTeam = [];
+      bool isPausedFromRadius = false;
       if (res['service_radius'] is String) {
         final sr = res['service_radius'] as String;
         if ((ownerPinHash == null || ownerPinHash.isEmpty) && sr.contains('||pin:')) {
           final afterPin = sr.split('||pin:').last;
-          ownerPinHash = afterPin.split('||team:').first.trim();
+          ownerPinHash = afterPin.split('||team:').first.split('||paused:').first.trim();
         }
         if (sr.contains('||team:')) {
           try {
-            final teamB64 = sr.split('||team:').last.trim();
+            final afterTeam = sr.split('||team:').last;
+            final teamB64 = afterTeam.split('||paused:').first.trim();
             final decodedJson = utf8.decode(base64Decode(teamB64));
             final list = jsonDecode(decodedJson) as List<dynamic>;
             backupTeam = list
@@ -173,11 +175,17 @@ class SupabaseDbService {
                 .toList();
           } catch (_) {}
         }
+        if (sr.contains('||paused:')) {
+          final afterPaused = sr.split('||paused:').last.split('||').first.trim();
+          isPausedFromRadius = afterPaused == 'true' || afterPaused == '1';
+        }
       }
       final cleanServiceRadius = ((res['service_radius'] as String?) ?? '25 miles • Mobile & Studio')
           .split('||pin:')
           .first
           .split('||team:')
+          .first
+          .split('||paused:')
           .first
           .trim();
 
@@ -248,7 +256,7 @@ class SupabaseDbService {
         averageRating: (res['rating'] as num?)?.toDouble() ?? 5.0,
         reviewCount: res['review_count'] as int? ?? 0,
         ownerPinHash: ownerPinHash,
-        isStudioPaused: (res['is_studio_paused'] ?? res['isStudioPaused']) as bool? ?? false,
+        isStudioPaused: ((res['is_studio_paused'] ?? res['isStudioPaused']) as bool?) ?? isPausedFromRadius,
       );
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error parsing UserProfile: $e');
@@ -315,6 +323,8 @@ class SupabaseDbService {
           .first
           .split('||team:')
           .first
+          .split('||paused:')
+          .first
           .trim();
       final StringBuffer radiusBuf = StringBuffer(cleanRadius);
       if (user.ownerPinHash != null && user.ownerPinHash!.isNotEmpty) {
@@ -326,6 +336,9 @@ class SupabaseDbService {
           final teamB64 = base64Encode(utf8.encode(teamJson));
           radiusBuf.write('||team:$teamB64');
         } catch (_) {}
+      }
+      if (user.isStudioPaused) {
+        radiusBuf.write('||paused:true');
       }
       final encodedRadius = radiusBuf.toString();
 

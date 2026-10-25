@@ -24,6 +24,7 @@ create table if not exists public.profiles (
   total_jobs_count integer default 0,
   starting_price numeric default 150.0,
   subscription_tier text default 'free',
+  is_studio_paused boolean default false,
   service_packages jsonb default '[]'::jsonb,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );

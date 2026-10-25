@@ -5,6 +5,7 @@ import 'package:detail_craft/models/user_vehicle.dart';
 import 'package:detail_craft/models/booking_models.dart';
 import 'package:detail_craft/models/inventory_item.dart';
 import 'package:detail_craft/services/job_repository.dart';
+import 'package:detail_craft/services/local_storage_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -167,6 +168,41 @@ void main() {
 
       // 5. Studio is hidden from public discovery / search
       expect(repo.publicDetailers.any((d) => d.id == 'studio_host_02'), isFalse);
+    });
+
+    test('Studio pause state persistence survives cloud refresh without reverting to live', () async {
+      final repo = JobRepository();
+      await repo.init();
+
+      final studioDetailer = UserProfile(
+        id: 'studio_pause_test',
+        role: UserRole.detailer,
+        username: 'pause_user',
+        displayName: 'Pause Tester',
+        businessName: 'Pause Studio Co',
+        location: 'Dallas, TX',
+        servicePackages: const [],
+        isStudioPaused: false,
+      );
+      await repo.updateCurrentUser(studioDetailer);
+      expect(repo.currentUser.isStudioPaused, isFalse);
+
+      // 1. Pause the studio
+      final pauseRes = await repo.setStudioPaused(true);
+      expect(pauseRes.success, isTrue);
+      expect(repo.currentUser.isStudioPaused, isTrue);
+
+      // 2. Verify stored local user has isStudioPaused = true
+      final stored = await LocalStorageService.loadCurrentUser();
+      expect(stored?.isStudioPaused, isTrue);
+
+      // 3. Resume studio
+      final resumeRes = await repo.setStudioPaused(false);
+      expect(resumeRes.success, isTrue);
+      expect(repo.currentUser.isStudioPaused, isFalse);
+
+      final storedAfterResume = await LocalStorageService.loadCurrentUser();
+      expect(storedAfterResume?.isStudioPaused, isFalse);
     });
   });
 }

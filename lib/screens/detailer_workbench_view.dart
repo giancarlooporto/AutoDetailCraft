@@ -3047,8 +3047,12 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         if (mounted) {
           sm.showSnackBar(
             SnackBar(
-              content: Text(res.error ?? 'Could not resume studio.'),
+              content: Text(
+                res.error ?? 'Could not resume studio.',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
               backgroundColor: Colors.redAccent,
+              behavior: SnackBarBehavior.floating,
             ),
           );
         }
@@ -3057,9 +3061,25 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       if (mounted) {
         setState(() {});
         sm.showSnackBar(
-          const SnackBar(
-            content: Text('Studio operations resumed! Your studio is now live in search.'),
-            backgroundColor: AppTheme.surface,
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 20),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Studio operations resumed! Your studio is now live in search.',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFF0F261C),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: BorderSide(color: Colors.greenAccent.withAlpha(180), width: 1),
+            ),
           ),
         );
       }
@@ -3098,12 +3118,44 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             ),
             onPressed: () async {
               Navigator.of(ctx).pop();
-              await repo.setStudioPaused(true);
+              final res = await repo.setStudioPaused(true);
+              if (!res.success) {
+                if (mounted) {
+                  sm.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        res.error ?? 'Could not pause studio.',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                      backgroundColor: Colors.redAccent,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+                return;
+              }
               if (mounted) {
+                setState(() {});
                 sm.showSnackBar(
-                  const SnackBar(
-                    content: Text('Studio is now paused and hidden from search.'),
-                    backgroundColor: AppTheme.surface,
+                  SnackBar(
+                    content: const Row(
+                      children: [
+                        Icon(Icons.pause_circle_filled_rounded, color: Colors.amber, size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Studio operations paused and hidden from search.',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                    backgroundColor: const Color(0xFF231C10),
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: const BorderSide(color: Colors.amber, width: 1),
+                    ),
                   ),
                 );
               }
@@ -3342,8 +3394,12 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         if (mounted) {
                           sm.showSnackBar(
                             SnackBar(
-                              content: Text(res.error ?? 'Could not pause studio.'),
+                              content: Text(
+                                res.error ?? 'Could not pause studio.',
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              ),
                               backgroundColor: Colors.redAccent,
+                              behavior: SnackBarBehavior.floating,
                             ),
                           );
                         }
@@ -3352,9 +3408,25 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                       if (mounted) {
                         setState(() {});
                         sm.showSnackBar(
-                          const SnackBar(
-                            content: Text('Studio operations paused and hidden from search.'),
-                            backgroundColor: AppTheme.surface,
+                          SnackBar(
+                            content: const Row(
+                              children: [
+                                Icon(Icons.pause_circle_filled_rounded, color: Colors.amber, size: 20),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Studio operations paused and hidden from search.',
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            backgroundColor: const Color(0xFF231C10),
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              side: const BorderSide(color: Colors.amber, width: 1),
+                            ),
                           ),
                         );
                       }
@@ -3364,8 +3436,12 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         if (mounted) {
                           sm.showSnackBar(
                             SnackBar(
-                              content: Text(res.error ?? 'Could not quit detailing.'),
+                              content: Text(
+                                res.error ?? 'Could not quit detailing.',
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              ),
                               backgroundColor: Colors.redAccent,
+                              behavior: SnackBarBehavior.floating,
                             ),
                           );
                         }
@@ -3374,9 +3450,25 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                       if (mounted) {
                         setState(() {});
                         sm.showSnackBar(
-                          const SnackBar(
-                            content: Text('Studio data deleted. Reverted to Vehicle Owner (Client) mode.'),
-                            backgroundColor: AppTheme.surface,
+                          SnackBar(
+                            content: const Row(
+                              children: [
+                                Icon(Icons.delete_sweep_rounded, color: Colors.redAccent, size: 20),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Studio data deleted. Reverted to Vehicle Owner (Client) mode.',
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            backgroundColor: const Color(0xFF2C1417),
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              side: BorderSide(color: Colors.redAccent.withAlpha(180), width: 1),
+                            ),
                           ),
                         );
                       }
@@ -9801,23 +9893,59 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               style: TextStyle(color: Colors.amber, fontSize: 11, fontWeight: FontWeight.bold),
             ),
           ),
-          TextButton(
-            style: TextButton.styleFrom(
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
               visualDensity: VisualDensity.compact,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              backgroundColor: Colors.amber,
+              backgroundColor: Colors.greenAccent,
               foregroundColor: Colors.black,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
             ),
+            icon: const Icon(Icons.play_arrow_rounded, size: 14),
+            label: const Text('Resume Studio', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
             onPressed: () async {
-              await widget.repository.setStudioPaused(false);
+              final res = await widget.repository.setStudioPaused(false);
+              if (!res.success) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        res.error ?? 'Could not resume studio.',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                      backgroundColor: Colors.redAccent,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+                return;
+              }
               if (context.mounted) {
+                setState(() {});
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Studio operations resumed! Your studio is now live in search.')),
+                  SnackBar(
+                    content: const Row(
+                      children: [
+                        Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Studio operations resumed! Your studio is now live in search.',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                    backgroundColor: const Color(0xFF0F261C),
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: BorderSide(color: Colors.greenAccent.withAlpha(180), width: 1),
+                    ),
+                  ),
                 );
               }
             },
-            child: const Text('Turn On', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
           ),
         ],
       ),

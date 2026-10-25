@@ -502,11 +502,16 @@ class JobRepository extends ChangeNotifier {
         }
 
         final mode = await LocalStorageService.loadWorkbenchMode();
+        final storedCurrentUser = await LocalStorageService.loadCurrentUser();
+        final isLocalPaused = _currentUser.isStudioPaused || (storedCurrentUser?.isStudioPaused ?? false);
+        final resolvedPaused = cloudProfile.isStudioPaused || isLocalPaused;
+
         var merged = cloudProfile.copyWith(
           servicePackages: resolvedPackages,
           myGarage: resolvedGarage,
           teamMembers: resolvedTeam,
           ownerPinHash: resolvedPinHash,
+          isStudioPaused: resolvedPaused,
         );
 
         if (mode == 'studio') {

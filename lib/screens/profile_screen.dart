@@ -282,8 +282,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         if (mounted) {
           sm.showSnackBar(
             SnackBar(
-              content: Text(res.error ?? 'Could not resume studio.'),
+              content: Text(
+                res.error ?? 'Could not resume studio.',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
               backgroundColor: Colors.redAccent,
+              behavior: SnackBarBehavior.floating,
             ),
           );
         }
@@ -292,9 +296,25 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       if (mounted) {
         setState(() {});
         sm.showSnackBar(
-          const SnackBar(
-            content: Text('Studio operations resumed! Your studio is now live in search.'),
-            backgroundColor: AppTheme.surface,
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 20),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Studio operations resumed! Your studio is now live in search.',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFF0F261C),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: BorderSide(color: Colors.greenAccent.withAlpha(180), width: 1),
+            ),
           ),
         );
       }
@@ -338,8 +358,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 if (mounted) {
                   sm.showSnackBar(
                     SnackBar(
-                      content: Text(res.error ?? 'Could not pause studio.'),
+                      content: Text(
+                        res.error ?? 'Could not pause studio.',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
                       backgroundColor: Colors.redAccent,
+                      behavior: SnackBarBehavior.floating,
                     ),
                   );
                 }
@@ -348,9 +372,25 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               if (mounted) {
                 setState(() {});
                 sm.showSnackBar(
-                  const SnackBar(
-                    content: Text('Studio is now paused and hidden from search.'),
-                    backgroundColor: AppTheme.surface,
+                  SnackBar(
+                    content: const Row(
+                      children: [
+                        Icon(Icons.pause_circle_filled_rounded, color: Colors.amber, size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Studio operations paused and hidden from search.',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                    backgroundColor: const Color(0xFF231C10),
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: const BorderSide(color: Colors.amber, width: 1),
+                    ),
                   ),
                 );
               }
@@ -604,8 +644,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         if (mounted) {
                           sm.showSnackBar(
                             SnackBar(
-                              content: Text(res.error ?? 'Could not pause studio.'),
+                              content: Text(
+                                res.error ?? 'Could not pause studio.',
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              ),
                               backgroundColor: Colors.redAccent,
+                              behavior: SnackBarBehavior.floating,
                             ),
                           );
                         }
@@ -614,9 +658,25 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       if (mounted) {
                         setState(() {});
                         sm.showSnackBar(
-                          const SnackBar(
-                            content: Text('Studio operations paused and hidden from search.'),
-                            backgroundColor: AppTheme.surface,
+                          SnackBar(
+                            content: const Row(
+                              children: [
+                                Icon(Icons.pause_circle_filled_rounded, color: Colors.amber, size: 20),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Studio operations paused and hidden from search.',
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            backgroundColor: const Color(0xFF231C10),
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              side: const BorderSide(color: Colors.amber, width: 1),
+                            ),
                           ),
                         );
                       }
@@ -626,8 +686,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         if (mounted) {
                           sm.showSnackBar(
                             SnackBar(
-                              content: Text(res.error ?? 'Could not quit detailing.'),
+                              content: Text(
+                                res.error ?? 'Could not quit detailing.',
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              ),
                               backgroundColor: Colors.redAccent,
+                              behavior: SnackBarBehavior.floating,
                             ),
                           );
                         }
@@ -636,9 +700,25 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       if (mounted) {
                         setState(() {});
                         sm.showSnackBar(
-                          const SnackBar(
-                            content: Text('Studio data deleted. Reverted to Vehicle Owner (Client) mode.'),
-                            backgroundColor: AppTheme.surface,
+                          SnackBar(
+                            content: const Row(
+                              children: [
+                                Icon(Icons.delete_sweep_rounded, color: Colors.redAccent, size: 20),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Studio data deleted. Reverted to Vehicle Owner (Client) mode.',
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            backgroundColor: const Color(0xFF2C1417),
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              side: BorderSide(color: Colors.redAccent.withAlpha(180), width: 1),
+                            ),
                           ),
                         );
                       }
