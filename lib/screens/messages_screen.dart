@@ -196,11 +196,62 @@ class _MessagesScreenState extends State<MessagesScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted, size: 20),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded, color: AppTheme.textMuted, size: 20),
+                  tooltip: 'Delete conversation',
+                  splashRadius: 18,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _confirmDeleteConversation(conv),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted, size: 20),
+              ],
+            ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _confirmDeleteConversation(Conversation conv) async {
+    final name = conv.otherUserName.isNotEmpty ? conv.otherUserName : 'this user';
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Text('Delete Conversation?', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Text(
+          'Are you sure you want to delete this conversation with $name? All messages will be permanently deleted.',
+          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      await widget.repository.deleteConversation(conv.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Conversation with $name deleted'),
+            backgroundColor: AppTheme.surface,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildEmpty() {

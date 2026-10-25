@@ -137,6 +137,7 @@ alter table public.conversations enable row level security;
 create policy "Allow read on conversations" on public.conversations for select using (true);
 create policy "Allow insert on conversations" on public.conversations for insert with check (true);
 create policy "Allow update on conversations" on public.conversations for update using (true);
+create policy "Allow delete on conversations" on public.conversations for delete using (true);
 
 -- 6. MESSAGES TABLE (Individual DMs)
 create table if not exists public.messages (
@@ -153,6 +154,7 @@ alter table public.messages enable row level security;
 create policy "Allow read on messages" on public.messages for select using (true);
 create policy "Allow insert on messages" on public.messages for insert with check (true);
 create policy "Allow update on messages" on public.messages for update using (true);
+create policy "Allow delete on messages" on public.messages for delete using (true);
 
 -- 7. JOBS TABLE (Transformation Jobs)
 create table if not exists public.jobs (

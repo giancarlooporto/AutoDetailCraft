@@ -19,6 +19,7 @@ import 'public_studio_screen.dart';
 import 'calendar_preferences_dialog.dart';
 import '../models/calendar_availability_block.dart';
 import '../models/shift_request.dart';
+import '../models/message_model.dart';
 import '../services/local_storage_service.dart';
 import 'chat_screen.dart';
 
@@ -4197,8 +4198,11 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              trailing: c.unreadCount > 0
-                  ? Container(
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (c.unreadCount > 0)
+                    Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(10)),
                       child: Text(
@@ -4206,10 +4210,21 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
                       ),
                     )
-                  : Text(
+                  else
+                    Text(
                       DateFormat('MMM d').format(c.updatedAt),
                       style: const TextStyle(fontSize: 10, color: AppTheme.textMuted),
                     ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppTheme.textMuted),
+                    tooltip: 'Delete conversation',
+                    splashRadius: 16,
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _confirmDeleteStudioConversation(c),
+                  ),
+                ],
+              ),
               onTap: () {
                 setState(() {
                   _selectedStudioConversationId = c.id;
@@ -4221,6 +4236,52 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         );
       },
     );
+  }
+
+  Future<void> _confirmDeleteStudioConversation(Conversation c) async {
+    final name = c.otherUserName.isNotEmpty ? c.otherUserName : 'Customer';
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Text('Delete Conversation?', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Text(
+          'Are you sure you want to delete this conversation with $name? All messages will be permanently removed.',
+          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.error),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      await widget.repository.deleteConversation(c.id);
+      if (mounted) {
+        setState(() {
+          if (_selectedStudioConversationId == c.id) {
+            final remaining = widget.repository.studioConversations;
+            _selectedStudioConversationId = remaining.isNotEmpty ? remaining.first.id : null;
+            _mobileStep = 1;
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Conversation with $name deleted'),
+            backgroundColor: AppTheme.surface,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
   // ==========================================

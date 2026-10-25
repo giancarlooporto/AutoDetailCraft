@@ -90,13 +90,14 @@ class Conversation {
     String? otherUserAvatar,
     int? unreadCount,
     DateTime? updatedAt,
+    bool clearLastMessage = false,
   }) =>
       Conversation(
         id: id,
         participantA: participantA,
         participantB: participantB,
         updatedAt: updatedAt ?? this.updatedAt,
-        lastMessage: lastMessage ?? this.lastMessage,
+        lastMessage: clearLastMessage ? null : (lastMessage ?? this.lastMessage),
         otherUserName: otherUserName ?? this.otherUserName,
         otherUserAvatar: otherUserAvatar ?? this.otherUserAvatar,
         unreadCount: unreadCount ?? this.unreadCount,

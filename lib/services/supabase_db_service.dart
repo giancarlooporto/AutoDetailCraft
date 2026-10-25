@@ -1246,6 +1246,33 @@ class SupabaseDbService {
     }
   }
 
+  /// Deletes a single message by ID.
+  static Future<bool> deleteMessage(String messageId) async {
+    final client = _client;
+    if (client == null) return false;
+    try {
+      await client.from('messages').delete().eq('id', messageId);
+      return true;
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] deleteMessage error: $e');
+      return false;
+    }
+  }
+
+  /// Deletes an entire conversation and all its messages.
+  static Future<bool> deleteConversation(String conversationId) async {
+    final client = _client;
+    if (client == null) return false;
+    try {
+      await client.from('messages').delete().eq('conversation_id', conversationId);
+      await client.from('conversations').delete().eq('id', conversationId);
+      return true;
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] deleteConversation error: $e');
+      return false;
+    }
+  }
+
   // ─── BOOKINGS ─────────────────────────────────────────────────────────────
 
   /// Upsert a booking appointment to Supabase with schema fallback resilience

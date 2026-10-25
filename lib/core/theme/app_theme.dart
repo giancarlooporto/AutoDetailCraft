@@ -14,6 +14,7 @@ class AppTheme {
   static const Color hardnessSoft = Color(0xFFFF5252); // Soft/Sticky Paint (High Care)
   static const Color hardnessMedium = Color(0xFFFFD600); // Medium Paint
   static const Color hardnessHard = Color(0xFF00E676); // Rock Hard German Paint
+  static const Color error = Color(0xFFFF5252);
 
   static const Color textPrimary = Color(0xFFF0F6FC);
   static const Color textSecondary = Color(0xFF8B949E);
