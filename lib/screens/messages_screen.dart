@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../models/message_model.dart';
+import '../models/user_profile.dart';
 import '../services/job_repository.dart';
 import '../widgets/ios_swipe_to_delete.dart';
 import 'chat_screen.dart';
@@ -45,8 +46,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
     return ListenableBuilder(
       listenable: widget.repository,
       builder: (context, _) {
-        // In Client Mode, strictly display only conversations with detailers
-        final conversations = widget.repository.clientConversations;
+        // If user is a detailer, show all conversations (client inquiries & detailer chats)
+        // so detailers are never blocked from seeing messages sent by clients.
+        final isDetailer = widget.repository.currentUser.role == UserRole.detailer;
+        final conversations = isDetailer
+            ? widget.repository.conversations
+            : widget.repository.clientConversations;
         final isGuest = widget.repository.isGuestMode;
 
         return Scaffold(
@@ -251,6 +256,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   Widget _buildEmpty() {
+    final isDetailer = widget.repository.currentUser.role == UserRole.detailer;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(40),
@@ -268,10 +274,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
             const SizedBox(height: 20),
             const Text('No conversations yet', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            const Text(
-              'Message a detailer from their Public Storefront to get started.',
+            Text(
+              isDetailer
+                  ? 'Client inquiries and messages will appear here.'
+                  : 'Message a detailer from their Public Storefront to get started.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.5),
+              style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.5),
             ),
           ],
         ),

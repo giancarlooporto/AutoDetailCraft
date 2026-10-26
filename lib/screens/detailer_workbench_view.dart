@@ -132,6 +132,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       _loadSavedHubSection();
     }
     widget.repository.addListener(_onRepoChanged);
+    widget.repository.loadConversations();
     _ensureSelection();
     _startAutoLockTimer();
   }
@@ -244,6 +245,9 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
   void _selectHub(StudioHubSection section, {bool isMobile = false}) {
     LocalStorageService.saveStudioHubSection(section.name);
+    if (section == StudioHubSection.messages) {
+      widget.repository.loadConversations();
+    }
     setState(() {
       _selectedHub = section;
       if (section != StudioHubSection.inventory) {
@@ -4136,99 +4140,108 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   Widget _buildStudioMessagesPane2(BuildContext context, {bool isMobile = false}) {
     final convs = widget.repository.studioConversations;
 
-    if (convs.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.chat_bubble_outline_rounded, size: 40, color: AppTheme.textMuted.withAlpha(120)),
-              const SizedBox(height: 12),
-              const Text(
-                'No Client Messages Yet',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Direct inquiries from customers on your public storefront will appear here.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(10),
-      itemCount: convs.length,
-      itemBuilder: (context, idx) {
-        final c = convs[idx];
-        final isSelected = _selectedStudioConversationId == c.id;
-
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: IosSwipeToDelete(
-            key: ValueKey(c.id),
-            borderRadius: BorderRadius.circular(10),
-            onDelete: () => _confirmDeleteStudioConversation(c),
-            child: Container(
-              decoration: BoxDecoration(
-                color: isSelected ? const Color(0xFF1E2822) : AppTheme.surface,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: isSelected ? AppTheme.primary : AppTheme.border,
-                  width: isSelected ? 1.5 : 1,
-                ),
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: ListTile(
-                  dense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  leading: CircleAvatar(
-                    radius: 18,
-                    backgroundImage: c.otherUserAvatar.isNotEmpty ? NetworkImage(c.otherUserAvatar) : null,
-                    backgroundColor: AppTheme.surfaceLight,
-                    child: c.otherUserAvatar.isEmpty ? const Icon(Icons.person_rounded, size: 18, color: AppTheme.textMuted) : null,
-                  ),
-                  title: Text(
-                    c.otherUserName.isNotEmpty ? c.otherUserName : 'Customer',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isSelected ? AppTheme.primary : Colors.white),
-                  ),
-                  subtitle: Text(
-                    c.lastMessage?.text ?? 'New conversation',
-                    style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: c.unreadCount > 0
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(10)),
-                          child: Text(
-                            '${c.unreadCount}',
-                            style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
-                          ),
-                        )
-                      : Text(
-                          DateFormat('MMM d').format(c.updatedAt),
-                          style: const TextStyle(fontSize: 10, color: AppTheme.textMuted),
+    return RefreshIndicator(
+      color: AppTheme.primary,
+      onRefresh: () => widget.repository.loadConversations(),
+      child: convs.isEmpty
+          ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                const SizedBox(height: 80),
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.chat_bubble_outline_rounded, size: 40, color: AppTheme.textMuted.withAlpha(120)),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'No Client Messages Yet',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                         ),
-                  onTap: () {
-                    setState(() {
-                      _selectedStudioConversationId = c.id;
-                      if (isMobile) _mobileStep = 2;
-                    });
-                  },
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Direct inquiries from customers on your public storefront will appear here.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
+              ],
+            )
+          : ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(10),
+              itemCount: convs.length,
+              itemBuilder: (context, idx) {
+                final c = convs[idx];
+                final isSelected = _selectedStudioConversationId == c.id;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: IosSwipeToDelete(
+                    key: ValueKey(c.id),
+                    borderRadius: BorderRadius.circular(10),
+                    onDelete: () => _confirmDeleteStudioConversation(c),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: isSelected ? const Color(0xFF1E2822) : AppTheme.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isSelected ? AppTheme.primary : AppTheme.border,
+                          width: isSelected ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: ListTile(
+                          dense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          leading: CircleAvatar(
+                            radius: 18,
+                            backgroundImage: c.otherUserAvatar.isNotEmpty ? NetworkImage(c.otherUserAvatar) : null,
+                            backgroundColor: AppTheme.surfaceLight,
+                            child: c.otherUserAvatar.isEmpty ? const Icon(Icons.person_rounded, size: 18, color: AppTheme.textMuted) : null,
+                          ),
+                          title: Text(
+                            c.otherUserName.isNotEmpty ? c.otherUserName : 'Customer',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isSelected ? AppTheme.primary : Colors.white),
+                          ),
+                          subtitle: Text(
+                            c.lastMessage?.text ?? 'New conversation',
+                            style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: c.unreadCount > 0
+                              ? Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(10)),
+                                  child: Text(
+                                    '${c.unreadCount}',
+                                    style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
+                                  ),
+                                )
+                              : Text(
+                                  DateFormat('MMM d').format(c.updatedAt),
+                                  style: const TextStyle(fontSize: 10, color: AppTheme.textMuted),
+                                ),
+                          onTap: () {
+                            setState(() {
+                              _selectedStudioConversationId = c.id;
+                              if (isMobile) _mobileStep = 2;
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
-          ),
-        );
-      },
     );
   }
 

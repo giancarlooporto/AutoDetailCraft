@@ -35,6 +35,24 @@ class DirectMessage {
         'created_at': createdAt.toIso8601String(),
         'is_read': isRead,
       };
+
+  DirectMessage copyWith({
+    String? id,
+    String? conversationId,
+    String? senderId,
+    String? text,
+    DateTime? createdAt,
+    bool? isRead,
+  }) {
+    return DirectMessage(
+      id: id ?? this.id,
+      conversationId: conversationId ?? this.conversationId,
+      senderId: senderId ?? this.senderId,
+      text: text ?? this.text,
+      createdAt: createdAt ?? this.createdAt,
+      isRead: isRead ?? this.isRead,
+    );
+  }
 }
 
 class Conversation {
@@ -85,6 +103,9 @@ class Conversation {
       };
 
   Conversation copyWith({
+    String? id,
+    String? participantA,
+    String? participantB,
     DirectMessage? lastMessage,
     String? otherUserName,
     String? otherUserAvatar,
@@ -93,9 +114,9 @@ class Conversation {
     bool clearLastMessage = false,
   }) =>
       Conversation(
-        id: id,
-        participantA: participantA,
-        participantB: participantB,
+        id: id ?? this.id,
+        participantA: participantA ?? this.participantA,
+        participantB: participantB ?? this.participantB,
         updatedAt: updatedAt ?? this.updatedAt,
         lastMessage: clearLastMessage ? null : (lastMessage ?? this.lastMessage),
         otherUserName: otherUserName ?? this.otherUserName,

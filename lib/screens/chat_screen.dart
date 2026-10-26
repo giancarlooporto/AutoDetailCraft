@@ -54,35 +54,20 @@ class _ChatScreenState extends State<ChatScreen> {
   List<DirectMessage> _messages = [];
   bool _loading = true;
   bool _sending = false;
+  bool _isLoadingMessages = false;
   Timer? _pollTimer;
   RealtimeChannel? _chatChannel;
+  late String _activeConversationId;
 
   @override
   void initState() {
     super.initState();
+    _activeConversationId = widget.repository.resolveConversationId(widget.conversationId);
     _loadMessages();
     widget.repository.addListener(_onRepositoryChanged);
 
     // 1. Subscribe to realtime messages for this specific conversation
-    final client = SupabaseService.client;
-    if (client != null) {
-      _chatChannel = client
-          .channel('public:messages:${widget.conversationId}')
-          .onPostgresChanges(
-            event: PostgresChangeEvent.all,
-            schema: 'public',
-            table: 'messages',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'conversation_id',
-              value: widget.conversationId,
-            ),
-            callback: (_) {
-              _loadMessages(scroll: true);
-            },
-          )
-          .subscribe();
-    }
+    _subscribeToChatRealtime();
 
     // 2. Periodic active fallback poll while in the active chat view (skipped in automated tests)
     final isTest = WidgetsBinding.instance.runtimeType.toString().contains('Test');
@@ -91,7 +76,47 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _subscribeToChatRealtime() {
+    _chatChannel?.unsubscribe();
+    _chatChannel = null;
+
+    final client = SupabaseService.client;
+    if (client != null) {
+      _chatChannel = client
+          .channel('public:messages:$_activeConversationId')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'messages',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'conversation_id',
+              value: _activeConversationId,
+            ),
+            callback: (payload) {
+              if (payload.eventType == PostgresChangeEvent.delete) {
+                final oldId = payload.oldRecord['id'] as String?;
+                if (oldId != null && mounted) {
+                  setState(() {
+                    _messages.removeWhere((m) => m.id == oldId);
+                  });
+                }
+                _loadMessages(scroll: false);
+              } else {
+                _loadMessages(scroll: true);
+              }
+            },
+          )
+          .subscribe();
+    }
+  }
+
   void _onRepositoryChanged() {
+    final resolved = widget.repository.resolveConversationId(_activeConversationId);
+    if (resolved != _activeConversationId) {
+      _activeConversationId = resolved;
+      _subscribeToChatRealtime();
+    }
     if (!_sending && mounted) {
       _loadMessages(scroll: false);
     }
@@ -109,13 +134,19 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _loadMessages({bool scroll = true}) async {
-    final msgs = await widget.repository.fetchMessages(widget.conversationId);
-    if (mounted) {
-      setState(() {
-        _messages = msgs;
-        _loading = false;
-      });
-      if (scroll) _scrollToBottom();
+    if (_isLoadingMessages) return;
+    _isLoadingMessages = true;
+    try {
+      final msgs = await widget.repository.fetchMessages(_activeConversationId);
+      if (mounted) {
+        setState(() {
+          _messages = msgs;
+          _loading = false;
+        });
+        if (scroll) _scrollToBottom();
+      }
+    } finally {
+      _isLoadingMessages = false;
     }
   }
 
@@ -137,7 +168,11 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _sending = true);
     _textController.clear();
 
-    await widget.repository.sendMessage(widget.conversationId, text);
+    final sentMsg = await widget.repository.sendMessage(_activeConversationId, text);
+    if (sentMsg != null && sentMsg.conversationId.isNotEmpty && sentMsg.conversationId != _activeConversationId) {
+      _activeConversationId = sentMsg.conversationId;
+      _subscribeToChatRealtime();
+    }
     if (mounted) {
       await _loadMessages(scroll: true);
       setState(() => _sending = false);
@@ -169,7 +204,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     if (confirm == true && mounted) {
-      await widget.repository.deleteConversation(widget.conversationId);
+      await widget.repository.deleteConversation(_activeConversationId);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -212,7 +247,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     if (confirm == true && mounted) {
-      await widget.repository.deleteMessage(widget.conversationId, msg.id);
+      await widget.repository.deleteMessage(_activeConversationId, msg.id);
       await _loadMessages(scroll: false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

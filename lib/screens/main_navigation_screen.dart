@@ -107,7 +107,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         final studioIcon = isDetailer ? Icons.storefront_outlined : Icons.garage_outlined;
         final studioSelectedIcon = isDetailer ? Icons.storefront_rounded : Icons.garage_rounded;
 
-        final unread = isStudioActive ? widget.repository.studioUnreadMessages : widget.repository.clientUnreadMessages;
+        final unread = isDetailer ? widget.repository.totalUnreadMessages : widget.repository.clientUnreadMessages;
 
         final screens = [
           FeedScreen(repository: widget.repository),

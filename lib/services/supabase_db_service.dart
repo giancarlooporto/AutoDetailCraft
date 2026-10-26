@@ -1082,21 +1082,37 @@ class SupabaseDbService {
     final client = _client;
     if (client == null) return null;
     try {
-      // Check both orderings since participant_a/b aren't ordered
+      // Check both orderings since participant_a/b aren't ordered.
+      // Order by updated_at descending and limit 1 to avoid PGRST116 when duplicate rows exist.
       final existing = await client
           .from('conversations')
           .select('id')
           .or('and(participant_a.eq.$userId,participant_b.eq.$otherUserId),and(participant_a.eq.$otherUserId,participant_b.eq.$userId)')
+          .order('updated_at', ascending: false)
+          .limit(1)
           .maybeSingle();
       if (existing != null) return existing['id'] as String;
 
       // Create new conversation
-      final res = await client.from('conversations').insert({
-        'participant_a': userId,
-        'participant_b': otherUserId,
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      }).select('id').single();
-      return res['id'] as String;
+      try {
+        final res = await client.from('conversations').insert({
+          'participant_a': userId,
+          'participant_b': otherUserId,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        }).select('id').single();
+        return res['id'] as String;
+      } catch (insertErr) {
+        // Concurrency/race condition recovery: if another process inserted concurrently, fetch the existing one
+        final retry = await client
+            .from('conversations')
+            .select('id')
+            .or('and(participant_a.eq.$userId,participant_b.eq.$otherUserId),and(participant_a.eq.$otherUserId,participant_b.eq.$userId)')
+            .order('updated_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        if (retry != null) return retry['id'] as String;
+        rethrow;
+      }
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] createOrGetConversation error: $e');
       return null;
@@ -1104,9 +1120,10 @@ class SupabaseDbService {
   }
 
   /// Fetches all conversations for a user, enriched with the other user's profile info.
-  static Future<List<Conversation>> fetchConversations(String userId) async {
+  /// Returns null on error/offline so callers know whether it was an empty response vs failure.
+  static Future<List<Conversation>?> fetchConversations(String userId) async {
     final client = _client;
-    if (client == null) return [];
+    if (client == null) return null;
     try {
       final res = await client
           .from('conversations')
@@ -1179,14 +1196,15 @@ class SupabaseDbService {
       return conversations;
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] fetchConversations error: $e');
-      return [];
+      return null;
     }
   }
 
   /// Fetches all messages for a conversation.
-  static Future<List<DirectMessage>> fetchMessages(String conversationId) async {
+  /// Returns null on error/offline so caller knows whether it was an empty response vs failure.
+  static Future<List<DirectMessage>?> fetchMessages(String conversationId) async {
     final client = _client;
-    if (client == null) return [];
+    if (client == null) return null;
     try {
       final res = await client
           .from('messages')
@@ -1198,11 +1216,12 @@ class SupabaseDbService {
           .toList();
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] fetchMessages error: $e');
-      return [];
+      return null;
     }
   }
 
   /// Sends a message and bumps the conversation updated_at.
+  /// Prevents FK violations on local conv_ IDs by ensuring the conversation exists in Supabase.
   static Future<DirectMessage?> sendMessage({
     required String conversationId,
     required String senderId,
@@ -1211,8 +1230,54 @@ class SupabaseDbService {
     final client = _client;
     if (client == null) return null;
     try {
+      String targetConvId = conversationId;
+
+      if (targetConvId.startsWith('conv_')) {
+        // Check if the conversation row exists by primary key
+        final existing = await client
+            .from('conversations')
+            .select('id')
+            .eq('id', targetConvId)
+            .limit(1)
+            .maybeSingle();
+
+        if (existing != null) {
+          targetConvId = existing['id'] as String;
+        } else {
+          // Parse potential participants from conv_<id1>_<id2>
+          final raw = targetConvId.substring(5);
+          final parts = raw.split('_');
+          final partA = parts.isNotEmpty ? parts[0] : senderId;
+          final partB = parts.length >= 2 ? parts.sublist(1).join('_') : 'unknown';
+
+          // Check if a conversation between these participants already exists
+          final existingByParts = await client
+              .from('conversations')
+              .select('id')
+              .or('and(participant_a.eq.$partA,participant_b.eq.$partB),and(participant_a.eq.$partB,participant_b.eq.$partA)')
+              .order('updated_at', ascending: false)
+              .limit(1)
+              .maybeSingle();
+
+          if (existingByParts != null) {
+            targetConvId = existingByParts['id'] as String;
+          } else {
+            try {
+              await client.from('conversations').upsert({
+                'id': targetConvId,
+                'participant_a': partA,
+                'participant_b': partB,
+                'updated_at': DateTime.now().toUtc().toIso8601String(),
+              });
+            } catch (upsertErr) {
+              if (kDebugMode) print('[SupabaseDbService] Error upserting conv_ fallback conversation: $upsertErr');
+            }
+          }
+        }
+      }
+
       final res = await client.from('messages').insert({
-        'conversation_id': conversationId,
+        'conversation_id': targetConvId,
         'sender_id': senderId,
         'text': text,
         'created_at': DateTime.now().toUtc().toIso8601String(),
@@ -1222,7 +1287,7 @@ class SupabaseDbService {
       // Bump conversation updated_at for sorting
       await client.from('conversations').update({
         'updated_at': DateTime.now().toUtc().toIso8601String(),
-      }).eq('id', conversationId);
+      }).eq('id', targetConvId);
 
       return DirectMessage.fromJson(res);
     } catch (e) {

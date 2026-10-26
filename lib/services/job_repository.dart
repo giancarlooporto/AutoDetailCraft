@@ -68,6 +68,7 @@ class JobRepository extends ChangeNotifier {
 
   // Messaging state
   List<Conversation> _conversations = [];
+  RealtimeChannel? _conversationsChannel;
   RealtimeChannel? _messagesChannel;
   RealtimeChannel? _jobsChannel;
   RealtimeChannel? _bookingsChannel;
@@ -768,6 +769,8 @@ class JobRepository extends ChangeNotifier {
     for (final email in emailsToClaim) {
       await SupabaseDbService.claimGuestBookings(email);
     }
+    // Re-sync conversations so claimed conversations/messages from guest bookings are immediately visible
+    await loadConversations();
     var localBookingsUpdated = false;
     for (var i = 0; i < _bookings.length; i++) {
       final b = _bookings[i];
@@ -800,6 +803,8 @@ class JobRepository extends ChangeNotifier {
     await LocalStorageService.saveActiveTeamMemberId(null);
     await LocalStorageService.logoutSession();
     await LocalStorageService.saveWorkbenchMode('garage');
+    _conversations = [];
+    await LocalStorageService.saveConversations([]);
     _isLoggedIn = false;
     _currentUser = MockDataService.youUser;
     // Re-subscribe to public realtime channels so public visitors continue receiving real-time updates
@@ -3817,6 +3822,8 @@ class JobRepository extends ChangeNotifier {
   // Studio Conversations: Client inquiries & chats addressed to this studio
   List<Conversation> get studioConversations {
     return _conversations.where((c) {
+      final isParticipant = c.participantA == _currentUser.id || c.participantB == _currentUser.id;
+      if (!isParticipant) return false;
       final otherId = c.participantA == _currentUser.id ? c.participantB : c.participantA;
       final isOtherDetailer = _publicDetailers.any((d) => d.id == otherId && d.id != _currentUser.id);
       return !isOtherDetailer;
@@ -3826,9 +3833,12 @@ class JobRepository extends ChangeNotifier {
   // Client Conversations: Chats where this user contacted other detailers/shops
   List<Conversation> get clientConversations {
     if (_currentUser.role != UserRole.detailer) {
-      return List<Conversation>.from(_conversations);
+      return _conversations.where((c) =>
+          c.participantA == _currentUser.id || c.participantB == _currentUser.id).toList();
     }
     return _conversations.where((c) {
+      final isParticipant = c.participantA == _currentUser.id || c.participantB == _currentUser.id;
+      if (!isParticipant) return false;
       final otherId = c.participantA == _currentUser.id ? c.participantB : c.participantA;
       final isOtherDetailer = _publicDetailers.any((d) => d.id == otherId && d.id != _currentUser.id);
       return isOtherDetailer;
@@ -3840,6 +3850,43 @@ class JobRepository extends ChangeNotifier {
 
   int get clientUnreadMessages =>
       clientConversations.fold(0, (sum, c) => sum + c.unreadCount);
+
+  /// Resolves a local or migrated conversation ID to its canonical in-memory ID.
+  /// If [conversationId] is `conv_{partA}_{partB}`, checks if an existing conversation
+  /// between these participants already exists with a server-assigned UUID.
+  String resolveConversationId(String conversationId) {
+    if (!conversationId.startsWith('conv_')) {
+      return conversationId;
+    }
+    // 1. Direct ID match
+    for (final c in _conversations) {
+      if (c.id == conversationId) return c.id;
+    }
+    // 2. Participant exact pattern match against known conversations
+    for (final c in _conversations) {
+      if (conversationId == 'conv_${c.participantA}_${c.participantB}' ||
+          conversationId == 'conv_${c.participantB}_${c.participantA}') {
+        return c.id;
+      }
+    }
+    // 3. Current user prefix/suffix extraction against known conversations
+    final raw = conversationId.substring(5);
+    String? otherId;
+    if (raw.startsWith('${_currentUser.id}_')) {
+      otherId = raw.substring(_currentUser.id.length + 1);
+    } else if (raw.endsWith('_${_currentUser.id}')) {
+      otherId = raw.substring(0, raw.length - _currentUser.id.length - 1);
+    }
+    if (otherId != null && otherId.isNotEmpty) {
+      for (final c in _conversations) {
+        if ((c.participantA == _currentUser.id && c.participantB == otherId) ||
+            (c.participantA == otherId && c.participantB == _currentUser.id)) {
+          return c.id;
+        }
+      }
+    }
+    return conversationId;
+  }
 
   /// Loads conversations from local storage and Supabase, subscribing to realtime updates.
   Future<void> loadConversations() async {
@@ -3855,14 +3902,56 @@ class JobRepository extends ChangeNotifier {
       // 2. Sync from Supabase if logged in
       if (_isLoggedIn) {
         final remoteConvs = await SupabaseDbService.fetchConversations(_currentUser.id);
-        if (remoteConvs.isNotEmpty) {
-          final Map<String, Conversation> convMap = {
-            for (final c in _conversations) c.id: c,
-          };
-          for (final rc in remoteConvs) {
-            convMap[rc.id] = rc;
+        if (remoteConvs != null) {
+          // Authoritative remote reconciliation:
+          // Keep all remote conversations, plus un-synced local drafts (conv_...)
+          // ONLY if no remote conversation already exists between the same participants.
+          final remoteIds = remoteConvs.map((c) => c.id).toSet();
+          final List<Conversation> reconciled = List.from(remoteConvs);
+
+          for (final local in _conversations) {
+            if (local.id.startsWith('conv_') && !remoteIds.contains(local.id)) {
+              Conversation? remoteMatch;
+              for (final rc in remoteConvs) {
+                if ((rc.participantA == local.participantA && rc.participantB == local.participantB) ||
+                    (rc.participantA == local.participantB && rc.participantB == local.participantA)) {
+                  remoteMatch = rc;
+                  break;
+                }
+              }
+              if (remoteMatch != null) {
+                // Local draft has been migrated to a remote conversation.
+                // Merge any local draft messages into the canonical remote conversation.
+                final localDraftMsgs = await LocalStorageService.loadMessages(local.id);
+                if (localDraftMsgs.isNotEmpty) {
+                  final remoteMsgs = await LocalStorageService.loadMessages(remoteMatch.id);
+                  final seen = remoteMsgs.map((m) => m.id).toSet();
+                  for (final m in localDraftMsgs) {
+                    if (seen.add(m.id)) {
+                      remoteMsgs.add(m.copyWith(conversationId: remoteMatch.id));
+                    }
+                  }
+                  await LocalStorageService.saveMessages(remoteMatch.id, remoteMsgs);
+                  await LocalStorageService.saveMessages(local.id, []);
+                }
+              } else {
+                reconciled.add(local);
+              }
+            }
           }
-          _conversations = convMap.values.toList();
+
+          // Deduplicate by participant pairs, retaining the newest conversation
+          final Map<String, Conversation> dedupMap = {};
+          for (final c in reconciled) {
+            final p1 = c.participantA.compareTo(c.participantB) <= 0 ? c.participantA : c.participantB;
+            final p2 = c.participantA.compareTo(c.participantB) <= 0 ? c.participantB : c.participantA;
+            final pairKey = '$p1|$p2';
+            final existing = dedupMap[pairKey];
+            if (existing == null || c.updatedAt.isAfter(existing.updatedAt)) {
+              dedupMap[pairKey] = c;
+            }
+          }
+          _conversations = dedupMap.values.toList();
         }
         _subscribeToRealtime();
       }
@@ -3895,22 +3984,33 @@ class JobRepository extends ChangeNotifier {
 
   /// Opens (or creates) a DM conversation and returns the conversationId.
   Future<String?> openOrCreateConversation(String otherUserId) async {
+    // 1. Check if a conversation between these users already exists in-memory
+    for (final c in _conversations) {
+      if ((c.participantA == _currentUser.id && c.participantB == otherUserId) ||
+          (c.participantA == otherUserId && c.participantB == _currentUser.id)) {
+        return c.id;
+      }
+    }
+
     String? convId;
 
-    // 1. Try Supabase cloud conversation if logged in
+    // 2. Try Supabase cloud conversation if logged in
     if (_isLoggedIn) {
       try {
         convId = await SupabaseDbService.createOrGetConversation(_currentUser.id, otherUserId);
       } catch (_) {}
     }
 
-    // 2. Reliable local/offline conversation ID fallback
+    // 3. Reliable local/offline conversation ID fallback
     if (convId == null || convId.isEmpty) {
       convId = 'conv_${_currentUser.id}_$otherUserId';
     }
 
-    // 3. Ensure conversation exists in local list
-    final existingIdx = _conversations.indexWhere((c) => c.id == convId);
+    // 4. Ensure conversation exists in local list
+    final existingIdx = _conversations.indexWhere((c) =>
+        c.id == convId ||
+        ((c.participantA == _currentUser.id && c.participantB == otherUserId) ||
+            (c.participantA == otherUserId && c.participantB == _currentUser.id)));
     if (existingIdx == -1) {
       String name = 'Detailer';
       String avatar = '';
@@ -3931,39 +4031,79 @@ class JobRepository extends ChangeNotifier {
       _conversations.insert(0, newConv);
       await LocalStorageService.saveConversations(_conversations);
       notifyListeners();
+    } else {
+      if (_conversations[existingIdx].id != convId && !convId.startsWith('conv_')) {
+        _conversations[existingIdx] = _conversations[existingIdx].copyWith(id: convId);
+        await LocalStorageService.saveConversations(_conversations);
+        notifyListeners();
+      }
+      convId = _conversations[existingIdx].id;
     }
 
     return convId;
   }
 
-  /// Fetches messages for a given conversation.
+  /// Fetches messages for a given conversation with authoritative cloud reconciliation.
   Future<List<DirectMessage>> fetchMessages(String conversationId) async {
-    final localMsgs = await LocalStorageService.loadMessages(conversationId);
-    List<DirectMessage> remoteMsgs = [];
+    final canonicalId = resolveConversationId(conversationId);
+
+    // 1. Load local messages (reconciling aliases)
+    final localMsgs = await LocalStorageService.loadMessages(canonicalId);
+    if (canonicalId != conversationId) {
+      final altLocal = await LocalStorageService.loadMessages(conversationId);
+      final set = localMsgs.map((m) => m.id).toSet();
+      for (final m in altLocal) {
+        if (set.add(m.id)) {
+          localMsgs.add(m);
+        }
+      }
+    }
+
+    List<DirectMessage>? remoteMsgs;
 
     if (_isLoggedIn) {
       try {
-        remoteMsgs = await SupabaseDbService.fetchMessages(conversationId);
-        SupabaseDbService.markMessagesAsRead(conversationId, _currentUser.id);
+        remoteMsgs = await SupabaseDbService.fetchMessages(canonicalId);
+        if ((remoteMsgs == null || remoteMsgs.isEmpty) && canonicalId != conversationId) {
+          final altRemote = await SupabaseDbService.fetchMessages(conversationId);
+          if (altRemote != null && altRemote.isNotEmpty) {
+            remoteMsgs = altRemote;
+          }
+        }
+        if (remoteMsgs != null) {
+          SupabaseDbService.markMessagesAsRead(canonicalId, _currentUser.id);
+          if (canonicalId != conversationId) {
+            SupabaseDbService.markMessagesAsRead(conversationId, _currentUser.id);
+          }
+        }
       } catch (_) {}
     }
 
     // Combine remote and local messages.
-    // Remote messages are authoritative.
+    // Remote messages are authoritative when remote fetch succeeds.
     final List<DirectMessage> allCandidates = [];
     final Set<String> seenIds = {};
 
-    // 1. Add all remote messages first
-    for (final m in remoteMsgs) {
-      if (seenIds.add(m.id)) {
-        allCandidates.add(m);
+    if (remoteMsgs != null) {
+      // 1. Add all remote messages first
+      for (final m in remoteMsgs) {
+        if (seenIds.add(m.id)) {
+          allCandidates.add(m);
+        }
       }
-    }
-
-    // 2. Add local messages that are not already present by ID
-    for (final m in localMsgs) {
-      if (seenIds.add(m.id)) {
-        allCandidates.add(m);
+      // 2. Only retain pending local temporary messages (msg_...) that have not been seen.
+      // Confirmed messages absent from remoteMsgs are pruned (deleted remotely).
+      for (final m in localMsgs) {
+        if (m.id.startsWith('msg_') && seenIds.add(m.id)) {
+          allCandidates.add(m);
+        }
+      }
+    } else {
+      // Offline / unauthenticated fallback: retain all local cached messages
+      for (final m in localMsgs) {
+        if (seenIds.add(m.id)) {
+          allCandidates.add(m);
+        }
       }
     }
 
@@ -3982,9 +4122,7 @@ class JobRepository extends ChangeNotifier {
     // 4. Start with all confirmed messages
     final List<DirectMessage> merged = List.from(confirmed);
 
-    // 5. For each temp message:
-    // Discard if a confirmed message matches (same sender, same text, within 45 seconds).
-    // Also discard if another temp message with the same sender, same text, and within 15 seconds is already in result.
+    // 5. Deduplicate temp messages
     for (final t in temp) {
       final matchesConfirmed = confirmed.any((c) =>
           c.senderId == t.senderId &&
@@ -4005,15 +4143,34 @@ class JobRepository extends ChangeNotifier {
 
     merged.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
-    // Save cleaned, deduplicated messages back to local storage
-    await LocalStorageService.saveMessages(conversationId, merged);
+    // Save cleaned, deduplicated messages back to local storage (both keys)
+    await LocalStorageService.saveMessages(canonicalId, merged);
+    if (canonicalId != conversationId) {
+      await LocalStorageService.saveMessages(conversationId, merged);
+    }
 
-    // Update unread badge if needed
-    final idx = _conversations.indexWhere((c) => c.id == conversationId);
-    if (idx != -1 && _conversations[idx].unreadCount > 0) {
-      _conversations[idx] = _conversations[idx].copyWith(unreadCount: 0);
-      LocalStorageService.saveConversations(_conversations);
-      notifyListeners();
+    // Update unread badge and lastMessage if needed
+    final idx = _conversations.indexWhere((c) => c.id == canonicalId || c.id == conversationId);
+    if (idx != -1) {
+      final current = _conversations[idx];
+      final updatedLast = merged.isNotEmpty ? merged.last : null;
+      bool hasChanged = false;
+
+      var updated = current;
+      if (current.unreadCount > 0) {
+        updated = updated.copyWith(unreadCount: 0);
+        hasChanged = true;
+      }
+      if (current.lastMessage?.id != updatedLast?.id || current.lastMessage?.text != updatedLast?.text) {
+        updated = updated.copyWith(lastMessage: updatedLast, clearLastMessage: updatedLast == null);
+        hasChanged = true;
+      }
+
+      if (hasChanged) {
+        _conversations[idx] = updated;
+        LocalStorageService.saveConversations(_conversations);
+        notifyListeners();
+      }
     }
     return merged;
   }
@@ -4023,10 +4180,12 @@ class JobRepository extends ChangeNotifier {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return null;
 
+    final canonicalId = resolveConversationId(conversationId);
+
     final tempId = 'msg_${DateTime.now().microsecondsSinceEpoch}_${Random().nextInt(999999)}';
     var activeMsg = DirectMessage(
       id: tempId,
-      conversationId: conversationId,
+      conversationId: canonicalId,
       senderId: _currentUser.id,
       text: trimmed,
       createdAt: DateTime.now(),
@@ -4034,12 +4193,15 @@ class JobRepository extends ChangeNotifier {
     );
 
     // 1. Store in local messages cache
-    var msgs = await LocalStorageService.loadMessages(conversationId);
+    var msgs = await LocalStorageService.loadMessages(canonicalId);
     msgs.add(activeMsg);
-    await LocalStorageService.saveMessages(conversationId, msgs);
+    await LocalStorageService.saveMessages(canonicalId, msgs);
+    if (canonicalId != conversationId) {
+      await LocalStorageService.saveMessages(conversationId, msgs);
+    }
 
     // 2. Update conversation preview and move to top
-    final idx = _conversations.indexWhere((c) => c.id == conversationId);
+    final idx = _conversations.indexWhere((c) => c.id == canonicalId || c.id == conversationId);
     if (idx != -1) {
       final updated = _conversations[idx].copyWith(
         lastMessage: activeMsg,
@@ -4055,24 +4217,32 @@ class JobRepository extends ChangeNotifier {
     if (_isLoggedIn) {
       try {
         final serverMsg = await SupabaseDbService.sendMessage(
-          conversationId: conversationId,
+          conversationId: canonicalId,
           senderId: _currentUser.id,
           text: trimmed,
         );
         if (serverMsg != null) {
           activeMsg = serverMsg;
-          msgs = await LocalStorageService.loadMessages(conversationId);
+          msgs = await LocalStorageService.loadMessages(canonicalId);
           final tempIdx = msgs.indexWhere((m) => m.id == tempId);
           if (tempIdx != -1) {
             msgs[tempIdx] = serverMsg;
           } else if (!msgs.any((m) => m.id == serverMsg.id)) {
             msgs.add(serverMsg);
           }
-          await LocalStorageService.saveMessages(conversationId, msgs);
+          await LocalStorageService.saveMessages(canonicalId, msgs);
+          if (canonicalId != conversationId) {
+            await LocalStorageService.saveMessages(conversationId, msgs);
+          }
+          if (serverMsg.conversationId != canonicalId) {
+            await LocalStorageService.saveMessages(serverMsg.conversationId, msgs);
+          }
 
-          final convIdx = _conversations.indexWhere((c) => c.id == conversationId);
+          final convIdx = _conversations.indexWhere((c) =>
+              c.id == canonicalId || c.id == conversationId || c.id == serverMsg.conversationId);
           if (convIdx != -1) {
             _conversations[convIdx] = _conversations[convIdx].copyWith(
+              id: serverMsg.conversationId,
               lastMessage: serverMsg,
             );
             await LocalStorageService.saveConversations(_conversations);
@@ -4089,13 +4259,21 @@ class JobRepository extends ChangeNotifier {
 
   /// Deletes a single message from local storage and Supabase cloud.
   Future<bool> deleteMessage(String conversationId, String messageId) async {
-    final msgs = await LocalStorageService.loadMessages(conversationId);
+    final canonicalId = resolveConversationId(conversationId);
+
+    final msgs = await LocalStorageService.loadMessages(canonicalId);
     final initialLen = msgs.length;
     msgs.removeWhere((m) => m.id == messageId);
-    await LocalStorageService.saveMessages(conversationId, msgs);
+    await LocalStorageService.saveMessages(canonicalId, msgs);
+
+    if (canonicalId != conversationId) {
+      final altMsgs = await LocalStorageService.loadMessages(conversationId);
+      altMsgs.removeWhere((m) => m.id == messageId);
+      await LocalStorageService.saveMessages(conversationId, altMsgs);
+    }
 
     // Update conversation's last message if needed
-    final idx = _conversations.indexWhere((c) => c.id == conversationId);
+    final idx = _conversations.indexWhere((c) => c.id == canonicalId || c.id == conversationId);
     if (idx != -1) {
       final updatedLast = msgs.isNotEmpty ? msgs.last : null;
       _conversations[idx] = _conversations[idx].copyWith(
@@ -4120,11 +4298,16 @@ class JobRepository extends ChangeNotifier {
 
   /// Deletes an entire conversation and all its messages.
   Future<bool> deleteConversation(String conversationId) async {
+    final canonicalId = resolveConversationId(conversationId);
+
     // Clear local messages
-    await LocalStorageService.saveMessages(conversationId, []);
+    await LocalStorageService.saveMessages(canonicalId, []);
+    if (canonicalId != conversationId) {
+      await LocalStorageService.saveMessages(conversationId, []);
+    }
 
     // Remove from in-memory and local storage conversations
-    final idx = _conversations.indexWhere((c) => c.id == conversationId);
+    final idx = _conversations.indexWhere((c) => c.id == canonicalId || c.id == conversationId);
     if (idx != -1) {
       _conversations.removeAt(idx);
       await LocalStorageService.saveConversations(_conversations);
@@ -4133,7 +4316,10 @@ class JobRepository extends ChangeNotifier {
 
     if (_isLoggedIn) {
       try {
-        await SupabaseDbService.deleteConversation(conversationId);
+        await SupabaseDbService.deleteConversation(canonicalId);
+        if (canonicalId != conversationId) {
+          await SupabaseDbService.deleteConversation(conversationId);
+        }
       } catch (e) {
         if (kDebugMode) print('[JobRepository] Supabase deleteConversation error: $e');
       }
@@ -4162,7 +4348,20 @@ class JobRepository extends ChangeNotifier {
         )
         .subscribe();
 
-    // 2. Jobs realtime channel
+    // 2. Conversations realtime channel
+    _conversationsChannel = client
+        .channel('public:conversations')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'conversations',
+          callback: (_) {
+            loadConversations();
+          },
+        )
+        .subscribe();
+
+    // 3. Jobs realtime channel
     _jobsChannel = client
         .channel('public:jobs')
         .onPostgresChanges(
@@ -4175,7 +4374,7 @@ class JobRepository extends ChangeNotifier {
         )
         .subscribe();
 
-    // 3. Bookings realtime channel (active for authenticated users and guests with bookings)
+    // 4. Bookings realtime channel (active for authenticated users and guests with bookings)
     _bookingsChannel = client
         .channel('public:bookings')
         .onPostgresChanges(
@@ -4188,7 +4387,7 @@ class JobRepository extends ChangeNotifier {
         )
         .subscribe();
 
-    // 4. User interactions realtime channel
+    // 5. User interactions realtime channel
     if (_isLoggedIn) {
       _interactionsChannel = client
           .channel('public:user_interactions')
@@ -4205,7 +4404,7 @@ class JobRepository extends ChangeNotifier {
           .subscribe();
     }
 
-    // 5. Profiles realtime channel (for public studio discovery sync)
+    // 6. Profiles realtime channel (for public studio discovery sync)
     _profilesChannel = client
         .channel('public:profiles')
         .onPostgresChanges(
@@ -4227,6 +4426,8 @@ class JobRepository extends ChangeNotifier {
   }
 
   void _unsubscribeFromRealtime() {
+    _conversationsChannel?.unsubscribe();
+    _conversationsChannel = null;
     _messagesChannel?.unsubscribe();
     _messagesChannel = null;
     _jobsChannel?.unsubscribe();
