@@ -54,30 +54,33 @@ create table if not exists public.vehicles (
   model text not null,
   trim text default '',
   paint_color text default '',
+  paint_code text default '',
   paint_type text default 'Clearcoat',
   image_url text default '',
   license_plate text default '',
   notes text default '',
+  last_detail_service text default '',
+  last_detail_date text default '',
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
 alter table public.vehicles enable row level security;
 
-create policy "Anyone can view vehicles for discovery/bookings."
+create policy "Allow read on vehicles"
   on public.vehicles for select
   using ( true );
 
-create policy "Users can insert their own vehicles."
+create policy "Allow insert on vehicles"
   on public.vehicles for insert
-  with check ( auth.uid() = user_id );
+  with check ( true );
 
-create policy "Users can update their own vehicles."
+create policy "Allow update on vehicles"
   on public.vehicles for update
-  using ( auth.uid() = user_id );
+  using ( true );
 
-create policy "Users can delete their own vehicles."
+create policy "Allow delete on vehicles"
   on public.vehicles for delete
-  using ( auth.uid() = user_id );
+  using ( true );
 
 -- 3. TEAM MEMBERS TABLE (Hired Staff under studio)
 create table if not exists public.team_members (
@@ -263,11 +266,13 @@ create policy "Allow delete on verification_requests" on public.verification_req
 -- 11. REALTIME REPLICA IDENTITY & PUBLICATION
 alter table public.profiles replica identity full;
 alter table public.bookings replica identity full;
+alter table public.vehicles replica identity full;
 
 do $$
 begin
   alter publication supabase_realtime add table public.profiles;
   alter publication supabase_realtime add table public.bookings;
+  alter publication supabase_realtime add table public.vehicles;
 exception when others then null;
 end $$;
 

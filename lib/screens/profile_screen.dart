@@ -5,6 +5,7 @@ import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
 import '../models/user_vehicle.dart';
 import '../services/job_repository.dart';
+import '../services/supabase_auth_service.dart';
 import 'vehicle_editor_dialog.dart';
 import 'auth_modal.dart';
 import 'edit_profile_dialog.dart';
@@ -30,6 +31,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   void initState() {
     super.initState();
     _clientTabController = TabController(length: 2, vsync: this);
+    if (widget.repository.isLoggedIn || SupabaseAuthService.isLoggedIn) {
+      widget.repository.refreshGarage();
+    }
   }
 
   @override
@@ -1085,111 +1089,119 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     controller: _clientTabController,
                     children: [
                       // CLIENT TAB 1: My Garage
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final isDesktop = constraints.maxWidth >= 720;
-                          final isWide = constraints.maxWidth >= 1024;
-                          final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
-
-                          return Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 1100),
-                              child: ListView(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                                children: [
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: SizedBox(
-                                      width: isDesktop ? 300 : double.infinity,
-                                      child: OutlinedButton.icon(
-                                        style: OutlinedButton.styleFrom(
-                                          side: const BorderSide(color: AppTheme.primary),
-                                          foregroundColor: AppTheme.primary,
-                                          minimumSize: const Size(double.infinity, 44),
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                        ),
-                                        icon: const Icon(Icons.add, size: 18),
-                                        label: const Text('Add Vehicle to My Garage', style: TextStyle(fontWeight: FontWeight.bold)),
-                                        onPressed: () => _openVehicleEditor(context),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  if (garage.isEmpty)
-                                    Center(
-                                      child: Container(
-                                        margin: const EdgeInsets.symmetric(vertical: 24),
-                                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
-                                        constraints: const BoxConstraints(maxWidth: 480),
-                                        decoration: BoxDecoration(
-                                          color: AppTheme.surface.withAlpha(160),
-                                          borderRadius: BorderRadius.circular(16),
-                                          border: Border.all(color: AppTheme.border.withAlpha(120)),
-                                        ),
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Container(
-                                              padding: const EdgeInsets.all(18),
-                                              decoration: BoxDecoration(
-                                                color: AppTheme.primary.withAlpha(20),
-                                                shape: BoxShape.circle,
-                                                border: Border.all(color: AppTheme.primary.withAlpha(60)),
-                                              ),
-                                              child: const Icon(Icons.directions_car_outlined, size: 40, color: AppTheme.primary),
-                                            ),
-                                            const SizedBox(height: 16),
-                                            const Text(
-                                              'No Vehicles in Garage Yet',
-                                              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
-                                            ),
-                                            const SizedBox(height: 8),
-                                            const Text(
-                                              'Register your personal car to store OEM paint codes, track digital detail warranty passports, and quickly book tailored packages.',
-                                              textAlign: TextAlign.center,
-                                              style: TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.5),
-                                            ),
-                                            const SizedBox(height: 20),
-                                            OutlinedButton.icon(
-                                              style: OutlinedButton.styleFrom(
-                                                foregroundColor: AppTheme.primary,
-                                                side: BorderSide(color: AppTheme.primary.withAlpha(100)),
-                                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                              ),
-                                              icon: const Icon(Icons.add, size: 16),
-                                              label: const Text('Add Your First Vehicle', style: TextStyle(fontWeight: FontWeight.bold)),
-                                              onPressed: () => _openVehicleEditor(context),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    )
-                                  else if (!isDesktop)
-                                    // Single column for mobile with uniform 16:9 photo framing
-                                    ...garage.map((veh) => _buildGarageVehicleCard(veh))
-                                  else
-                                    // Multi-column grid for desktop/tablet so cards remain balanced and uniform
-                                    GridView.builder(
-                                      shrinkWrap: true,
-                                      physics: const NeverScrollableScrollPhysics(),
-                                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount: crossAxisCount,
-                                        crossAxisSpacing: 16,
-                                        mainAxisSpacing: 16,
-                                        childAspectRatio: 0.88,
-                                      ),
-                                      itemCount: garage.length,
-                                      itemBuilder: (context, index) {
-                                        return _buildGarageVehicleCard(garage[index], isGrid: true);
-                                      },
-                                    ),
-                                ],
-                              ),
-                            ),
-                          );
+                      RefreshIndicator(
+                        color: AppTheme.primary,
+                        backgroundColor: AppTheme.surface,
+                        onRefresh: () async {
+                          await widget.repository.refreshGarage();
                         },
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final isDesktop = constraints.maxWidth >= 720;
+                            final isWide = constraints.maxWidth >= 1024;
+                            final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
+
+                            return Center(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 1100),
+                                child: ListView(
+                                  physics: const AlwaysScrollableScrollPhysics(),
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                                  children: [
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: SizedBox(
+                                        width: isDesktop ? 300 : double.infinity,
+                                        child: OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            side: const BorderSide(color: AppTheme.primary),
+                                            foregroundColor: AppTheme.primary,
+                                            minimumSize: const Size(double.infinity, 44),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                          ),
+                                          icon: const Icon(Icons.add, size: 18),
+                                          label: const Text('Add Vehicle to My Garage', style: TextStyle(fontWeight: FontWeight.bold)),
+                                          onPressed: () => _openVehicleEditor(context),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    if (garage.isEmpty)
+                                      Center(
+                                        child: Container(
+                                          margin: const EdgeInsets.symmetric(vertical: 24),
+                                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
+                                          constraints: const BoxConstraints(maxWidth: 480),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.surface.withAlpha(160),
+                                            borderRadius: BorderRadius.circular(16),
+                                            border: Border.all(color: AppTheme.border.withAlpha(120)),
+                                          ),
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Container(
+                                                padding: const EdgeInsets.all(18),
+                                                decoration: BoxDecoration(
+                                                  color: AppTheme.primary.withAlpha(20),
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(color: AppTheme.primary.withAlpha(60)),
+                                                ),
+                                                child: const Icon(Icons.directions_car_outlined, size: 40, color: AppTheme.primary),
+                                              ),
+                                              const SizedBox(height: 16),
+                                              const Text(
+                                                'No Vehicles in Garage Yet',
+                                                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                                              ),
+                                              const SizedBox(height: 8),
+                                              const Text(
+                                                'Register your personal car to store OEM paint codes, track digital detail warranty passports, and quickly book tailored packages.',
+                                                textAlign: TextAlign.center,
+                                                style: TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.5),
+                                              ),
+                                              const SizedBox(height: 20),
+                                              OutlinedButton.icon(
+                                                style: OutlinedButton.styleFrom(
+                                                  foregroundColor: AppTheme.primary,
+                                                  side: BorderSide(color: AppTheme.primary.withAlpha(100)),
+                                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                ),
+                                                icon: const Icon(Icons.add, size: 16),
+                                                label: const Text('Add Your First Vehicle', style: TextStyle(fontWeight: FontWeight.bold)),
+                                                onPressed: () => _openVehicleEditor(context),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      )
+                                    else if (!isDesktop)
+                                      // Single column for mobile with uniform 16:9 photo framing
+                                      ...garage.map((veh) => _buildGarageVehicleCard(veh))
+                                    else
+                                      // Multi-column grid for desktop/tablet so cards remain balanced and uniform
+                                      GridView.builder(
+                                        shrinkWrap: true,
+                                        physics: const NeverScrollableScrollPhysics(),
+                                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                          crossAxisCount: crossAxisCount,
+                                          crossAxisSpacing: 16,
+                                          mainAxisSpacing: 16,
+                                          childAspectRatio: 0.88,
+                                        ),
+                                        itemCount: garage.length,
+                                        itemBuilder: (context, index) {
+                                          return _buildGarageVehicleCard(garage[index], isGrid: true);
+                                        },
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       ),
 
                       // CLIENT TAB 2: Saved Recipes

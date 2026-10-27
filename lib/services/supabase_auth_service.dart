@@ -315,13 +315,34 @@ class SupabaseAuthService {
           }
         }
 
-        // Non-destructive union merge of garage vehicles
-        final garageMap = <String, UserVehicle>{
-          if (existingLocalProfile != null)
-            for (final v in existingLocalProfile.myGarage) v.id: v,
-          for (final v in localGarage) v.id: v,
-          for (final v in cloudProfile.myGarage) v.id: v,
-        };
+        // Authoritative reconciliation of garage vehicles from cloud, preserving local assets
+        List<UserVehicle> reconciledGarage;
+        if (cloudProfile.myGarage.isNotEmpty) {
+          final localMap = <String, UserVehicle>{
+            if (existingLocalProfile != null)
+              for (final v in existingLocalProfile.myGarage) v.id: v,
+            for (final v in localGarage) v.id: v,
+          };
+          reconciledGarage = cloudProfile.myGarage.map((cv) {
+            final local = localMap[cv.id];
+            if (local != null) {
+              return cv.copyWith(
+                localImageBytes: cv.localImageBytes ?? local.localImageBytes,
+                lastDetailService: cv.lastDetailService ?? local.lastDetailService,
+                lastDetailDate: cv.lastDetailDate ?? local.lastDetailDate,
+              );
+            }
+            return cv;
+          }).toList();
+        } else {
+          final garageMap = <String, UserVehicle>{
+            if (existingLocalProfile != null)
+              for (final v in existingLocalProfile.myGarage) v.id: v,
+            for (final v in localGarage) v.id: v,
+          };
+          reconciledGarage = garageMap.values.toList();
+        }
+        await LocalStorageService.saveGarageVehicles(reconciledGarage);
 
         final resolvedPinHash = (cloudProfile.ownerPinHash != null && cloudProfile.ownerPinHash!.isNotEmpty)
             ? cloudProfile.ownerPinHash
@@ -330,7 +351,7 @@ class SupabaseAuthService {
         final merged = cloudProfile.copyWith(
           servicePackages: mergedPackages,
           teamMembers: teamMap.values.toList(),
-          myGarage: garageMap.values.toList(),
+          myGarage: reconciledGarage,
           ownerPinHash: resolvedPinHash,
         );
         if (resolvedPinHash != null && resolvedPinHash.isNotEmpty) {

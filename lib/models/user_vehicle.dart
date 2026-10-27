@@ -44,21 +44,56 @@ class UserVehicle {
   }
 
   factory UserVehicle.fromJson(Map<String, dynamic> json) {
+    Uint8List? parsedBytes;
+    final rawBytes = json['localImageBytes'] ?? json['local_image_bytes'];
+    if (rawBytes is Uint8List) {
+      parsedBytes = rawBytes;
+    } else if (rawBytes is List<int>) {
+      parsedBytes = Uint8List.fromList(rawBytes);
+    } else if (rawBytes is List) {
+      try {
+        parsedBytes = Uint8List.fromList(rawBytes.map((e) => (e as num).toInt()).toList());
+      } catch (_) {}
+    } else if (rawBytes is String && rawBytes.isNotEmpty) {
+      try {
+        parsedBytes = base64Decode(rawBytes);
+      } catch (_) {}
+    }
+
+    DateTime? parsedDate;
+    final rawDate = json['lastDetailDate'] ?? json['last_detail_date'];
+    if (rawDate is DateTime) {
+      parsedDate = rawDate;
+    } else if (rawDate is String && rawDate.isNotEmpty) {
+      parsedDate = DateTime.tryParse(rawDate);
+    } else if (rawDate is int) {
+      parsedDate = DateTime.fromMillisecondsSinceEpoch(rawDate);
+    }
+
+    int parsedYear = 2024;
+    final rawYear = json['year'];
+    if (rawYear is num) {
+      parsedYear = rawYear.toInt();
+    } else if (rawYear is String && rawYear.isNotEmpty) {
+      parsedYear = int.tryParse(rawYear) ?? 2024;
+    }
+
+    final rawPaintCode = (json['paintCode'] ?? json['paint_code'])?.toString();
+    final rawDetailService = (json['lastDetailService'] ?? json['last_detail_service'])?.toString();
+
     return UserVehicle(
-      id: json['id'] as String? ?? 'veh_${DateTime.now().millisecondsSinceEpoch}',
-      year: json['year'] as int? ?? 2024,
-      make: json['make'] as String? ?? '',
-      model: json['model'] as String? ?? '',
-      colorName: json['colorName'] as String? ?? '',
-      paintCode: json['paintCode'] as String?,
-      imageUrl: json['imageUrl'] as String? ?? '',
-      localImageBytes: json['localImageBytes'] != null
-          ? base64Decode(json['localImageBytes'] as String)
-          : null,
-      lastDetailService: json['lastDetailService'] as String?,
-      lastDetailDate: json['lastDetailDate'] != null
-          ? DateTime.tryParse(json['lastDetailDate'] as String)
-          : null,
+      id: (json['id'] as String?)?.isNotEmpty == true
+          ? json['id'] as String
+          : 'veh_${DateTime.now().millisecondsSinceEpoch}',
+      year: parsedYear,
+      make: json['make']?.toString() ?? '',
+      model: json['model']?.toString() ?? '',
+      colorName: (json['colorName'] ?? json['paint_color'] ?? json['color_name'])?.toString() ?? '',
+      paintCode: (rawPaintCode != null && rawPaintCode.isNotEmpty) ? rawPaintCode : null,
+      imageUrl: (json['imageUrl'] ?? json['image_url'])?.toString() ?? '',
+      localImageBytes: parsedBytes,
+      lastDetailService: (rawDetailService != null && rawDetailService.isNotEmpty) ? rawDetailService : null,
+      lastDetailDate: parsedDate,
     );
   }
 

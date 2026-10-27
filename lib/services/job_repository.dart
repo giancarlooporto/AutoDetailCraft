@@ -74,6 +74,7 @@ class JobRepository extends ChangeNotifier {
   RealtimeChannel? _bookingsChannel;
   RealtimeChannel? _interactionsChannel;
   RealtimeChannel? _profilesChannel;
+  RealtimeChannel? _vehiclesChannel;
 
   JobRepository({bool? seedSampleData}) {
     if (seedSampleData ?? debugSeedSampleData) {
@@ -436,7 +437,8 @@ class JobRepository extends ChangeNotifier {
               : await LocalStorageService.loadServicePackages();
         }
 
-        // Non-destructive union merge for garage vehicles: union by ID, preserving local custom vehicles and data
+        // Reconcile garage vehicles: cloud updates matching vehicles,
+        // preserving local custom additions and local-only assets like localImageBytes
         List<UserVehicle> resolvedGarage;
         if (cloudProfile.myGarage.isNotEmpty) {
           final vehicleMap = <String, UserVehicle>{
@@ -460,6 +462,8 @@ class JobRepository extends ChangeNotifier {
               ? _currentUser.myGarage
               : await LocalStorageService.loadGarageVehicles();
         }
+
+        await LocalStorageService.saveGarageVehicles(resolvedGarage);
 
         // Non-destructive union merge for team members: union by ID across local storage, in-memory profile, and cloud
         final storedLocalTeam = await LocalStorageService.loadTeamMembers();
@@ -805,6 +809,7 @@ class JobRepository extends ChangeNotifier {
     await LocalStorageService.saveWorkbenchMode('garage');
     _conversations = [];
     await LocalStorageService.saveConversations([]);
+    await LocalStorageService.saveGarageVehicles([]);
     _isLoggedIn = false;
     _currentUser = MockDataService.youUser;
     // Re-subscribe to public realtime channels so public visitors continue receiving real-time updates
@@ -1716,6 +1721,53 @@ class JobRepository extends ChangeNotifier {
     }
   }
 
+  /// Public method to refresh user's garage vehicles directly from Supabase cloud.
+  Future<void> refreshGarage() async {
+    final targetUserId = (_currentUser.id != 'usr_you')
+        ? _currentUser.id
+        : (SupabaseAuthService.currentAuthUser?.id ?? _currentUser.id);
+
+    if ((!_isLoggedIn && !SupabaseAuthService.isLoggedIn) || targetUserId == 'usr_you') {
+      return;
+    }
+
+    try {
+      final cloudVehicles = await SupabaseDbService.fetchVehicles(targetUserId);
+      if (cloudVehicles == null) {
+        // Network error, client not initialized, or cloud unreachable.
+        // Preserve local garage cache so offline users do not lose their vehicles.
+        return;
+      }
+
+      // Reconcile authoritatively with local vehicle cache:
+      // Preserves local-only properties like un-uploaded localImageBytes
+      final localMap = <String, UserVehicle>{
+        for (final v in _currentUser.myGarage) v.id: v,
+      };
+
+      final reconciled = cloudVehicles.map((cv) {
+        final local = localMap[cv.id];
+        if (local != null) {
+          return cv.copyWith(
+            localImageBytes: cv.localImageBytes ?? local.localImageBytes,
+            lastDetailService: cv.lastDetailService ?? local.lastDetailService,
+            lastDetailDate: cv.lastDetailDate ?? local.lastDetailDate,
+          );
+        }
+        return cv;
+      }).toList();
+
+      _currentUser = _currentUser.copyWith(myGarage: reconciled);
+      await LocalStorageService.saveGarageVehicles(reconciled);
+      await _persistUser();
+      notifyListeners();
+    } catch (e) {
+      if (kDebugMode) {
+        print('[JobRepository] Error refreshing garage from cloud: $e');
+      }
+    }
+  }
+
   // Add / Edit / Remove vehicle in user's garage (Persisted)
   void addVehicleToGarage(UserVehicle vehicle) {
     final updatedList = [..._currentUser.myGarage, vehicle];
@@ -1724,8 +1776,11 @@ class JobRepository extends ChangeNotifier {
     );
     LocalStorageService.saveGarageVehicles(updatedList);
     _persistUser();
-    if (_isLoggedIn) {
-      SupabaseDbService.saveVehicle(_currentUser.id, vehicle);
+    final targetUserId = (_currentUser.id != 'usr_you')
+        ? _currentUser.id
+        : (SupabaseAuthService.currentAuthUser?.id ?? _currentUser.id);
+    if ((_isLoggedIn || SupabaseAuthService.isLoggedIn) && targetUserId != 'usr_you') {
+      SupabaseDbService.saveVehicle(targetUserId, vehicle);
     }
     notifyListeners();
   }
@@ -1738,8 +1793,11 @@ class JobRepository extends ChangeNotifier {
       _currentUser = _currentUser.copyWith(myGarage: list);
       LocalStorageService.saveGarageVehicles(list);
       _persistUser();
-      if (_isLoggedIn) {
-        SupabaseDbService.saveVehicle(_currentUser.id, updated);
+      final targetUserId = (_currentUser.id != 'usr_you')
+          ? _currentUser.id
+          : (SupabaseAuthService.currentAuthUser?.id ?? _currentUser.id);
+      if ((_isLoggedIn || SupabaseAuthService.isLoggedIn) && targetUserId != 'usr_you') {
+        SupabaseDbService.saveVehicle(targetUserId, updated);
       }
       notifyListeners();
     }
@@ -1752,7 +1810,10 @@ class JobRepository extends ChangeNotifier {
     );
     LocalStorageService.saveGarageVehicles(updatedList);
     _persistUser();
-    if (_isLoggedIn) {
+    final targetUserId = (_currentUser.id != 'usr_you')
+        ? _currentUser.id
+        : (SupabaseAuthService.currentAuthUser?.id ?? _currentUser.id);
+    if ((_isLoggedIn || SupabaseAuthService.isLoggedIn) && targetUserId != 'usr_you') {
       SupabaseDbService.deleteVehicle(vehicleId);
     }
     notifyListeners();
@@ -4423,6 +4484,48 @@ class JobRepository extends ChangeNotifier {
           },
         )
         .subscribe();
+
+    // 7. Vehicles realtime channel (for garage sync across devices)
+    _vehiclesChannel = client
+        .channel('public:vehicles')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'vehicles',
+          callback: (payload) {
+            final targetUserId = (_currentUser.id != 'usr_you')
+                ? _currentUser.id
+                : (SupabaseAuthService.currentAuthUser?.id ?? _currentUser.id);
+            if ((_isLoggedIn || SupabaseAuthService.isLoggedIn) && targetUserId != 'usr_you') {
+              final newUserId = payload.newRecord['user_id'] as String?;
+              final oldUserId = payload.oldRecord['user_id'] as String?;
+              final isTargetUser = newUserId == targetUserId ||
+                  oldUserId == targetUserId ||
+                  newUserId == _currentUser.id ||
+                  oldUserId == _currentUser.id;
+
+              if (payload.eventType == PostgresChangeEvent.delete) {
+                final deletedId = payload.oldRecord['id'] as String?;
+                final isOurVehicle = deletedId != null &&
+                    _currentUser.myGarage.any((v) => v.id == deletedId);
+                if (isTargetUser || isOurVehicle) {
+                  if (deletedId != null && deletedId.isNotEmpty) {
+                    final updated = _currentUser.myGarage.where((v) => v.id != deletedId).toList();
+                    _currentUser = _currentUser.copyWith(myGarage: updated);
+                    LocalStorageService.saveGarageVehicles(updated);
+                    _persistUser();
+                    notifyListeners();
+                    return;
+                  }
+                  refreshGarage();
+                }
+              } else if (isTargetUser) {
+                refreshGarage();
+              }
+            }
+          },
+        )
+        .subscribe();
   }
 
   void _unsubscribeFromRealtime() {
@@ -4438,6 +4541,8 @@ class JobRepository extends ChangeNotifier {
     _interactionsChannel = null;
     _profilesChannel?.unsubscribe();
     _profilesChannel = null;
+    _vehiclesChannel?.unsubscribe();
+    _vehiclesChannel = null;
   }
 
   @override

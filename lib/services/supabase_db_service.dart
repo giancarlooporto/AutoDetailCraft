@@ -26,21 +26,7 @@ class SupabaseDbService {
       if (res == null) return null;
 
       // Fetch user's garage vehicles
-      final vehiclesRes = await client.from('vehicles').select().eq('user_id', userId);
-      final List<UserVehicle> garage = (vehiclesRes as List<dynamic>).map<UserVehicle>((v) {
-        final lastDateStr = (v['last_detail_date'] ?? v['lastDetailDate']) as String?;
-        return UserVehicle(
-          id: v['id'] as String,
-          year: v['year'] as int,
-          make: v['make'] as String,
-          model: v['model'] as String,
-          colorName: (v['paint_color'] ?? v['colorName']) as String? ?? '',
-          paintCode: (v['paint_code'] ?? v['paintCode']) as String?,
-          imageUrl: (v['image_url'] ?? v['imageUrl']) as String? ?? '',
-          lastDetailService: (v['last_detail_service'] ?? v['lastDetailService']) as String?,
-          lastDetailDate: lastDateStr != null ? DateTime.tryParse(lastDateStr) : null,
-        );
-      }).toList();
+      final List<UserVehicle> garage = (await fetchVehicles(userId)) ?? [];
 
       // Fetch user's team members
       final teamRes = await client.from('team_members').select().eq('studio_id', userId);
@@ -649,38 +635,112 @@ class SupabaseDbService {
     }
   }
 
+  /// Fetch all vehicles for a user from Supabase.
+  /// Returns null if the client is not initialized or a network/database error occurs,
+  /// preserving local cache. Returns empty list only when the user legitimately has 0 vehicles.
+  static Future<List<UserVehicle>?> fetchVehicles(String userId) async {
+    final client = _client;
+    if (userId.isEmpty) return const [];
+    if (client == null) return null;
+
+    try {
+      final vehiclesRes = await client.from('vehicles').select().eq('user_id', userId);
+      return (vehiclesRes as List<dynamic>).map<UserVehicle>((v) {
+        return UserVehicle.fromJson(Map<String, dynamic>.from(v as Map));
+      }).toList();
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error fetching vehicles: $e');
+      return null;
+    }
+  }
+
   /// Upsert a vehicle to Supabase
   static Future<void> saveVehicle(String userId, UserVehicle v) async {
     final client = _client;
-    if (client == null) return;
+    if (client == null || userId.isEmpty || userId == 'usr_you' || v.id.isEmpty) return;
+
+    final payload = <String, dynamic>{
+      'id': v.id,
+      'user_id': userId,
+      'year': v.year,
+      'make': v.make,
+      'model': v.model,
+      'paint_color': v.colorName,
+      'image_url': v.imageUrl,
+    };
+    if (v.paintCode != null && v.paintCode!.isNotEmpty) {
+      payload['paint_code'] = v.paintCode;
+    }
+    if (v.lastDetailService != null && v.lastDetailService!.isNotEmpty) {
+      payload['last_detail_service'] = v.lastDetailService;
+    }
+    if (v.lastDetailDate != null) {
+      payload['last_detail_date'] = v.lastDetailDate!.toIso8601String();
+    }
 
     try {
-      final payload = <String, dynamic>{
-        'id': v.id,
-        'user_id': userId,
-        'year': v.year,
-        'make': v.make,
-        'model': v.model,
-        'paint_color': v.colorName,
-        'paint_code': v.paintCode,
-        'image_url': v.imageUrl,
-      };
-      if (v.lastDetailService != null) {
-        payload['last_detail_service'] = v.lastDetailService;
-      }
-      if (v.lastDetailDate != null) {
-        payload['last_detail_date'] = v.lastDetailDate!.toIso8601String();
-      }
       await client.from('vehicles').upsert(payload);
+    } on PostgrestException catch (pe) {
+      final msg = '${pe.message} ${pe.details ?? ''} ${pe.hint ?? ''}'.toLowerCase();
+      final isSchemaError = pe.code == 'PGRST204' ||
+          pe.code == '42703' ||
+          (msg.contains('column') && msg.contains('schema cache')) ||
+          msg.contains('paint_code') ||
+          msg.contains('last_detail_service') ||
+          msg.contains('last_detail_date');
+      if (isSchemaError) {
+        if (kDebugMode) {
+          print('[SupabaseDbService] Vehicle upsert schema mismatch (${pe.code}: ${pe.message}). Retrying without extended fields...');
+        }
+        final fallbackPayload = Map<String, dynamic>.from(payload)
+          ..remove('paint_code')
+          ..remove('last_detail_service')
+          ..remove('last_detail_date');
+        try {
+          await client.from('vehicles').upsert(fallbackPayload);
+          if (kDebugMode) {
+            print('[SupabaseDbService] Fallback vehicle upsert succeeded.');
+          }
+        } catch (fallbackErr) {
+          if (kDebugMode) print('[SupabaseDbService] Fallback vehicle upsert error: $fallbackErr');
+        }
+      } else {
+        if (kDebugMode) {
+          print('[SupabaseDbService] Vehicle upsert PostgrestException: code=${pe.code}, message=${pe.message}');
+        }
+      }
     } catch (e) {
-      if (kDebugMode) print('[SupabaseDbService] Error saving vehicle: $e');
+      final eStr = e.toString().toLowerCase();
+      if (eStr.contains('pgrst204') ||
+          eStr.contains('42703') ||
+          eStr.contains('paint_code') ||
+          eStr.contains('last_detail') ||
+          eStr.contains('schema cache')) {
+        if (kDebugMode) {
+          print('[SupabaseDbService] Retrying vehicle upsert without extended fields due to: $e');
+        }
+        final fallbackPayload = Map<String, dynamic>.from(payload)
+          ..remove('paint_code')
+          ..remove('last_detail_service')
+          ..remove('last_detail_date');
+        try {
+          await client.from('vehicles').upsert(fallbackPayload);
+          if (kDebugMode) {
+            print('[SupabaseDbService] Fallback vehicle upsert succeeded.');
+          }
+        } catch (fallbackErr) {
+          if (kDebugMode) print('[SupabaseDbService] Fallback vehicle upsert error: $fallbackErr');
+        }
+      } else {
+        if (kDebugMode) print('[SupabaseDbService] Error saving vehicle: $e');
+      }
     }
   }
 
   /// Delete a vehicle from Supabase
   static Future<void> deleteVehicle(String vehicleId) async {
     final client = _client;
-    if (client == null) return;
+    if (client == null || vehicleId.isEmpty) return;
 
     try {
       await client.from('vehicles').delete().eq('id', vehicleId);
