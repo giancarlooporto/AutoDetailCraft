@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:detail_craft/core/theme/app_theme.dart';
 import 'package:detail_craft/models/booking_models.dart';
 import 'package:detail_craft/models/user_profile.dart';
+import 'package:detail_craft/models/user_vehicle.dart';
 import 'package:detail_craft/screens/booking_flow_screen.dart';
 import 'package:detail_craft/screens/bookings_list_screen.dart';
 import 'package:detail_craft/services/job_repository.dart';
@@ -195,6 +196,16 @@ void main() {
           username: 'giancarlo',
           displayName: 'Giancarlo Porto',
           phone: '555-0199',
+          myGarage: const [
+            UserVehicle(
+              id: 'v_sync_01',
+              make: 'BMW',
+              model: 'M3',
+              year: 2024,
+              colorName: 'Isle of Man Green',
+              imageUrl: '',
+            ),
+          ],
         );
         repo.updateCurrentUser(clientUser);
 
@@ -244,6 +255,14 @@ void main() {
         final repo = JobRepository();
         await repo.init();
         repo.isLoggedIn = true;
+        repo.addVehicleToGarage(const UserVehicle(
+          id: 'v_sync_02',
+          make: 'BMW',
+          model: 'M3',
+          year: 2024,
+          colorName: 'Isle of Man Green',
+          imageUrl: '',
+        ));
 
         await tester.pumpWidget(
           MaterialApp(

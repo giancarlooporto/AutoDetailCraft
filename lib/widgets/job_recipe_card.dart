@@ -8,6 +8,7 @@ import '../screens/create_job_screen.dart';
 import '../services/job_repository.dart';
 import 'split_slider_widget.dart';
 import 'fullscreen_image_viewer.dart';
+import 'client_garage_gate.dart';
 
 class JobRecipeCard extends StatelessWidget {
   final DetailJob job;
@@ -35,6 +36,30 @@ class JobRecipeCard extends StatelessWidget {
   }
 
   void _openBookingFlow(BuildContext context) {
+    if (repository.currentUser.myGarage.isEmpty) {
+      final name = job.author.businessName.isNotEmpty
+          ? job.author.businessName
+          : job.author.displayName;
+      ClientGarageGate.ensureHasVehicle(
+        context: context,
+        repository: repository,
+        detailerName: name,
+        onProceedToBooking: () {
+          if (context.mounted) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => BookingFlowScreen(
+                  detailer: job.author,
+                  repository: repository,
+                ),
+              ),
+            );
+          }
+        },
+      );
+      return;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => BookingFlowScreen(

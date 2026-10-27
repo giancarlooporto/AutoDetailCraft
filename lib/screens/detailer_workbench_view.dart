@@ -7230,6 +7230,67 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             ),
           ),
         ],
+        if (_canViewPricing) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceLight,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.directions_car_filled_rounded, size: 16, color: AppTheme.primary),
+                    SizedBox(width: 8),
+                    Text('PRICING BY VEHICLE TYPE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Coupe / Sedan', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+                        const SizedBox(height: 2),
+                        Text('\$${pkg.calculatePriceForVehicleType('Sedan').toStringAsFixed(0)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('SUV', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+                        const SizedBox(height: 2),
+                        Text('\$${pkg.calculatePriceForVehicleType('SUV / Crossover').toStringAsFixed(0)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Truck', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+                        const SizedBox(height: 2),
+                        Text('\$${pkg.calculatePriceForVehicleType('Truck').toStringAsFixed(0)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Minivan', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+                        const SizedBox(height: 2),
+                        Text('\$${pkg.calculatePriceForVehicleType('Minivan / Van').toStringAsFixed(0)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
         const Text('TREATMENTS & STEPS INCLUDED', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary)),
         const SizedBox(height: 8),

@@ -10,6 +10,7 @@ import 'auth_modal.dart';
 import 'public_studio_screen.dart';
 import 'booking_flow_screen.dart';
 import 'create_job_screen.dart';
+import '../widgets/client_garage_gate.dart';
 
 class JobDetailScreen extends StatefulWidget {
   final DetailJob job;
@@ -254,6 +255,23 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       );
       return;
     }
+
+    if (widget.repository!.currentUser.myGarage.isEmpty) {
+      final detailer = _currentJob.author;
+      final name = detailer.businessName.isNotEmpty
+          ? detailer.businessName
+          : detailer.displayName;
+      ClientGarageGate.ensureHasVehicle(
+        context: context,
+        repository: widget.repository!,
+        detailerName: name,
+        onProceedToBooking: () {
+          if (mounted) _openBookingFlow();
+        },
+      );
+      return;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => BookingFlowScreen(

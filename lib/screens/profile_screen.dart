@@ -1381,8 +1381,28 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 const SizedBox(height: 6),
                 Row(
                   children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withAlpha(25),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: AppTheme.primary.withAlpha(80)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(VehicleBodyType.getIcon(veh.vehicleType), size: 12, color: AppTheme.primary),
+                          const SizedBox(width: 4),
+                          Text(
+                            veh.vehicleType,
+                            style: const TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     const Icon(Icons.palette_outlined, size: 14, color: AppTheme.primary),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 4),
                     Expanded(
                       child: Text(
                         'Paint Color: ${veh.colorName}',

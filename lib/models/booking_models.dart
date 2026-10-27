@@ -46,6 +46,7 @@ class ServicePackage {
   final bool isPopular;
   final String? recipeId;
   final String? recipeName;
+  final Map<String, double> vehicleSurcharges;
 
   const ServicePackage({
     required this.id,
@@ -57,7 +58,53 @@ class ServicePackage {
     this.isPopular = false,
     this.recipeId,
     this.recipeName,
+    this.vehicleSurcharges = const {},
   });
+
+  double getSurchargeForVehicleType(String? type) {
+    if (type == null || type.isEmpty) return 0.0;
+    // Check if detailer set explicit surcharge in vehicleSurcharges
+    for (final entry in vehicleSurcharges.entries) {
+      if (entry.key.toLowerCase().trim() == type.toLowerCase().trim()) {
+        return entry.value;
+      }
+    }
+    final lower = type.toLowerCase();
+    if (lower.contains('truck')) {
+      return vehicleSurcharges['Truck'] ?? (basePrice * (VehicleSize.truckVan.priceMultiplier - 1.0));
+    }
+    if (lower.contains('van') || lower.contains('minivan')) {
+      return vehicleSurcharges['Minivan / Van'] ?? (basePrice * (VehicleSize.truckVan.priceMultiplier - 1.0));
+    }
+    if (lower.contains('suv') || lower.contains('crossover')) {
+      return vehicleSurcharges['SUV / Crossover'] ?? (basePrice * (VehicleSize.suvCrossover.priceMultiplier - 1.0));
+    }
+    if (lower.contains('coupe') || lower.contains('sedan')) {
+      return vehicleSurcharges['Coupe'] ?? vehicleSurcharges['Sedan'] ?? 0.0;
+    }
+    return vehicleSurcharges[type] ?? 0.0;
+  }
+
+  double calculatePriceForVehicleType(String? type) {
+    return basePrice + getSurchargeForVehicleType(type);
+  }
+
+  double calculatePriceForVehicle(dynamic vehicle) {
+    if (vehicle == null) return basePrice;
+    final vehicleType = (vehicle.vehicleType as String?) ?? 'Sedan';
+    return calculatePriceForVehicleType(vehicleType);
+  }
+
+  double calculatePriceForVehicleSize(VehicleSize size) {
+    switch (size) {
+      case VehicleSize.suvCrossover:
+        return calculatePriceForVehicleType('SUV / Crossover');
+      case VehicleSize.truckVan:
+        return calculatePriceForVehicleType('Truck');
+      case VehicleSize.coupeSedan:
+        return calculatePriceForVehicleType('Sedan');
+    }
+  }
 
   ServicePackage copyWith({
     String? id,
@@ -69,6 +116,7 @@ class ServicePackage {
     bool? isPopular,
     String? recipeId,
     String? recipeName,
+    Map<String, double>? vehicleSurcharges,
   }) => ServicePackage(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -79,6 +127,7 @@ class ServicePackage {
     isPopular: isPopular ?? this.isPopular,
     recipeId: recipeId ?? this.recipeId,
     recipeName: recipeName ?? this.recipeName,
+    vehicleSurcharges: vehicleSurcharges ?? this.vehicleSurcharges,
   );
 
   Map<String, dynamic> toJson() => {
@@ -91,19 +140,33 @@ class ServicePackage {
     'isPopular': isPopular,
     if (recipeId != null) 'recipeId': recipeId,
     if (recipeName != null) 'recipeName': recipeName,
+    if (vehicleSurcharges.isNotEmpty) 'vehicleSurcharges': vehicleSurcharges,
   };
 
-  factory ServicePackage.fromJson(Map<String, dynamic> json) => ServicePackage(
-    id: json['id'] as String? ?? 'pkg_${DateTime.now().millisecondsSinceEpoch}',
-    title: json['title'] as String? ?? '',
-    description: json['description'] as String? ?? '',
-    basePrice: (json['basePrice'] as num?)?.toDouble() ?? 100.0,
-    estimatedDuration: json['estimatedDuration'] as String? ?? '2-3 hrs',
-    includes: (json['includes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
-    isPopular: json['isPopular'] as bool? ?? false,
-    recipeId: json['recipeId'] as String?,
-    recipeName: json['recipeName'] as String?,
-  );
+  factory ServicePackage.fromJson(Map<String, dynamic> json) {
+    final rawSurcharges = json['vehicleSurcharges'] ?? json['vehicle_surcharges'];
+    Map<String, double> parsedSurcharges = {};
+    if (rawSurcharges is Map) {
+      rawSurcharges.forEach((k, v) {
+        if (v is num) {
+          parsedSurcharges[k.toString()] = v.toDouble();
+        }
+      });
+    }
+
+    return ServicePackage(
+      id: json['id'] as String? ?? 'pkg_${DateTime.now().millisecondsSinceEpoch}',
+      title: json['title'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      basePrice: (json['basePrice'] as num?)?.toDouble() ?? 100.0,
+      estimatedDuration: json['estimatedDuration'] as String? ?? '2-3 hrs',
+      includes: (json['includes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      isPopular: json['isPopular'] as bool? ?? false,
+      recipeId: json['recipeId'] as String?,
+      recipeName: json['recipeName'] as String?,
+      vehicleSurcharges: parsedSurcharges,
+    );
+  }
 }
 
 class BookingAppointment {

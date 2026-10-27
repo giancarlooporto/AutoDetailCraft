@@ -6,6 +6,7 @@ import '../widgets/job_recipe_card.dart';
 import 'booking_flow_screen.dart';
 import 'public_studio_screen.dart';
 import 'auth_modal.dart';
+import '../widgets/client_garage_gate.dart';
 
 class FeedScreen extends StatefulWidget {
   final JobRepository repository;
@@ -34,6 +35,23 @@ class _FeedScreenState extends State<FeedScreen> {
         repository: widget.repository,
         onSuccess: () {
           if (context.mounted) {
+            _openBookingForDetailer(context, detailer);
+          }
+        },
+      );
+      return;
+    }
+
+    if (widget.repository.currentUser.myGarage.isEmpty) {
+      final name = detailer.businessName.isNotEmpty
+          ? detailer.businessName
+          : detailer.displayName;
+      ClientGarageGate.ensureHasVehicle(
+        context: context,
+        repository: widget.repository,
+        detailerName: name,
+        onProceedToBooking: () {
+          if (context.mounted) {
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => BookingFlowScreen(
@@ -47,6 +65,7 @@ class _FeedScreenState extends State<FeedScreen> {
       );
       return;
     }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => BookingFlowScreen(

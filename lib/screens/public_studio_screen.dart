@@ -8,6 +8,7 @@ import '../widgets/job_recipe_card.dart';
 import 'booking_flow_screen.dart';
 import 'chat_screen.dart';
 import 'auth_modal.dart';
+import '../widgets/client_garage_gate.dart';
 
 class PublicStudioScreen extends StatefulWidget {
   final UserProfile detailer;
@@ -49,6 +50,22 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
       );
       return;
     }
+
+    if (widget.repository.currentUser.myGarage.isEmpty) {
+      final name = widget.detailer.businessName.isNotEmpty
+          ? widget.detailer.businessName
+          : widget.detailer.displayName;
+      ClientGarageGate.ensureHasVehicle(
+        context: context,
+        repository: widget.repository,
+        detailerName: name,
+        onProceedToBooking: () {
+          if (mounted) _openBookingFlow();
+        },
+      );
+      return;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => BookingFlowScreen(

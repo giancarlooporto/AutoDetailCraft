@@ -3,12 +3,14 @@ import 'package:intl/intl.dart';
 import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
 import '../models/booking_models.dart';
+import '../models/user_vehicle.dart';
 import '../models/team_member.dart';
 import '../models/calendar_availability_block.dart';
 import '../services/job_repository.dart';
 import '../services/supabase_auth_service.dart';
 import '../services/mock_data_service.dart';
 import 'auth_modal.dart';
+import 'vehicle_editor_dialog.dart';
 
 class BookingFlowScreen extends StatefulWidget {
   final UserProfile detailer;
@@ -34,6 +36,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   // Form selections
   late ServicePackage _selectedPackage;
   VehicleSize _vehicleSize = VehicleSize.coupeSedan;
+  UserVehicle? _selectedGarageVehicle;
   ServiceLocationType _locationType = ServiceLocationType.mobile;
   DateTime _selectedDate = DateTime.now().add(const Duration(days: 1));
   late DateTime _calendarDisplayMonth;
@@ -86,10 +89,13 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       _addressCtrl.text = user.location;
     }
     if (user.myGarage.isNotEmpty) {
-      final v = user.myGarage.first;
-      _vehicleModelCtrl.text = '${v.year} ${v.make} ${v.model}'.trim();
+      _selectedGarageVehicle = user.myGarage.first;
+      _vehicleModelCtrl.text = _selectedGarageVehicle!.fullName;
+      _vehicleSize = _selectedGarageVehicle!.resolvedVehicleSize;
     } else {
-      _vehicleModelCtrl.text = '2024 Porsche 911 GT3';
+      _selectedGarageVehicle = null;
+      _vehicleModelCtrl.text = '';
+      _vehicleSize = VehicleSize.coupeSedan;
     }
 
     _selectedPackage = widget.initialPackage ??
@@ -117,6 +123,17 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   void _onRepoChanged() {
     if (mounted) {
       setState(() {
+        final garage = widget.repository.currentUser.myGarage;
+        if (garage.isNotEmpty) {
+          if (_selectedGarageVehicle == null || !garage.any((v) => v.id == _selectedGarageVehicle?.id)) {
+            _selectedGarageVehicle = garage.first;
+            _vehicleModelCtrl.text = _selectedGarageVehicle!.fullName;
+            _vehicleSize = _selectedGarageVehicle!.resolvedVehicleSize;
+          }
+        } else {
+          _selectedGarageVehicle = null;
+          _vehicleModelCtrl.text = '';
+        }
         _adjustSelectedSlotIfBlocked();
       });
     }
@@ -201,7 +218,10 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   }
 
   double get _calculatedTotal {
-    return _selectedPackage.basePrice * _vehicleSize.priceMultiplier;
+    if (_selectedGarageVehicle != null) {
+      return _selectedPackage.calculatePriceForVehicle(_selectedGarageVehicle);
+    }
+    return _selectedPackage.calculatePriceForVehicleSize(_vehicleSize);
   }
 
   double get _depositAmount {
@@ -209,6 +229,18 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   }
 
   Future<void> _confirmAndSubmitBooking() async {
+    if (widget.repository.currentUser.myGarage.isEmpty || _selectedGarageVehicle == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please add a vehicle to My Garage first before completing your booking.'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      setState(() => _currentStep = 1);
+      return;
+    }
+
     final name = _nameCtrl.text.trim();
     final phone = _phoneCtrl.text.trim();
     final email = _emailCtrl.text.trim();
@@ -274,6 +306,13 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       return;
     }
 
+    final vehicleModelText = _selectedGarageVehicle != null
+        ? _selectedGarageVehicle!.fullName
+        : _vehicleModelCtrl.text.trim();
+    final effectiveVehicleSize = _selectedGarageVehicle != null
+        ? _selectedGarageVehicle!.resolvedVehicleSize
+        : _vehicleSize;
+
     final booking = BookingAppointment(
       id: 'book_${DateTime.now().millisecondsSinceEpoch}',
       clientId: widget.repository.isLoggedIn ? widget.repository.currentUser.id : null,
@@ -292,8 +331,8 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       clientName: _nameCtrl.text.trim(),
       clientPhone: _phoneCtrl.text.trim(),
       clientEmail: _emailCtrl.text.trim().toLowerCase(),
-      vehicleYearMakeModel: _vehicleModelCtrl.text.trim(),
-      vehicleSize: _vehicleSize,
+      vehicleYearMakeModel: vehicleModelText,
+      vehicleSize: effectiveVehicleSize,
       package: _selectedPackage,
       locationType: _locationType,
       clientAddress: _locationType == ServiceLocationType.mobile
@@ -379,7 +418,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                 children: [
                   _receiptRow('Service', _selectedPackage.title),
                   const SizedBox(height: 6),
-                  _receiptRow('Vehicle', _vehicleModelCtrl.text),
+                  _receiptRow('Vehicle', vehicleModelText),
                   const SizedBox(height: 6),
                   _receiptRow('Date', DateFormat('EEE, MMM d, yyyy').format(_selectedDate)),
                   const SizedBox(height: 6),
@@ -409,7 +448,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
             onPressed: () {
               widget.repository.setActiveTab(1);
               Navigator.of(ctx).pop();
-              Navigator.of(context).pop();
+              if (Navigator.of(context).canPop()) {
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              }
             },
             child: const Text('View in My Bookings', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
@@ -541,15 +582,39 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       onPressed: () {
-                        if (_currentStep == 1 && _isSlotBooked(_selectedTimeSlot)) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(_getSlotUnavailableReason(_selectedTimeSlot) ?? 'Selected slot is unavailable. Please choose another date or time.'),
-                              backgroundColor: Colors.redAccent,
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                          return;
+                        if (_currentStep == 1) {
+                          if (widget.repository.currentUser.myGarage.isEmpty || _selectedGarageVehicle == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please add a vehicle to My Garage first before proceeding with booking.'),
+                                backgroundColor: Colors.redAccent,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                            showDialog(
+                              context: context,
+                              builder: (_) => VehicleEditorDialog(repository: widget.repository),
+                            ).then((_) {
+                              if (widget.repository.currentUser.myGarage.isNotEmpty && mounted) {
+                                setState(() {
+                                  _selectedGarageVehicle = widget.repository.currentUser.myGarage.last;
+                                  _vehicleModelCtrl.text = _selectedGarageVehicle!.fullName;
+                                  _vehicleSize = _selectedGarageVehicle!.resolvedVehicleSize;
+                                });
+                              }
+                            });
+                            return;
+                          }
+                          if (_isSlotBooked(_selectedTimeSlot)) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(_getSlotUnavailableReason(_selectedTimeSlot) ?? 'Selected slot is unavailable. Please choose another date or time.'),
+                                backgroundColor: Colors.redAccent,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                            return;
+                          }
                         }
                         if (_currentStep < 2) {
                           setState(() => _currentStep++);
@@ -860,56 +925,199 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           const SizedBox(height: 16),
         ],
 
-        const Text('Vehicle Size', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Row(
-          children: VehicleSize.values.map((size) {
-            final isSelected = _vehicleSize == size;
-            return Expanded(
-              child: GestureDetector(
-                onTap: () => setState(() => _vehicleSize = size),
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                  decoration: BoxDecoration(
-                    color: isSelected ? AppTheme.primary.withAlpha(20) : AppTheme.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isSelected ? AppTheme.primary : AppTheme.border,
-                      width: isSelected ? 1.5 : 1,
+        if (widget.repository.currentUser.myGarage.isNotEmpty) ...[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Vehicle to Detail', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: AppTheme.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                ),
+                icon: const Icon(Icons.add_rounded, size: 16),
+                label: const Text('+ Add Vehicle', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (_) => VehicleEditorDialog(repository: widget.repository),
+                  ).then((_) {
+                    if (widget.repository.currentUser.myGarage.isNotEmpty && mounted) {
+                      setState(() {
+                        _selectedGarageVehicle = widget.repository.currentUser.myGarage.last;
+                        _vehicleModelCtrl.text = _selectedGarageVehicle!.fullName;
+                        _vehicleSize = _selectedGarageVehicle!.resolvedVehicleSize;
+                      });
+                    }
+                  });
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<UserVehicle>(
+            key: ValueKey('booking_vehicle_dropdown_${_selectedGarageVehicle?.id}'),
+            isExpanded: true,
+            initialValue: widget.repository.currentUser.myGarage.any((v) => v.id == _selectedGarageVehicle?.id)
+                ? widget.repository.currentUser.myGarage.firstWhere((v) => v.id == _selectedGarageVehicle?.id)
+                : widget.repository.currentUser.myGarage.first,
+            decoration: InputDecoration(
+              labelText: 'Select Vehicle from My Garage',
+              prefixIcon: const Icon(Icons.directions_car_rounded, color: AppTheme.primary),
+              filled: true,
+              fillColor: AppTheme.surface,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.border)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.border)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primary)),
+            ),
+            items: widget.repository.currentUser.myGarage.map((veh) {
+              return DropdownMenuItem<UserVehicle>(
+                value: veh,
+                child: Row(
+                  children: [
+                    Icon(VehicleBodyType.getIcon(veh.vehicleType), size: 18, color: AppTheme.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        veh.fullName,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withAlpha(25),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: AppTheme.primary.withAlpha(70)),
+                      ),
+                      child: Text(
+                        veh.vehicleType,
+                        style: const TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+            onChanged: (veh) {
+              if (veh != null) {
+                setState(() {
+                  _selectedGarageVehicle = veh;
+                  _vehicleModelCtrl.text = veh.fullName;
+                  _vehicleSize = veh.resolvedVehicleSize;
+                });
+              }
+            },
+          ),
+          if (_selectedGarageVehicle != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceLight,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Row(
+                children: [
+                  Icon(VehicleBodyType.getIcon(_selectedGarageVehicle!.vehicleType), color: AppTheme.primary, size: 24),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              _selectedGarageVehicle!.vehicleType,
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '• ${_selectedGarageVehicle!.colorName}',
+                              style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _selectedPackage.getSurchargeForVehicleType(_selectedGarageVehicle!.vehicleType) > 0
+                              ? 'Base \$${_selectedPackage.basePrice.toStringAsFixed(0)} + \$${_selectedPackage.getSurchargeForVehicleType(_selectedGarageVehicle!.vehicleType).toStringAsFixed(0)} ${_selectedGarageVehicle!.vehicleType} fee'
+                              : 'Standard vehicle size pricing applied',
+                          style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                        ),
+                      ],
                     ),
                   ),
-                  child: Column(
-                    children: [
-                      Icon(size.icon, color: isSelected ? AppTheme.primary : AppTheme.textSecondary, size: 24),
-                      const SizedBox(height: 6),
-                      Text(
-                        size.label.split(' / ').first,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: isSelected ? AppTheme.primary : AppTheme.textPrimary,
-                        ),
-                      ),
-                      Text(
-                        size.priceMultiplier == 1.0 ? 'Standard' : '+${((size.priceMultiplier - 1.0) * 100).toInt()}%',
-                        style: const TextStyle(fontSize: 10, color: AppTheme.textMuted),
-                      ),
-                    ],
+                  Text(
+                    '\$${_calculatedTotal.toStringAsFixed(0)}',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.primary),
                   ),
-                ),
+                ],
               ),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          controller: _vehicleModelCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Car Year, Make, Model (e.g. 2024 Porsche 911)',
-            prefixIcon: Icon(Icons.car_repair_rounded),
+            ),
+          ],
+        ] else ...[
+          Container(
+            key: const Key('empty_garage_banner'),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.amber.withAlpha(25),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.amber.withAlpha(120)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 22),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'No Vehicle in My Garage',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber, fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Please add a vehicle to My Garage first. Your vehicle body size (Coupe, Sedan, SUV, Minivan, Truck) ensures seamless, accurate pricing.',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('Add Vehicle to My Garage', style: TextStyle(fontWeight: FontWeight.bold)),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (_) => VehicleEditorDialog(repository: widget.repository),
+                    ).then((_) {
+                      if (widget.repository.currentUser.myGarage.isNotEmpty && mounted) {
+                        setState(() {
+                          _selectedGarageVehicle = widget.repository.currentUser.myGarage.last;
+                          _vehicleModelCtrl.text = _selectedGarageVehicle!.fullName;
+                          _vehicleSize = _selectedGarageVehicle!.resolvedVehicleSize;
+                        });
+                      }
+                    });
+                  },
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
         const SizedBox(height: 20),
         const Text('Service Location Type', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),

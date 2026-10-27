@@ -38,6 +38,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
   late String _selectedMake;
   late String _selectedModel;
   late String _selectedColor;
+  late String _selectedVehicleType;
   late String _imageUrl;
   Uint8List? _uploadedImageBytes;
 
@@ -58,6 +59,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
       _selectedYear = v.year;
       _customYearCtrl.text = v.year.toString();
       _uploadedImageBytes = v.localImageBytes;
+      _selectedVehicleType = v.vehicleType.isNotEmpty ? v.vehicleType : VehicleBodyType.sedan;
 
       if (VehicleDatabase.allMakes.contains(v.make)) {
         _selectedMake = v.make;
@@ -81,6 +83,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
       _selectedMake = VehicleDatabase.allMakes.first; // First alphabetically (Acura)
       _selectedModel = '';
       _selectedColor = '';
+      _selectedVehicleType = VehicleBodyType.sedan;
       _imageUrl = '';
       _loadMakes();
       _loadModels();
@@ -202,6 +205,16 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
       if (_availableColors.isNotEmpty) {
         _selectedColor = _availableColors.first;
       }
+      final lower = newModel.toLowerCase();
+      if (lower.contains('coupe')) {
+        _selectedVehicleType = VehicleBodyType.coupe;
+      } else if (lower.contains('suv') || lower.contains('crossover') || lower.contains('cayenne') || lower.contains('macan') || lower.contains('rav4') || lower.contains('cr-v')) {
+        _selectedVehicleType = VehicleBodyType.suv;
+      } else if (lower.contains('truck') || lower.contains('f-150') || lower.contains('silverado') || lower.contains('tacoma') || lower.contains('tundra') || lower.contains('ram')) {
+        _selectedVehicleType = VehicleBodyType.truck;
+      } else if (lower.contains('van') || lower.contains('sienna') || lower.contains('odyssey') || lower.contains('pacifica')) {
+        _selectedVehicleType = VehicleBodyType.minivan;
+      }
     });
   }
 
@@ -275,6 +288,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
       localImageBytes: _uploadedImageBytes,
       lastDetailService: widget.vehicleToEdit?.lastDetailService ?? 'Awaiting First Pro Detail',
       lastDetailDate: widget.vehicleToEdit?.lastDetailDate,
+      vehicleType: _selectedVehicleType,
     );
 
     if (widget.vehicleToEdit != null) {
@@ -509,6 +523,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
               else
                 TextField(
                   controller: _customModelCtrl,
+                  onChanged: (v) => _onModelChanged(v),
                   decoration: InputDecoration(
                     labelText: 'Model (e.g. Air Sapphire, Emira, Custom GT)',
                     prefixIcon: const Icon(Icons.directions_car_rounded, size: 16),
@@ -521,14 +536,44 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
 
               const SizedBox(height: 14),
 
-              // STEP 4: PAINT COLOR (Dynamically Populated by Selected Model & Year)
+              // STEP 4: VEHICLE TYPE / SIZE CLASSIFICATION
+              const Text('4. Vehicle Body Style & Size Classification', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+              const SizedBox(height: 2),
+              const Text('Used by detailers to calculate accurate package pricing for your vehicle size.', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                key: ValueKey('vehicle_type_dropdown_$_selectedVehicleType'),
+                isExpanded: true,
+                initialValue: VehicleBodyType.all.contains(_selectedVehicleType) ? _selectedVehicleType : VehicleBodyType.sedan,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.category_rounded, size: 16),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                items: VehicleBodyType.all.map((type) => DropdownMenuItem(
+                  value: type,
+                  child: Row(
+                    children: [
+                      Icon(VehicleBodyType.getIcon(type), size: 18, color: AppTheme.primary),
+                      const SizedBox(width: 8),
+                      Text(type),
+                    ],
+                  ),
+                )).toList(),
+                onChanged: (v) {
+                  if (v != null) setState(() => _selectedVehicleType = v);
+                },
+              ),
+
+              const SizedBox(height: 14),
+
+              // STEP 5: PAINT COLOR (Dynamically Populated by Selected Model & Year)
               Wrap(
                 alignment: WrapAlignment.spaceBetween,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 spacing: 8,
                 runSpacing: 4,
                 children: [
-                  const Text('4. Factory OEM Paint Color', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                  const Text('5. Factory OEM Paint Color', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
                   GestureDetector(
                     onTap: () => setState(() => _isCustomColor = !_isCustomColor),
                     child: Text(
@@ -565,7 +610,7 @@ class _VehicleEditorDialogState extends State<VehicleEditorDialog> {
 
               const SizedBox(height: 16),
 
-              // STEP 5: VEHICLE PHOTO PREVIEW & UPLOAD ORIGINAL PHOTO
+              // STEP 6: VEHICLE PHOTO PREVIEW & UPLOAD ORIGINAL PHOTO
               Wrap(
                 alignment: WrapAlignment.spaceBetween,
                 crossAxisAlignment: WrapCrossAlignment.center,

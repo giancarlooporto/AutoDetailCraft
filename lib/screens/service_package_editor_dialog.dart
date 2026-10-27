@@ -64,6 +64,9 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
   late TextEditingController _priceController;
   late TextEditingController _durationValueController;
   late TextEditingController _includesController;
+  late TextEditingController _suvSurchargeCtrl;
+  late TextEditingController _truckSurchargeCtrl;
+  late TextEditingController _minivanSurchargeCtrl;
 
   String _durationUnit = 'hours'; // 'minutes', 'hours', or 'days'
   bool _isPopular = false;
@@ -244,6 +247,21 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
     _priceController = TextEditingController(text: p != null ? p.basePrice.toStringAsFixed(0) : '150');
     _linkedRecipeId = p?.recipeId;
     _linkedRecipeName = p?.recipeName;
+
+    final base = p?.basePrice ?? 150.0;
+    final suvDefault = p != null && p.vehicleSurcharges.containsKey('SUV / Crossover')
+        ? p.vehicleSurcharges['SUV / Crossover']!
+        : (base * 0.25).roundToDouble();
+    final truckDefault = p != null && p.vehicleSurcharges.containsKey('Truck')
+        ? p.vehicleSurcharges['Truck']!
+        : (base * 0.45).roundToDouble();
+    final minivanDefault = p != null && p.vehicleSurcharges.containsKey('Minivan / Van')
+        ? p.vehicleSurcharges['Minivan / Van']!
+        : (base * 0.45).roundToDouble();
+
+    _suvSurchargeCtrl = TextEditingController(text: suvDefault.toStringAsFixed(0));
+    _truckSurchargeCtrl = TextEditingController(text: truckDefault.toStringAsFixed(0));
+    _minivanSurchargeCtrl = TextEditingController(text: minivanDefault.toStringAsFixed(0));
     
     // Parse duration string e.g. "3-4 hrs", "45 mins", or "2 days"
     String initialVal = '3';
@@ -282,6 +300,11 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
       _descController.text = t.description;
       _includesController.text = t.includes.join('\n');
       _suggestedRecipeTitle = null;
+
+      final base = t.price;
+      _suvSurchargeCtrl.text = (base * 0.25).round().toString();
+      _truckSurchargeCtrl.text = (base * 0.45).round().toString();
+      _minivanSurchargeCtrl.text = (base * 0.45).round().toString();
     });
   }
 
@@ -323,6 +346,9 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
     _priceController.dispose();
     _durationValueController.dispose();
     _includesController.dispose();
+    _suvSurchargeCtrl.dispose();
+    _truckSurchargeCtrl.dispose();
+    _minivanSurchargeCtrl.dispose();
     super.dispose();
   }
 
@@ -362,6 +388,14 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
             ? '$durNum mins'
             : (durNum == 1 ? '1 hour' : '$durNum hours');
 
+    final surcharges = <String, double>{
+      'Coupe': 0.0,
+      'Sedan': 0.0,
+      'SUV / Crossover': (double.tryParse(_suvSurchargeCtrl.text.trim()) ?? 0.0).clamp(0.0, 100000.0),
+      'Truck': (double.tryParse(_truckSurchargeCtrl.text.trim()) ?? 0.0).clamp(0.0, 100000.0),
+      'Minivan / Van': (double.tryParse(_minivanSurchargeCtrl.text.trim()) ?? 0.0).clamp(0.0, 100000.0),
+    };
+
     final updatedPackage = ServicePackage(
       id: widget.package?.id ?? 'pkg_${DateTime.now().millisecondsSinceEpoch}',
       title: _titleController.text.trim(),
@@ -372,6 +406,7 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
       isPopular: _isPopular,
       recipeId: _linkedRecipeId,
       recipeName: _linkedRecipeName,
+      vehicleSurcharges: surcharges,
     );
 
     widget.onSave(updatedPackage);
@@ -788,6 +823,71 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
                         ],
                       ),
                     ),
+                    const SizedBox(height: 14),
+
+                    // Vehicle Type Pricing Surcharges Section
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceLight,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.directions_car_filled_rounded, size: 16, color: AppTheme.primary),
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text(
+                                  'Vehicle Type Pricing Surcharges',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                                ),
+                              ),
+                              Text(
+                                'Coupe/Sedan: Base Price',
+                                style: TextStyle(fontSize: 10, color: AppTheme.primary.withAlpha(220), fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Specify extra fee amount (\$) for larger vehicle types:',
+                            style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildSurchargeInput(
+                                  key: const Key('surcharge_field_suv'),
+                                  label: 'SUV / Crossover',
+                                  controller: _suvSurchargeCtrl,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _buildSurchargeInput(
+                                  key: const Key('surcharge_field_truck'),
+                                  label: 'Truck',
+                                  controller: _truckSurchargeCtrl,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _buildSurchargeInput(
+                                  key: const Key('surcharge_field_minivan'),
+                                  label: 'Minivan / Van',
+                                  controller: _minivanSurchargeCtrl,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -856,6 +956,32 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.border)),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.border)),
       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.primary)),
+    );
+  }
+
+  Widget _buildSurchargeInput({
+    Key? key,
+    required String label,
+    required TextEditingController controller,
+  }) {
+    return Column(
+      key: key,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textSecondary),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 4),
+        TextFormField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+          decoration: _inputDecoration('0', prefix: '+\$ '),
+        ),
+      ],
     );
   }
 }

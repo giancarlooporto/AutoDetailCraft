@@ -677,6 +677,9 @@ class SupabaseDbService {
     if (v.lastDetailDate != null) {
       payload['last_detail_date'] = v.lastDetailDate!.toIso8601String();
     }
+    if (v.vehicleType.isNotEmpty) {
+      payload['vehicle_type'] = v.vehicleType;
+    }
 
     try {
       await client.from('vehicles').upsert(payload);
