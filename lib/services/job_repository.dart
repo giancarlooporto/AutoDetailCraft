@@ -2219,6 +2219,19 @@ class JobRepository extends ChangeNotifier {
     if (detailerId != null && _detailerPreferencesMap.containsKey(detailerId)) {
       return _detailerPreferencesMap[detailerId]!;
     }
+    if (detailerId != null && detailerId != _currentUser.id) {
+      return DetailerCalendarPreferences(
+        weeklySchedule: [
+          for (int w = 1; w <= 7; w++)
+            DayBusinessHours(weekday: w, isOpen: true, openTime: '08:00 AM', closeTime: '06:00 PM'),
+        ],
+        advanceNoticeHours: 2,
+        bufferMinutesBetweenJobs: 30,
+        maxAdvanceBookingDays: 60,
+        autoConfirmBookings: true,
+        slotDurationHours: 3,
+      );
+    }
     return _calendarPreferences;
   }
 
@@ -2928,12 +2941,20 @@ class JobRepository extends ChangeNotifier {
     final coveredByMultiDay = _bookings.any((b) {
       if (b.status == BookingStatus.cancelled || b.detailerId != detailerId) return false;
       final apptDate = DateTime(b.scheduledDate.year, b.scheduledDate.month, b.scheduledDate.day);
-      final dayDiff = normDate.difference(apptDate).inDays;
-      final durationStr = b.package.estimatedDuration.toLowerCase();
-      if (durationStr.contains('day')) {
-        final match = RegExp(r'\d+').firstMatch(durationStr);
-        final days = match != null ? int.parse(match.group(0)!) : 1;
-        return dayDiff > 0 && dayDiff < days;
+      if (b.completionDate != null) {
+        final compDate = DateTime(b.completionDate!.year, b.completionDate!.month, b.completionDate!.day);
+        return normDate.isAfter(apptDate) && normDate.isBefore(compDate);
+      }
+      final isMulti = b.isMultiDay || b.package.isMultiDay || b.package.estimatedDuration.toLowerCase().contains('day');
+      if (isMulti) {
+        final compDate = calculateCompletionDateTime(
+          b.scheduledDate,
+          b.startTime ?? '9:00 AM',
+          b.package,
+          detailerId: b.detailerId,
+        ).completionDate;
+        final normCompDate = DateTime(compDate.year, compDate.month, compDate.day);
+        return normDate.isAfter(apptDate) && normDate.isBefore(normCompDate);
       }
       return false;
     });
@@ -3035,8 +3056,28 @@ class JobRepository extends ChangeNotifier {
 
   static int timeStringToMinutes(String timeStr) {
     String clean = timeStr.trim();
+    if (clean.toLowerCase().contains('drop-off:')) {
+      clean = clean.replaceAll(RegExp(r'drop-off:\s*', caseSensitive: false), '');
+    } else if (clean.toLowerCase().contains('drop-off')) {
+      clean = clean.replaceAll(RegExp(r'drop-off\s*', caseSensitive: false), '');
+    }
+    if (clean.toLowerCase().contains('ready:')) {
+      clean = clean.replaceAll(RegExp(r'ready:\s*', caseSensitive: false), '');
+    }
+    if (clean.contains('•')) {
+      clean = clean.split('•').first.trim();
+    }
     if (clean.contains('-')) {
       clean = clean.split('-').first.trim();
+    }
+    final match = RegExp(r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)?', caseSensitive: false).firstMatch(clean);
+    if (match != null) {
+      int hour = int.tryParse(match.group(1)!) ?? 0;
+      int min = int.tryParse(match.group(2) ?? '0') ?? 0;
+      final ampm = match.group(3)?.toUpperCase();
+      if (ampm == 'PM' && hour != 12) hour += 12;
+      if (ampm == 'AM' && hour == 12) hour = 0;
+      return hour * 60 + min;
     }
     final upper = clean.toUpperCase();
     final isPm = upper.contains('PM');
@@ -3052,6 +3093,16 @@ class JobRepository extends ChangeNotifier {
   /// Parses a time slot string into start and end minutes since midnight.
   static (int startMin, int endMin) parseSlotRange(String slot, {int defaultDurationHours = 3}) {
     final clean = slot.trim();
+    if (clean.contains('•')) {
+      final parts = clean.split('•');
+      final start = timeStringToMinutes(parts[0]);
+      final end = timeStringToMinutes(parts[1]);
+      return (start, end);
+    }
+    if (clean.toLowerCase().contains('drop-off')) {
+      final start = timeStringToMinutes(clean);
+      return (start, start + (defaultDurationHours * 60));
+    }
     if (clean.contains('-')) {
       final parts = clean.split('-');
       final start = timeStringToMinutes(parts[0]);
@@ -3063,27 +3114,56 @@ class JobRepository extends ChangeNotifier {
     return (start, end);
   }
 
-  /// Parses estimated duration string (e.g., "2-3 hrs", "4 hours", "90 mins", "1 day") to minutes.
+  /// Parses estimated duration string (e.g., "2-3 hrs", "2.5 hrs", "4 hours", "90 mins", "1 - 2 Days") to minutes.
   static int parseDurationToMinutes(String durationStr, {int defaultMinutes = 180}) {
     final clean = durationStr.toLowerCase().trim();
+    if (clean.isEmpty) return defaultMinutes;
+
     if (clean.contains('day')) {
-      final match = RegExp(r'\d+').firstMatch(clean);
-      final days = match != null ? int.parse(match.group(0)!) : 1;
-      return days * 24 * 60;
+      final matches = RegExp(r'(\d+(?:\.\d+)?)')
+          .allMatches(clean)
+          .map((m) => double.tryParse(m.group(0)!))
+          .whereType<double>()
+          .toList();
+      if (matches.isNotEmpty) {
+        final days = matches.reduce((a, b) => a > b ? a : b);
+        return (days * 24 * 60).round();
+      }
+      return 24 * 60;
     }
+
+    // Compound format e.g. "1 hr 30 mins" or "2 hours 45 min"
+    final compoundMatch = RegExp(r'(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)\s*(?:and\s*)?(\d+(?:\.\d+)?)\s*(?:mins?|minutes?)', caseSensitive: false).firstMatch(clean);
+    if (compoundMatch != null) {
+      final h = double.tryParse(compoundMatch.group(1)!) ?? 0;
+      final m = double.tryParse(compoundMatch.group(2)!) ?? 0;
+      return (h * 60 + m).round();
+    }
+
     if (clean.contains('hour') || clean.contains('hr')) {
-      final matches = RegExp(r'\d+').allMatches(clean).map((m) => int.parse(m.group(0)!)).toList();
+      final matches = RegExp(r'(\d+(?:\.\d+)?)')
+          .allMatches(clean)
+          .map((m) => double.tryParse(m.group(0)!))
+          .whereType<double>()
+          .toList();
       if (matches.isNotEmpty) {
         final hours = matches.reduce((a, b) => a > b ? a : b);
-        return hours * 60;
+        return (hours * 60).round();
       }
     }
+
     if (clean.contains('min')) {
-      final match = RegExp(r'\d+').firstMatch(clean);
-      if (match != null) {
-        return int.parse(match.group(0)!);
+      final matches = RegExp(r'(\d+(?:\.\d+)?)')
+          .allMatches(clean)
+          .map((m) => double.tryParse(m.group(0)!))
+          .whereType<double>()
+          .toList();
+      if (matches.isNotEmpty) {
+        final mins = matches.reduce((a, b) => a > b ? a : b);
+        return mins.round();
       }
     }
+
     return defaultMinutes;
   }
 
@@ -3092,16 +3172,145 @@ class JobRepository extends ChangeNotifier {
     BookingAppointment appointment, {
     int bufferMinutes = 0,
   }) {
+    if (appointment.startTime != null && appointment.endTime != null) {
+      final start = timeStringToMinutes(appointment.startTime!);
+      final end = timeStringToMinutes(appointment.endTime!);
+      return (start, end + bufferMinutes);
+    }
     final slotRange = parseSlotRange(appointment.scheduledTimeSlot);
     final slotSpan = slotRange.$2 > slotRange.$1 ? slotRange.$2 - slotRange.$1 : 180;
-    final durationMin = parseDurationToMinutes(
-      appointment.package.estimatedDuration,
-      defaultMinutes: slotSpan,
-    );
+    final durationMin = appointment.durationMinutes ?? appointment.package.durationMinutes;
     final effectiveDuration = durationMin > slotSpan ? durationMin : slotSpan;
     final startMin = slotRange.$1;
     final endMin = startMin + effectiveDuration + bufferMinutes;
     return (startMin, endMin);
+  }
+
+  /// Calculates the completion date and time for a booking.
+  /// For same-day: completionDate = startDate, completionTime = startTime + durationMinutes.
+  /// For multi-day: loops through business days for turnaroundDays, skipping closed/off days.
+  ({DateTime completionDate, String completionTime}) calculateCompletionDateTime(
+    DateTime startDate,
+    String startTime,
+    ServicePackage package, {
+    String? detailerId,
+  }) {
+    final targetId = detailerId ?? _currentUser.id;
+    if (!package.isMultiDay) {
+      final startMin = timeStringToMinutes(startTime);
+      final endMin = startMin + package.durationMinutes;
+      final compDate = DateTime(startDate.year, startDate.month, startDate.day);
+      return (completionDate: compDate, completionTime: formatMinutesToTime(endMin));
+    }
+
+    // Multi-day turnaround calculation
+    final neededDays = package.turnaroundDays.clamp(1, 30);
+    DateTime curr = DateTime(startDate.year, startDate.month, startDate.day);
+    int daysAccounted = 0;
+    int safetyLoops = 0;
+
+    while (daysAccounted < neededDays && safetyLoops < 365) {
+      safetyLoops++;
+      final isOff = isDateRecurringDayOff(curr, detailerId: targetId);
+      final hours = getHoursForDate(curr, detailerId: targetId);
+      if (!isOff && hours.isOpen) {
+        daysAccounted++;
+        if (daysAccounted == neededDays) {
+          break;
+        }
+      }
+      curr = DateTime(curr.year, curr.month, curr.day + 1);
+    }
+
+    final closeHours = getHoursForDate(curr, detailerId: targetId);
+    final completionTime = closeHours.closeTime.isNotEmpty ? closeHours.closeTime : '5:00 PM';
+    return (completionDate: curr, completionTime: completionTime);
+  }
+
+  /// Generates start times for [package] on [date] within shop hours, excluding times that
+  /// would finish after closing (same-day) or conflict with existing bookings.
+  List<String> getAvailableStartTimesForPackage(
+    DateTime date,
+    ServicePackage package, {
+    String? detailerId,
+    String? teamMemberId,
+  }) {
+    final targetId = detailerId ?? _currentUser.id;
+    if (isDateRecurringDayOff(date, detailerId: targetId)) return [];
+    final hours = getHoursForDate(date, detailerId: targetId);
+    if (!hours.isOpen) return [];
+
+    final openMin = timeStringToMinutes(hours.openTime);
+    final closeMin = timeStringToMinutes(hours.closeTime);
+    if (closeMin <= openMin) return [];
+
+    final List<String> available = [];
+    final durationMin = package.durationMinutes;
+
+    // Use configured slot start times and hourly steps starting from openMin
+    final baseSlots = getTimeSlotsForDate(date, detailerId: targetId);
+    final candidateStartMins = <int>{};
+    for (final slot in baseSlots) {
+      candidateStartMins.add(parseSlotRange(slot).$1);
+    }
+    for (int m = openMin; m < closeMin; m += 60) {
+      candidateStartMins.add(m);
+    }
+
+    final sortedStarts = candidateStartMins.toList()..sort();
+
+    for (final startMin in sortedStarts) {
+      if (startMin < openMin || startMin >= closeMin) continue;
+
+      // Same-day closing time protection
+      if (!package.isMultiDay && (startMin + durationMin > closeMin)) {
+        continue;
+      }
+
+      final startTimeStr = formatMinutesToTime(startMin);
+      final slotStr = package.isMultiDay
+          ? '$startTimeStr - ${formatMinutesToTime(startMin + 60)}'
+          : '$startTimeStr - ${formatMinutesToTime(startMin + durationMin)}';
+
+      final isBlocked = isSlotExplicitlyBlocked(targetId, date, slotStr, teamMemberId: teamMemberId) ||
+          isSlotExplicitlyBlocked(targetId, date, startTimeStr, teamMemberId: teamMemberId);
+      if (isBlocked) continue;
+
+      final isConflicted = isSlotConflictedByBooking(date, slotStr, detailerId: targetId, teamMemberId: teamMemberId);
+      if (isConflicted) continue;
+
+      available.add(startTimeStr);
+    }
+
+    return available;
+  }
+
+  /// Returns afternoon/evening pick-up slots on [completionDate].
+  List<String> getAvailablePickUpTimes(DateTime completionDate, {String? detailerId}) {
+    final targetId = detailerId ?? _currentUser.id;
+    final hours = getHoursForDate(completionDate, detailerId: targetId);
+    if (!hours.isOpen) return ['5:00 PM'];
+
+    final openMin = timeStringToMinutes(hours.openTime);
+    final closeMin = timeStringToMinutes(hours.closeTime);
+    if (closeMin <= openMin) {
+      return [hours.closeTime.isNotEmpty ? hours.closeTime : '5:00 PM'];
+    }
+    final List<String> slots = [];
+
+    final startPickUp = (closeMin - 240 > openMin + 120) ? (closeMin - 240) : (openMin + 120);
+    for (int m = startPickUp; m <= closeMin; m += 60) {
+      if (m >= openMin && m <= closeMin) {
+        slots.add(formatMinutesToTime(m));
+      }
+    }
+    if (slots.isEmpty) {
+      slots.add(hours.closeTime.isNotEmpty ? hours.closeTime : '5:00 PM');
+    } else if (!slots.contains(formatMinutesToTime(closeMin)) && closeMin > openMin) {
+      slots.add(formatMinutesToTime(closeMin));
+    }
+
+    return slots.toSet().toList();
   }
 
   /// Determines whether an appointment conflicts with a requested time slot on [date].
@@ -3110,23 +3319,59 @@ class JobRepository extends ChangeNotifier {
 
     final normDate = DateTime(date.year, date.month, date.day);
     final apptDate = DateTime(b.scheduledDate.year, b.scheduledDate.month, b.scheduledDate.day);
-    final dayDiff = normDate.difference(apptDate).inDays;
+    final isMulti = b.isMultiDay || b.package.isMultiDay || b.package.estimatedDuration.toLowerCase().contains('day');
 
-    // Multi-day booking handling
-    final durationStr = b.package.estimatedDuration.toLowerCase();
-    if (durationStr.contains('day')) {
-      final match = RegExp(r'\d+').firstMatch(durationStr);
-      final days = match != null ? int.parse(match.group(0)!) : 1;
-      if (dayDiff >= 0 && dayDiff < days) {
-        if (dayDiff > 0) return true; // Entire day blocked on subsequent days
+    if (isMulti) {
+      final DateTime compDate;
+      if (b.completionDate != null) {
+        compDate = DateTime(b.completionDate!.year, b.completionDate!.month, b.completionDate!.day);
+      } else {
+        compDate = calculateCompletionDateTime(
+          b.scheduledDate,
+          b.startTime ?? '9:00 AM',
+          b.package,
+          detailerId: b.detailerId,
+        ).completionDate;
+      }
+
+      if (normDate.isBefore(apptDate) || normDate.isAfter(compDate)) {
+        return false;
+      }
+
+      if (normDate.isAfter(apptDate) && normDate.isBefore(compDate)) {
+        return true; // Entire intermediate day blocked
+      }
+
+      final isApptDay = normDate.year == apptDate.year && normDate.month == apptDate.month && normDate.day == apptDate.day;
+      final isCompDay = normDate.year == compDate.year && normDate.month == compDate.month && normDate.day == compDate.day;
+
+      if (isApptDay && isCompDay) {
+        final startMin = b.startTime != null ? timeStringToMinutes(b.startTime!) : parseSlotRange(b.scheduledTimeSlot).$1;
+        final endMin = b.endTime != null ? timeStringToMinutes(b.endTime!) : parseSlotRange(b.scheduledTimeSlot).$2;
         final slotRange = parseSlotRange(slot);
-        final apptStart = parseSlotRange(b.scheduledTimeSlot).$1;
+        return slotRange.$2 > startMin && slotRange.$1 < endMin;
+      }
+
+      if (isApptDay) {
+        // Drop-off day: overlaps if slot ends after appt start
+        final apptStart = b.startTime != null ? timeStringToMinutes(b.startTime!) : parseSlotRange(b.scheduledTimeSlot).$1;
+        final slotRange = parseSlotRange(slot);
         return slotRange.$2 > apptStart;
       }
+
+      if (isCompDay) {
+        // Ready/pick-up day: overlaps if slot starts before appt end
+        final apptEnd = b.endTime != null ? timeStringToMinutes(b.endTime!) : parseSlotRange(b.scheduledTimeSlot).$2;
+        final slotRange = parseSlotRange(slot);
+        return slotRange.$1 < apptEnd;
+      }
+
       return false;
     }
 
-    if (dayDiff != 0) return false;
+    if (normDate.year != apptDate.year || normDate.month != apptDate.month || normDate.day != apptDate.day) {
+      return false;
+    }
 
     // Direct slot string match
     if (b.scheduledTimeSlot.trim().toLowerCase() == slot.trim().toLowerCase()) {
@@ -3821,7 +4066,7 @@ class JobRepository extends ChangeNotifier {
     final openMin = timeStringToMinutes(dayHours.openTime);
     final closeMin = timeStringToMinutes(dayHours.closeTime);
     if (slotMin < openMin || slotMin >= closeMin) return false;
-    if (slot.contains('-')) {
+    if (slot.contains('-') && !slot.toLowerCase().contains('drop-off') && !slot.contains('•')) {
       final endMin = timeStringToMinutes(slot.split('-').last);
       if (endMin > closeMin) return false;
     }
@@ -3860,16 +4105,26 @@ class JobRepository extends ChangeNotifier {
       if (b.detailerId != targetDetailerId) return false;
 
       final apptDate = DateTime(b.scheduledDate.year, b.scheduledDate.month, b.scheduledDate.day);
-      final dayDiff = normDate.difference(apptDate).inDays;
-
-      final durationStr = b.package.estimatedDuration.toLowerCase();
-      if (durationStr.contains('day')) {
-        final match = RegExp(r'\d+').firstMatch(durationStr);
-        final days = match != null ? int.parse(match.group(0)!) : 1;
-        return dayDiff >= 0 && dayDiff < days;
+      if (b.completionDate != null) {
+        final compDate = DateTime(b.completionDate!.year, b.completionDate!.month, b.completionDate!.day);
+        return (normDate.isAtSameMomentAs(apptDate) || normDate.isAfter(apptDate)) &&
+               (normDate.isAtSameMomentAs(compDate) || normDate.isBefore(compDate));
       }
 
-      return dayDiff == 0;
+      final isMulti = b.isMultiDay || b.package.isMultiDay || b.package.estimatedDuration.toLowerCase().contains('day');
+      if (isMulti) {
+        final compDate = calculateCompletionDateTime(
+          b.scheduledDate,
+          b.startTime ?? '9:00 AM',
+          b.package,
+          detailerId: b.detailerId,
+        ).completionDate;
+        final normCompDate = DateTime(compDate.year, compDate.month, compDate.day);
+        return (normDate.isAtSameMomentAs(apptDate) || normDate.isAfter(apptDate)) &&
+               (normDate.isAtSameMomentAs(normCompDate) || normDate.isBefore(normCompDate));
+      }
+
+      return normDate.year == apptDate.year && normDate.month == apptDate.month && normDate.day == apptDate.day;
     }).toList();
   }
 

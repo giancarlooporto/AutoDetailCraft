@@ -267,19 +267,24 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
     String initialVal = '3';
     String initialUnit = 'hours';
     if (p != null) {
-      final dur = p.estimatedDuration.toLowerCase();
-      if (dur.contains('day')) {
-        initialUnit = 'days';
-        final match = RegExp(r'\d+').firstMatch(dur);
-        if (match != null) initialVal = match.group(0)!;
-      } else if (dur.contains('min')) {
-        initialUnit = 'minutes';
-        final match = RegExp(r'\d+').firstMatch(dur);
-        if (match != null) initialVal = match.group(0)!;
+      if (p.durationValue != null && p.durationValue! > 0 && p.durationUnit != null) {
+        initialVal = p.durationValue!.toString();
+        initialUnit = p.durationUnit!;
       } else {
-        initialUnit = 'hours';
-        final match = RegExp(r'\d+').firstMatch(dur);
-        if (match != null) initialVal = match.group(0)!;
+        final dur = p.estimatedDuration.toLowerCase();
+        if (dur.contains('day')) {
+          initialUnit = 'days';
+          final match = RegExp(r'\d+').firstMatch(dur);
+          if (match != null) initialVal = match.group(0)!;
+        } else if (dur.contains('min')) {
+          initialUnit = 'minutes';
+          final match = RegExp(r'\d+').firstMatch(dur);
+          if (match != null) initialVal = match.group(0)!;
+        } else {
+          initialUnit = 'hours';
+          final match = RegExp(r'\d+').firstMatch(dur);
+          if (match != null) initialVal = match.group(0)!;
+        }
       }
     }
     _durationValueController = TextEditingController(text: initialVal);
@@ -289,6 +294,46 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
       text: p?.includes.join('\n') ?? 'Hand wash & wheel deep clean\nIron decon & clay bar\nInterior vacuum & steam wipe',
     );
     _isPopular = p?.isPopular ?? false;
+  }
+
+  @override
+  void didUpdateWidget(ServicePackageEditorDialog oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.package != oldWidget.package) {
+      final p = widget.package;
+      _titleController.text = p?.title ?? '';
+      _descController.text = p?.description ?? '';
+      _priceController.text = p != null ? p.basePrice.toStringAsFixed(0) : '150';
+      _linkedRecipeId = p?.recipeId;
+      _linkedRecipeName = p?.recipeName;
+      String initialVal = '3';
+      String initialUnit = 'hours';
+      if (p != null) {
+        if (p.durationValue != null && p.durationValue! > 0 && p.durationUnit != null) {
+          initialVal = p.durationValue!.toString();
+          initialUnit = p.durationUnit!;
+        } else {
+          final dur = p.estimatedDuration.toLowerCase();
+          if (dur.contains('day')) {
+            initialUnit = 'days';
+            final match = RegExp(r'\d+').firstMatch(dur);
+            if (match != null) initialVal = match.group(0)!;
+          } else if (dur.contains('min')) {
+            initialUnit = 'minutes';
+            final match = RegExp(r'\d+').firstMatch(dur);
+            if (match != null) initialVal = match.group(0)!;
+          } else {
+            initialUnit = 'hours';
+            final match = RegExp(r'\d+').firstMatch(dur);
+            if (match != null) initialVal = match.group(0)!;
+          }
+        }
+      }
+      _durationValueController.text = initialVal;
+      _durationUnit = initialUnit;
+      _includesController.text = p?.includes.join('\n') ?? '';
+      _isPopular = p?.isPopular ?? false;
+    }
   }
 
   void _applyTemplate(ServicePackageTemplate t) {
@@ -407,6 +452,8 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
       recipeId: _linkedRecipeId,
       recipeName: _linkedRecipeName,
       vehicleSurcharges: surcharges,
+      durationValue: durNum,
+      durationUnit: _durationUnit,
     );
 
     widget.onSave(updatedPackage);
@@ -615,7 +662,8 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
                                 decoration: _inputDecoration('3'),
                                 validator: (val) {
                                   if (val == null || val.trim().isEmpty) return 'Enter duration';
-                                  if (int.tryParse(val.trim()) == null) return 'Invalid';
+                                  final n = int.tryParse(val.trim());
+                                  if (n == null || n <= 0) return 'Must be > 0';
                                   return null;
                                 },
                               ),
@@ -660,7 +708,48 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
                         ),
                       ],
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 8),
+
+                    // Turnaround Helper Callout (explaining same-day vs multi-day scheduling)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _durationUnit == 'days'
+                            ? Colors.amber.withAlpha(20)
+                            : AppTheme.primary.withAlpha(20),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: _durationUnit == 'days'
+                              ? Colors.amber.withAlpha(80)
+                              : AppTheme.primary.withAlpha(80),
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            _durationUnit == 'days' ? Icons.calendar_month_rounded : Icons.timer_outlined,
+                            size: 15,
+                            color: _durationUnit == 'days' ? Colors.amber : AppTheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _durationUnit == 'days'
+                                  ? '🗓️ Multi-Day Turnaround: Clients will choose both a Drop-off Date/Time and a Ready Pick-up Date/Time. The system automatically accounts for shop operating hours and skips closed business days.'
+                                  : '⏱️ Same-Day Service: Clients choose an Arrival Start Time. The app dynamically calculates the estimated finish time today based on package duration and shop operating hours.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                height: 1.3,
+                                color: _durationUnit == 'days' ? Colors.amber.shade200 : AppTheme.textPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
 
                     // Description
                     const Text('Service Description', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
@@ -737,15 +826,8 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
                           ),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _includesController,
-                      maxLines: 4,
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
-                      decoration: _inputDecoration('e.g. Foam pre-wash\nIron decontamination & Clay bar\n1-stage machine finish polish'),
-                    ),
                     if (_linkedRecipeName != null && _linkedRecipeName!.isNotEmpty) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
@@ -780,6 +862,13 @@ class _ServicePackageEditorDialogState extends State<ServicePackageEditorDialog>
                         ),
                       ),
                     ],
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _includesController,
+                      maxLines: 4,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      decoration: _inputDecoration('e.g. Foam pre-wash\nIron decontamination & Clay bar\n1-stage machine finish polish'),
+                    ),
                     const SizedBox(height: 14),
 
                     // Popular Toggle

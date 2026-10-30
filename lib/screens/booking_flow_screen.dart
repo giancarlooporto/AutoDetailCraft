@@ -41,6 +41,10 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   DateTime _selectedDate = DateTime.now().add(const Duration(days: 1));
   late DateTime _calendarDisplayMonth;
   String _selectedTimeSlot = '9:00 AM - 12:00 PM';
+  String _selectedStartTime = '9:00 AM';
+  String _selectedPickUpTime = '5:00 PM';
+  DateTime? _calculatedCompletionDate;
+  String? _calculatedFinishTime;
   TeamMember? _selectedTeamMember; // Delegated / preferred detailer
 
   // Input Controllers
@@ -55,6 +59,32 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     final slots = widget.repository.getTimeSlotsForDate(_selectedDate, detailerId: widget.detailer.id);
     if (slots.isNotEmpty) return slots;
     return DetailerCalendarPreferences.defaultTimeSlots;
+  }
+
+  void _recalculateCompletionAndSlot() {
+    final comp = widget.repository.calculateCompletionDateTime(
+      _selectedDate,
+      _selectedStartTime,
+      _selectedPackage,
+      detailerId: widget.detailer.id,
+    );
+    _calculatedCompletionDate = comp.completionDate;
+    _calculatedFinishTime = comp.completionTime;
+
+    if (_selectedPackage.isMultiDay) {
+      final pickUpTimes = widget.repository.getAvailablePickUpTimes(
+        _calculatedCompletionDate ?? _selectedDate,
+        detailerId: widget.detailer.id,
+      );
+      if (pickUpTimes.isNotEmpty && !pickUpTimes.contains(_selectedPickUpTime)) {
+        _selectedPickUpTime = pickUpTimes.last;
+      } else if (_selectedPickUpTime.isEmpty) {
+        _selectedPickUpTime = comp.completionTime;
+      }
+      _selectedTimeSlot = 'Drop-off: $_selectedStartTime • Ready: $_selectedPickUpTime';
+    } else {
+      _selectedTimeSlot = '$_selectedStartTime - ${comp.completionTime}';
+    }
   }
 
   @override
@@ -114,9 +144,11 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                         includes: ['Exterior Wash'],
                       ))));
 
-    if (_timeSlots.isNotEmpty && !_timeSlots.contains(_selectedTimeSlot)) {
-      _selectedTimeSlot = _timeSlots.first;
+    if (_timeSlots.isNotEmpty) {
+      final startMin = JobRepository.parseSlotRange(_timeSlots.first).$1;
+      _selectedStartTime = JobRepository.formatMinutesToTime(startMin);
     }
+    _recalculateCompletionAndSlot();
     _adjustSelectedSlotIfBlocked();
   }
 
@@ -161,26 +193,52 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     if (widget.repository.isDateFullyBlocked(widget.detailer.id, _selectedDate)) {
       return 'Day Blocked by Detailer';
     }
+
+    final startMin = JobRepository.parseSlotRange(slot).$1;
+    final startStr = JobRepository.formatMinutesToTime(startMin);
+    final openMin = JobRepository.timeStringToMinutes(hours.openTime);
+    final closeMin = JobRepository.timeStringToMinutes(hours.closeTime);
+
+    if (startMin < openMin || startMin >= closeMin) {
+      return 'Outside Business Operating Hours';
+    }
+
+    // Same-day: closing time protection based on package duration
+    if (!_selectedPackage.isMultiDay) {
+      if (startMin + _selectedPackage.durationMinutes > closeMin) {
+        return 'Finishes After Shop Closing (${hours.closeTime})';
+      }
+    }
+
+    final slotToCheck = _selectedPackage.isMultiDay
+        ? '$startStr - ${JobRepository.formatMinutesToTime(startMin + 60)}'
+        : '$startStr - ${JobRepository.formatMinutesToTime(startMin + _selectedPackage.durationMinutes)}';
+
     if (_selectedTeamMember != null) {
       if (!widget.repository.isMemberOnDutyOnDate(_selectedTeamMember!.id, _selectedDate, detailerId: widget.detailer.id)) {
         return '${_selectedTeamMember!.name} is Off Duty on this Date';
       }
-      if (widget.repository.isSlotExplicitlyBlocked(widget.detailer.id, _selectedDate, slot, teamMemberId: _selectedTeamMember!.id)) {
+      if (widget.repository.isSlotExplicitlyBlocked(widget.detailer.id, _selectedDate, slotToCheck, teamMemberId: _selectedTeamMember!.id) ||
+          widget.repository.isSlotExplicitlyBlocked(widget.detailer.id, _selectedDate, slot, teamMemberId: _selectedTeamMember!.id) ||
+          widget.repository.isSlotExplicitlyBlocked(widget.detailer.id, _selectedDate, startStr, teamMemberId: _selectedTeamMember!.id)) {
         return '${_selectedTeamMember!.name} Unavailable for this Time Window';
       }
     } else {
-      if (widget.repository.isSlotBlocked(widget.detailer.id, _selectedDate, slot)) {
+      if (widget.repository.isSlotBlocked(widget.detailer.id, _selectedDate, slotToCheck) ||
+          widget.repository.isSlotBlocked(widget.detailer.id, _selectedDate, slot) ||
+          widget.repository.isSlotBlocked(widget.detailer.id, _selectedDate, startStr)) {
         return 'Time Window Blocked by Detailer';
       }
     }
-    if (!widget.repository.isSlotWithinOperatingHours(_selectedDate, slot, detailerId: widget.detailer.id)) {
+    if (!widget.repository.isSlotWithinOperatingHours(_selectedDate, slotToCheck, detailerId: widget.detailer.id) &&
+        !widget.repository.isSlotWithinOperatingHours(_selectedDate, slot, detailerId: widget.detailer.id)) {
       return 'Outside Business Operating Hours';
     }
-    if (!widget.repository.isSlotWithinLeadTime(_selectedDate, slot, detailerId: widget.detailer.id)) {
+    if (!widget.repository.isSlotWithinLeadTime(_selectedDate, startStr, detailerId: widget.detailer.id)) {
       final leadHours = widget.repository.getCalendarPreferences(detailerId: widget.detailer.id).advanceNoticeHours;
       return 'Requires ${leadHours}h Minimum Advance Notice';
     }
-    if (_isSlotBookedByOtherAppointment(slot)) {
+    if (_isSlotBookedByOtherAppointment(slotToCheck) || _isSlotBookedByOtherAppointment(slot)) {
       return _selectedTeamMember != null
           ? '${_selectedTeamMember!.name} is Booked for this Window'
           : 'Shop Fully Booked for this Time Window';
@@ -199,6 +257,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       for (final slot in _timeSlots) {
         if (!_isSlotBooked(slot)) {
           _selectedTimeSlot = slot;
+          final start = JobRepository.parseSlotRange(slot).$1;
+          _selectedStartTime = JobRepository.formatMinutesToTime(start);
+          _recalculateCompletionAndSlot();
           break;
         }
       }
@@ -313,6 +374,17 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         ? _selectedGarageVehicle!.resolvedVehicleSize
         : _vehicleSize;
 
+    final comp = widget.repository.calculateCompletionDateTime(
+      _selectedDate,
+      _selectedStartTime,
+      _selectedPackage,
+      detailerId: widget.detailer.id,
+    );
+    final effectiveCompletionDate = _calculatedCompletionDate ?? comp.completionDate;
+    final effectiveEndTime = _selectedPackage.isMultiDay
+        ? _selectedPickUpTime
+        : comp.completionTime;
+
     final booking = BookingAppointment(
       id: 'book_${DateTime.now().millisecondsSinceEpoch}',
       clientId: widget.repository.isLoggedIn ? widget.repository.currentUser.id : null,
@@ -347,6 +419,11 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           : BookingStatus.pending,
       clientNotes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
       warrantyPassportId: 'ADC-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
+      completionDate: effectiveCompletionDate,
+      startTime: _selectedStartTime,
+      endTime: effectiveEndTime,
+      durationMinutes: _selectedPackage.durationMinutes,
+      isMultiDay: _selectedPackage.isMultiDay,
     );
 
     final success = await widget.repository.addBookingAsync(booking);
@@ -420,9 +497,19 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                   const SizedBox(height: 6),
                   _receiptRow('Vehicle', vehicleModelText),
                   const SizedBox(height: 6),
-                  _receiptRow('Date', DateFormat('EEE, MMM d, yyyy').format(_selectedDate)),
-                  const SizedBox(height: 6),
-                  _receiptRow('Time', _selectedTimeSlot),
+                  if (_selectedPackage.isMultiDay) ...[
+                    _receiptRow('Drop-off', '${DateFormat('EEE, MMM d').format(_selectedDate)} at $_selectedStartTime'),
+                    const SizedBox(height: 6),
+                    _receiptRow('Ready for Pick-up', '${DateFormat('EEE, MMM d').format(effectiveCompletionDate)} at $_selectedPickUpTime'),
+                    const SizedBox(height: 6),
+                    _receiptRow('Turnaround', _selectedPackage.durationBadge),
+                  ] else ...[
+                    _receiptRow('Date', DateFormat('EEE, MMM d, yyyy').format(_selectedDate)),
+                    const SizedBox(height: 6),
+                    _receiptRow('Time Window', _selectedTimeSlot),
+                    const SizedBox(height: 6),
+                    _receiptRow('Duration', _selectedPackage.durationBadge),
+                  ],
                   const Divider(color: AppTheme.border, height: 16),
                   _receiptRow('Total Price', '\$${_calculatedTotal.toStringAsFixed(0)}', isBold: true),
                   const SizedBox(height: 4),
@@ -735,7 +822,13 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         ...packages.map((pkg) {
           final isSelected = _selectedPackage.id == pkg.id;
           return GestureDetector(
-            onTap: () => setState(() => _selectedPackage = pkg),
+            onTap: () {
+              setState(() {
+                _selectedPackage = pkg;
+                _recalculateCompletionAndSlot();
+                _adjustSelectedSlotIfBlocked();
+              });
+            },
             child: Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(16),
@@ -1223,113 +1316,411 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         _buildSelectedDayBanner(),
         const SizedBox(height: 14),
 
-        const Text('Select Arrival Window', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _timeSlots.map((slot) {
-            final reason = _getSlotUnavailableReason(slot);
-            final isUnavailable = reason != null;
-            final isSelected = _selectedTimeSlot == slot && !isUnavailable;
+        if (_selectedPackage.isMultiDay) ...[
+          // Multi-Day Service Indicator
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.amber.withAlpha(25),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.amber.withAlpha(80)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.date_range_rounded, color: Colors.amber, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '🗓️ Multi-Day Service: ${_selectedPackage.turnaroundDays} Day${_selectedPackage.turnaroundDays > 1 ? 's' : ''} Turnaround',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.amber),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
 
-            int? availableCapacity;
-            if (!isUnavailable && widget.detailer.teamMembers.isNotEmpty && _selectedTeamMember == null) {
-              final status = widget.repository.getSlotStaffingStatus(_selectedDate, slot, detailerId: widget.detailer.id);
-              if (status.onDutyCount > 1 && status.availableCapacity < status.onDutyCount) {
-                availableCapacity = status.availableCapacity;
+          // Choice 1: Date-Time Start
+          const Text('Choice 1: Drop-off Date & Time (Start)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _timeSlots.map((slot) {
+              final reason = _getSlotUnavailableReason(slot);
+              final isUnavailable = reason != null;
+              final startMin = JobRepository.parseSlotRange(slot).$1;
+              final startStr = JobRepository.formatMinutesToTime(startMin);
+              final isSelected = (_selectedStartTime == startStr || _selectedTimeSlot == slot) && !isUnavailable;
+
+              String badgeText = 'UNAVAILABLE';
+              if (reason != null) {
+                if (reason.contains('Booked')) {
+                  badgeText = 'BOOKED';
+                } else if (reason.contains('Notice')) {
+                  badgeText = 'LEAD TIME';
+                } else if (reason.contains('Blocked')) {
+                  badgeText = 'BLOCKED';
+                } else if (reason.contains('Closed') || reason.contains('Operating') || reason.contains('Finishes After')) {
+                  badgeText = 'CLOSED';
+                }
               }
-            }
 
-            String badgeText = 'UNAVAILABLE';
-            if (reason != null) {
-              if (reason.contains('Booked')) {
-                badgeText = 'BOOKED';
-              } else if (reason.contains('Notice')) {
-                badgeText = 'LEAD TIME';
-              } else if (reason.contains('Blocked')) {
-                badgeText = 'BLOCKED';
-              } else if (reason.contains('Closed') || reason.contains('Operating')) {
-                badgeText = 'CLOSED';
-              }
-            }
+              return Tooltip(
+                message: reason ?? 'Available for Drop-off',
+                child: FilterChip(
+                  label: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        startStr,
+                        style: TextStyle(
+                          fontSize: 12,
+                          decoration: isUnavailable ? TextDecoration.lineThrough : null,
+                          color: isUnavailable
+                              ? Colors.grey.shade600
+                              : (isSelected ? Colors.black : Colors.white),
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      Offstage(offstage: true, child: Text(slot)),
+                      if (isUnavailable) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent.withAlpha(40),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.redAccent.withAlpha(100), width: 0.8),
+                          ),
+                          child: Text(
+                            badgeText,
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  selected: isSelected,
+                  selectedColor: AppTheme.primary,
+                  backgroundColor: AppTheme.surface,
+                  checkmarkColor: Colors.black,
+                  showCheckmark: isSelected,
+                  side: BorderSide(
+                    color: isUnavailable
+                        ? Colors.redAccent.withAlpha(50)
+                        : (isSelected ? AppTheme.primary : AppTheme.border),
+                  ),
+                  onSelected: isUnavailable
+                      ? null
+                      : (val) {
+                          if (val) {
+                            setState(() {
+                              _selectedStartTime = startStr;
+                              _recalculateCompletionAndSlot();
+                            });
+                          }
+                        },
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
 
-            return Tooltip(
-              message: reason ?? 'Available for Booking',
-              child: FilterChip(
-                label: Row(
-                  mainAxisSize: MainAxisSize.min,
+          // Choice 2: Date-Time Finished
+          const Text('Choice 2: Ready for Pick-up (Finished)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceLight,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Text(
-                      slot,
-                      style: TextStyle(
-                        fontSize: 12,
-                        decoration: isUnavailable ? TextDecoration.lineThrough : null,
-                        color: isUnavailable
-                            ? Colors.grey.shade600
-                            : (isSelected ? Colors.black : Colors.white),
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    const Icon(Icons.check_circle_outline_rounded, color: Color(0xFF00E676), size: 16),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Estimated Ready Date: ${DateFormat('EEEE, MMMM d, yyyy').format(_calculatedCompletionDate ?? _selectedDate)}',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                     ),
-                    if (isUnavailable) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: Colors.redAccent.withAlpha(40),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Colors.redAccent.withAlpha(100), width: 0.8),
-                        ),
-                        child: Text(
-                          badgeText,
-                          style: const TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.redAccent,
-                          ),
-                        ),
-                      ),
-                    ],
-                    if (availableCapacity != null) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primary.withAlpha(30),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: AppTheme.primary.withAlpha(100), width: 0.8),
-                        ),
-                        child: Text(
-                          '$availableCapacity left',
-                          style: const TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.primary,
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
-                selected: isSelected,
-                selectedColor: AppTheme.primary,
-                backgroundColor: AppTheme.surface,
-                checkmarkColor: Colors.black,
-                showCheckmark: isSelected,
-                side: BorderSide(
-                  color: isUnavailable
-                      ? Colors.redAccent.withAlpha(50)
-                      : (isSelected ? AppTheme.primary : AppTheme.border),
-                ),
-                onSelected: isUnavailable
-                    ? null
-                    : (val) {
-                        if (val) setState(() => _selectedTimeSlot = slot);
+                const SizedBox(height: 8),
+                const Text('Select Preferred Pick-up Time:', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: widget.repository.getAvailablePickUpTimes(
+                    _calculatedCompletionDate ?? _selectedDate,
+                    detailerId: widget.detailer.id,
+                  ).map((pickUpTime) {
+                    final isSelected = _selectedPickUpTime == pickUpTime;
+                    return FilterChip(
+                      label: Text(
+                        pickUpTime,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isSelected ? Colors.black : Colors.white,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      selected: isSelected,
+                      selectedColor: AppTheme.primary,
+                      backgroundColor: AppTheme.surface,
+                      checkmarkColor: Colors.black,
+                      showCheckmark: isSelected,
+                      onSelected: (val) {
+                        if (val) {
+                          setState(() {
+                            _selectedPickUpTime = pickUpTime;
+                            _recalculateCompletionAndSlot();
+                          });
+                        }
                       },
-              ),
-            );
-          }).toList(),
-        ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Multi-Day Turnaround Summary Card
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceLight,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.primary.withAlpha(60)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withAlpha(30),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.sync_alt_rounded, color: AppTheme.primary, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Multi-Day Turnaround Schedule', style: TextStyle(fontSize: 11, color: AppTheme.textMuted, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Drop-off: ${DateFormat('EEE, MMM d').format(_selectedDate)} $_selectedStartTime • Ready: ${DateFormat('EEE, MMM d').format(_calculatedCompletionDate ?? _selectedDate)} $_selectedPickUpTime',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ] else ...[
+          // Package Duration Indicator (Same-Day)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withAlpha(25),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppTheme.primary.withAlpha(80)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.timer_outlined, color: AppTheme.primary, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '⏱️ Duration: ${_selectedPackage.durationBadge} (${_selectedPackage.title})',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          const Text('Select Arrival / Start Time', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _timeSlots.map((slot) {
+              final reason = _getSlotUnavailableReason(slot);
+              final isUnavailable = reason != null;
+              final startMin = JobRepository.parseSlotRange(slot).$1;
+              final startStr = JobRepository.formatMinutesToTime(startMin);
+              final finishMin = startMin + _selectedPackage.durationMinutes;
+              final dynamicSlot = '$startStr - ${JobRepository.formatMinutesToTime(finishMin)}';
+              final isSelected = (_selectedTimeSlot == slot || _selectedTimeSlot == dynamicSlot || _selectedStartTime == startStr) && !isUnavailable;
+
+              int? availableCapacity;
+              if (!isUnavailable && widget.detailer.teamMembers.isNotEmpty && _selectedTeamMember == null) {
+                final status = widget.repository.getSlotStaffingStatus(_selectedDate, slot, detailerId: widget.detailer.id);
+                if (status.onDutyCount > 1 && status.availableCapacity < status.onDutyCount) {
+                  availableCapacity = status.availableCapacity;
+                }
+              }
+
+              String badgeText = 'UNAVAILABLE';
+              if (reason != null) {
+                if (reason.contains('Booked')) {
+                  badgeText = 'BOOKED';
+                } else if (reason.contains('Notice')) {
+                  badgeText = 'LEAD TIME';
+                } else if (reason.contains('Blocked')) {
+                  badgeText = 'BLOCKED';
+                } else if (reason.contains('Closed') || reason.contains('Operating') || reason.contains('Finishes After')) {
+                  badgeText = 'CLOSED';
+                }
+              }
+
+              return Tooltip(
+                message: reason ?? 'Available for Booking',
+                child: FilterChip(
+                  label: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          slot,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            decoration: isUnavailable ? TextDecoration.lineThrough : null,
+                            color: isUnavailable
+                                ? Colors.grey.shade600
+                                : (isSelected ? Colors.black : Colors.white),
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                      ),
+                      if (isUnavailable) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent.withAlpha(40),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.redAccent.withAlpha(100), width: 0.8),
+                          ),
+                          child: Text(
+                            badgeText,
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (availableCapacity != null) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary.withAlpha(30),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: AppTheme.primary.withAlpha(100), width: 0.8),
+                          ),
+                          child: Text(
+                            '$availableCapacity left',
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  selected: isSelected,
+                  selectedColor: AppTheme.primary,
+                  backgroundColor: AppTheme.surface,
+                  checkmarkColor: Colors.black,
+                  showCheckmark: isSelected,
+                  side: BorderSide(
+                    color: isUnavailable
+                        ? Colors.redAccent.withAlpha(50)
+                        : (isSelected ? AppTheme.primary : AppTheme.border),
+                  ),
+                  onSelected: isUnavailable
+                      ? null
+                      : (val) {
+                          if (val) {
+                            setState(() {
+                              _selectedStartTime = startStr;
+                              _selectedTimeSlot = dynamicSlot;
+                              _recalculateCompletionAndSlot();
+                            });
+                          }
+                        },
+                ),
+              );
+            }).toList(),
+          ),
+          // Live Schedule Card (Same-Day)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(top: 14),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceLight,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.primary.withAlpha(80)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withAlpha(30),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.schedule_rounded, color: AppTheme.primary, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Live Schedule Window',
+                        style: TextStyle(fontSize: 11, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Drop-off: $_selectedStartTime • Estimated Finish: ${_calculatedFinishTime ?? ''} Today',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -1724,6 +2115,94 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Schedule & Service Summary Card
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.event_note_rounded, size: 16, color: AppTheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _selectedPackage.title,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withAlpha(25),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      _selectedPackage.durationBadge,
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(color: AppTheme.border, height: 16),
+              if (_selectedPackage.isMultiDay) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Drop-off (Start):', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                    Text(
+                      '${DateFormat('EEE, MMM d').format(_selectedDate)} at $_selectedStartTime',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Ready Pick-up (Finished):', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                    Text(
+                      '${DateFormat('EEE, MMM d').format(_calculatedCompletionDate ?? _selectedDate)} at $_selectedPickUpTime',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF00E676)),
+                    ),
+                  ],
+                ),
+              ] else ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Scheduled Date:', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                    Text(
+                      DateFormat('EEEE, MMMM d, yyyy').format(_selectedDate),
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Time Window:', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                    Text(
+                      _selectedTimeSlot,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+
         const Text('Client Contact Details', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
         TextField(

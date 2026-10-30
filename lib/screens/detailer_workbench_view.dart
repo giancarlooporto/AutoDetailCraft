@@ -3644,10 +3644,17 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                                   children: [
                                     const Icon(Icons.calendar_today_rounded, size: 11, color: AppTheme.textSecondary),
                                     const SizedBox(width: 4),
-                                    Text(
-                                      DateFormat('MMM d').format(b.scheduledDate),
-                                      style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
-                                    ),
+                                    if (b.isMultiDay || b.package.isMultiDay) ...[
+                                      Text(
+                                        '${DateFormat('MMM d').format(b.scheduledDate)} - ${b.completionDate != null ? DateFormat('MMM d').format(b.completionDate!) : DateFormat('MMM d').format(b.scheduledDate)}',
+                                        style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                                      ),
+                                    ] else ...[
+                                      Text(
+                                        DateFormat('MMM d').format(b.scheduledDate),
+                                        style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                                      ),
+                                    ],
                                     const SizedBox(width: 8),
                                     const Icon(Icons.access_time_rounded, size: 11, color: AppTheme.textMuted),
                                     const SizedBox(width: 4),
@@ -3882,8 +3889,20 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(DateFormat('EEEE, MMMM d, yyyy').format(b.scheduledDate), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      Text(b.scheduledTimeSlot, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                      if (b.isMultiDay || b.package.isMultiDay) ...[
+                        Text(
+                          'Drop-off: ${DateFormat('EEEE, MMMM d, yyyy').format(b.scheduledDate)} at ${b.startTime ?? b.scheduledTimeSlot}',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Ready: ${b.completionDate != null ? DateFormat('EEEE, MMMM d, yyyy').format(b.completionDate!) : DateFormat('EEEE, MMMM d, yyyy').format(b.scheduledDate)} at ${b.endTime ?? 'End of Day'} (${b.package.durationBadge})',
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF00E676)),
+                        ),
+                      ] else ...[
+                        Text(DateFormat('EEEE, MMMM d, yyyy').format(b.scheduledDate), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        Text('${b.scheduledTimeSlot} • ${b.package.durationBadge}', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                      ],
                     ],
                   ),
                 ],

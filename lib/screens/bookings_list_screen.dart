@@ -76,8 +76,15 @@ class BookingsListScreen extends StatelessWidget {
               const Divider(color: AppTheme.border, height: 24),
               _sectionHeader('Appointment Details', Icons.event_available_rounded),
               _infoTile('Vehicle', booking.vehicleYearMakeModel),
-              _infoTile('Scheduled Date', DateFormat('EEEE, MMMM d, yyyy').format(booking.scheduledDate)),
-              _infoTile('Arrival Window', booking.scheduledTimeSlot),
+              if (booking.isMultiDay || booking.package.isMultiDay) ...[
+                _infoTile('Drop-off Date & Time', '${DateFormat('EEEE, MMMM d, yyyy').format(booking.scheduledDate)} at ${booking.startTime ?? booking.scheduledTimeSlot}'),
+                _infoTile('Ready Pick-up Date & Time', '${booking.completionDate != null ? DateFormat('EEEE, MMMM d, yyyy').format(booking.completionDate!) : DateFormat('EEEE, MMMM d, yyyy').format(booking.scheduledDate)} at ${booking.endTime ?? 'End of Day'}'),
+                _infoTile('Turnaround Time', booking.package.durationBadge),
+              ] else ...[
+                _infoTile('Scheduled Date', DateFormat('EEEE, MMMM d, yyyy').format(booking.scheduledDate)),
+                _infoTile('Arrival Window', booking.scheduledTimeSlot),
+                _infoTile('Estimated Duration', booking.package.durationBadge),
+              ],
               _infoTile('Service Type', booking.locationType.label),
               _infoTile('Address / Location', booking.clientAddress),
               const SizedBox(height: 16),
@@ -562,15 +569,26 @@ class BookingsListScreen extends StatelessWidget {
               children: [
                 const Icon(Icons.calendar_month_rounded, size: 14, color: AppTheme.primary),
                 const SizedBox(width: 6),
-                Text(
-                  DateFormat('EEE, MMM d').format(booking.scheduledDate),
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                Expanded(
+                  child: Text(
+                    (booking.isMultiDay || booking.package.isMultiDay)
+                        ? 'Drop-off: ${DateFormat('MMM d').format(booking.scheduledDate)} • Ready: ${booking.completionDate != null ? DateFormat('MMM d').format(booking.completionDate!) : DateFormat('MMM d').format(booking.scheduledDate)}'
+                        : DateFormat('EEE, MMM d').format(booking.scheduledDate),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 8),
                 const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.textMuted),
-                const SizedBox(width: 6),
-                Text(booking.scheduledTimeSlot, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
-                const Spacer(),
+                const SizedBox(width: 4),
+                Text(
+                  (booking.isMultiDay || booking.package.isMultiDay)
+                      ? '${booking.startTime ?? 'Drop-off'} → ${booking.endTime ?? 'Ready'}'
+                      : booking.scheduledTimeSlot,
+                  style: const TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
+                ),
+                Offstage(offstage: true, child: Text(booking.scheduledTimeSlot)),
+                const SizedBox(width: 10),
                 Text(
                   '\$${booking.totalPrice.toStringAsFixed(0)}',
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppTheme.textPrimary),
