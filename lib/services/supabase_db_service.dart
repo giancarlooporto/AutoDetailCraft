@@ -659,6 +659,24 @@ class SupabaseDbService {
     final client = _client;
     if (client == null || userId.isEmpty || userId == 'usr_you' || v.id.isEmpty) return;
 
+    try {
+      // Ensure parent profile row exists so the foreign key constraint on user_id never fails (code 23503)
+      final existingProfile =
+          await client.from('profiles').select('id').eq('id', userId).maybeSingle();
+      if (existingProfile == null) {
+        final authUser = client.auth.currentUser;
+        await client.from('profiles').upsert({
+          'id': userId,
+          'display_name': (authUser?.userMetadata?['display_name'] as String?) ??
+              authUser?.email?.split('@').first ??
+              'Vehicle Owner',
+          'business_name': '',
+          'role': 'client',
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        });
+      }
+    } catch (_) {}
+
     final payload = <String, dynamic>{
       'id': v.id,
       'user_id': userId,
@@ -690,7 +708,9 @@ class SupabaseDbService {
           (msg.contains('column') && msg.contains('schema cache')) ||
           msg.contains('paint_code') ||
           msg.contains('last_detail_service') ||
-          msg.contains('last_detail_date');
+          msg.contains('last_detail_date') ||
+          msg.contains('vehicle_type') ||
+          msg.contains('body_type');
       if (isSchemaError) {
         if (kDebugMode) {
           print('[SupabaseDbService] Vehicle upsert schema mismatch (${pe.code}: ${pe.message}). Retrying without extended fields...');
@@ -698,7 +718,9 @@ class SupabaseDbService {
         final fallbackPayload = Map<String, dynamic>.from(payload)
           ..remove('paint_code')
           ..remove('last_detail_service')
-          ..remove('last_detail_date');
+          ..remove('last_detail_date')
+          ..remove('vehicle_type')
+          ..remove('body_type');
         try {
           await client.from('vehicles').upsert(fallbackPayload);
           if (kDebugMode) {
@@ -706,6 +728,28 @@ class SupabaseDbService {
           }
         } catch (fallbackErr) {
           if (kDebugMode) print('[SupabaseDbService] Fallback vehicle upsert error: $fallbackErr');
+        }
+      } else if (pe.code == '23503' || msg.contains('23503') || msg.contains('foreign key')) {
+        if (kDebugMode) {
+          print('[SupabaseDbService] Vehicle upsert foreign key error (${pe.code}: ${pe.message}). Seeding profile and retrying...');
+        }
+        try {
+          final authUser = client.auth.currentUser;
+          await client.from('profiles').upsert({
+            'id': userId,
+            'display_name': (authUser?.userMetadata?['display_name'] as String?) ??
+                authUser?.email?.split('@').first ??
+                'Vehicle Owner',
+            'business_name': '',
+            'role': 'client',
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          });
+          await client.from('vehicles').upsert(payload);
+          if (kDebugMode) {
+            print('[SupabaseDbService] Profile auto-seed and vehicle retry upsert succeeded.');
+          }
+        } catch (fkRetryErr) {
+          if (kDebugMode) print('[SupabaseDbService] Retry after FK 23503 failed: $fkRetryErr');
         }
       } else {
         if (kDebugMode) {
@@ -718,6 +762,8 @@ class SupabaseDbService {
           eStr.contains('42703') ||
           eStr.contains('paint_code') ||
           eStr.contains('last_detail') ||
+          eStr.contains('vehicle_type') ||
+          eStr.contains('body_type') ||
           eStr.contains('schema cache')) {
         if (kDebugMode) {
           print('[SupabaseDbService] Retrying vehicle upsert without extended fields due to: $e');
@@ -725,7 +771,9 @@ class SupabaseDbService {
         final fallbackPayload = Map<String, dynamic>.from(payload)
           ..remove('paint_code')
           ..remove('last_detail_service')
-          ..remove('last_detail_date');
+          ..remove('last_detail_date')
+          ..remove('vehicle_type')
+          ..remove('body_type');
         try {
           await client.from('vehicles').upsert(fallbackPayload);
           if (kDebugMode) {
@@ -734,6 +782,20 @@ class SupabaseDbService {
         } catch (fallbackErr) {
           if (kDebugMode) print('[SupabaseDbService] Fallback vehicle upsert error: $fallbackErr');
         }
+      } else if (eStr.contains('23503') || eStr.contains('foreign key')) {
+        try {
+          final authUser = client.auth.currentUser;
+          await client.from('profiles').upsert({
+            'id': userId,
+            'display_name': (authUser?.userMetadata?['display_name'] as String?) ??
+                authUser?.email?.split('@').first ??
+                'Vehicle Owner',
+            'business_name': '',
+            'role': 'client',
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          });
+          await client.from('vehicles').upsert(payload);
+        } catch (_) {}
       } else {
         if (kDebugMode) print('[SupabaseDbService] Error saving vehicle: $e');
       }

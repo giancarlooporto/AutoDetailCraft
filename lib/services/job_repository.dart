@@ -437,37 +437,35 @@ class JobRepository extends ChangeNotifier {
               : await LocalStorageService.loadServicePackages();
         }
 
-        // Reconcile garage vehicles: cloud updates matching vehicles,
-        // preserving local custom additions and local-only assets like localImageBytes
-        List<UserVehicle> resolvedGarage;
-        if (cloudProfile.myGarage.isNotEmpty) {
-          final vehicleMap = <String, UserVehicle>{
-            for (final v in _currentUser.myGarage) v.id: v,
-          };
-          for (final cv in cloudProfile.myGarage) {
-            final local = vehicleMap[cv.id];
-            if (local != null) {
-              vehicleMap[cv.id] = cv.copyWith(
-                localImageBytes: cv.localImageBytes ?? local.localImageBytes,
-                lastDetailService: cv.lastDetailService ?? local.lastDetailService,
-                lastDetailDate: cv.lastDetailDate ?? local.lastDetailDate,
-              );
-            } else {
-              vehicleMap[cv.id] = cv;
-            }
+        // Non-destructive union merge for garage vehicles: union by ID across local storage, in-memory profile, and cloud
+        final storedLocalGarage = await LocalStorageService.loadGarageVehicles();
+        final storedLocalUser = await LocalStorageService.loadUserById(userId);
+        final guestLocalUser = await LocalStorageService.loadUserById('usr_you');
+        final vehicleMap = <String, UserVehicle>{
+          if (guestLocalUser != null)
+            for (final v in guestLocalUser.myGarage) v.id: v,
+          if (storedLocalUser != null)
+            for (final v in storedLocalUser.myGarage) v.id: v,
+          for (final v in storedLocalGarage) v.id: v,
+          for (final v in _currentUser.myGarage) v.id: v,
+        };
+        for (final cv in cloudProfile.myGarage) {
+          final local = vehicleMap[cv.id];
+          if (local != null) {
+            vehicleMap[cv.id] = cv.copyWith(
+              localImageBytes: cv.localImageBytes ?? local.localImageBytes,
+              lastDetailService: cv.lastDetailService ?? local.lastDetailService,
+              lastDetailDate: cv.lastDetailDate ?? local.lastDetailDate,
+            );
+          } else {
+            vehicleMap[cv.id] = cv;
           }
-          resolvedGarage = vehicleMap.values.toList();
-        } else {
-          resolvedGarage = _currentUser.myGarage.isNotEmpty
-              ? _currentUser.myGarage
-              : await LocalStorageService.loadGarageVehicles();
         }
-
+        final resolvedGarage = vehicleMap.values.toList();
         await LocalStorageService.saveGarageVehicles(resolvedGarage);
 
         // Non-destructive union merge for team members: union by ID across local storage, in-memory profile, and cloud
         final storedLocalTeam = await LocalStorageService.loadTeamMembers();
-        final storedLocalUser = await LocalStorageService.loadUserById(userId);
         List<TeamMember> resolvedTeam;
         if (cloudProfile.teamMembers.isNotEmpty) {
           final teamMap = <String, TeamMember>{
@@ -553,6 +551,7 @@ class JobRepository extends ChangeNotifier {
         if (userId != 'usr_you') {
           final needsProfileSync = resolvedPackages.length > cloudProfile.servicePackages.length ||
               resolvedTeam.length > cloudProfile.teamMembers.length ||
+              resolvedGarage.length > cloudProfile.myGarage.length ||
               ((cloudProfile.ownerPinHash == null || cloudProfile.ownerPinHash!.isEmpty) &&
                   resolvedPinHash != null &&
                   resolvedPinHash.isNotEmpty);
@@ -564,6 +563,13 @@ class JobRepository extends ChangeNotifier {
           for (final member in resolvedTeam) {
             if (!cloudTeamIds.contains(member.id)) {
               SupabaseDbService.saveTeamMember(userId, member);
+            }
+          }
+          // Push any local garage vehicles that are missing from Supabase up to the cloud
+          final cloudVehicleIds = cloudProfile.myGarage.map((v) => v.id).toSet();
+          for (final vehicle in resolvedGarage) {
+            if (!cloudVehicleIds.contains(vehicle.id)) {
+              SupabaseDbService.saveVehicle(userId, vehicle);
             }
           }
         }
@@ -715,6 +721,36 @@ class JobRepository extends ChangeNotifier {
   }
 
   Future<void> loginUser(UserProfile user) async {
+    // 0. Claim guest garage vehicles from local storage and in-memory state before overwriting _currentUser
+    final guestVehicles = <String, UserVehicle>{};
+    for (final v in _currentUser.myGarage) {
+      guestVehicles[v.id] = v;
+    }
+    final storedGarage = await LocalStorageService.loadGarageVehicles();
+    for (final v in storedGarage) {
+      guestVehicles[v.id] = v;
+    }
+    final guestUser = await LocalStorageService.loadUserById('usr_you');
+    if (guestUser != null) {
+      for (final v in guestUser.myGarage) {
+        guestVehicles[v.id] = v;
+      }
+    }
+    for (final v in user.myGarage) {
+      guestVehicles[v.id] = v;
+    }
+
+    if (user.id != 'usr_you' && guestVehicles.isNotEmpty) {
+      await Future.wait(
+        guestVehicles.values.map((v) => SupabaseDbService.saveVehicle(user.id, v)),
+      );
+    }
+
+    if (user.myGarage.isEmpty && guestVehicles.isNotEmpty) {
+      user = user.copyWith(myGarage: guestVehicles.values.toList());
+    }
+    await LocalStorageService.saveGarageVehicles(user.myGarage);
+
     _currentUser = user;
     _isLoggedIn = true;
     if (user.ownerPinHash != null && user.ownerPinHash!.isNotEmpty) {
@@ -1739,10 +1775,27 @@ class JobRepository extends ChangeNotifier {
         return;
       }
 
+      final currentVehicles = _currentUser.myGarage.isNotEmpty
+          ? _currentUser.myGarage
+          : await LocalStorageService.loadGarageVehicles();
+
+      if (cloudVehicles.isEmpty && currentVehicles.isNotEmpty) {
+        // Cloud returned empty, but we have local garage vehicles (e.g. created offline
+        // or schema mismatch prior to cloud sync). Push local vehicles up to Supabase
+        // and keep them instead of wiping out the user's garage on window refresh.
+        _currentUser = _currentUser.copyWith(myGarage: currentVehicles);
+        await LocalStorageService.saveGarageVehicles(currentVehicles);
+        await Future.wait(
+          currentVehicles.map((v) => SupabaseDbService.saveVehicle(targetUserId, v)),
+        );
+        notifyListeners();
+        return;
+      }
+
       // Reconcile authoritatively with local vehicle cache:
       // Preserves local-only properties like un-uploaded localImageBytes
       final localMap = <String, UserVehicle>{
-        for (final v in _currentUser.myGarage) v.id: v,
+        for (final v in currentVehicles) v.id: v,
       };
 
       final reconciled = cloudVehicles.map((cv) {

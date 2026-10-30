@@ -64,12 +64,21 @@ class SupabaseAuthService {
         } catch (_) {}
       }
 
-      // 1. First check if there is an existing cloud profile in Supabase Database
+      // 1. Load existing local assets and draft profile (e.g. drafted by guest before signup)
+      final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
+      final guestProfile = await LocalStorageService.loadUserById('usr_you');
+      final localPackages = await LocalStorageService.loadServicePackages();
+      final localTeam = await LocalStorageService.loadTeamMembers();
+      final localGarage = await LocalStorageService.loadGarageVehicles();
+      final guestVehicles = <String, UserVehicle>{
+        if (guestProfile != null)
+          for (final v in guestProfile.myGarage) v.id: v,
+        for (final v in localGarage) v.id: v,
+      };
+
+      // 2. First check if there is an existing cloud profile in Supabase Database
       final cloudProfile = await SupabaseDbService.fetchUserProfile(user.id);
       if (cloudProfile != null) {
-        final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
-        final localTeam = await LocalStorageService.loadTeamMembers();
-        final localPackages = await LocalStorageService.loadServicePackages();
         final localPinHash = await LocalStorageService.loadOwnerPinHash() ?? existingLocalProfile?.ownerPinHash;
         final teamMap = <String, TeamMember>{
           if (existingLocalProfile != null)
@@ -77,6 +86,24 @@ class SupabaseAuthService {
           for (final m in localTeam) m.id: m,
           for (final m in cloudProfile.teamMembers) m.id: m,
         };
+        final garageMap = <String, UserVehicle>{
+          if (existingLocalProfile != null)
+            for (final v in existingLocalProfile.myGarage) v.id: v,
+          for (final v in guestVehicles.values) v.id: v,
+        };
+        for (final cv in cloudProfile.myGarage) {
+          final local = garageMap[cv.id];
+          if (local != null) {
+            garageMap[cv.id] = cv.copyWith(
+              localImageBytes: cv.localImageBytes ?? local.localImageBytes,
+              lastDetailService: cv.lastDetailService ?? local.lastDetailService,
+              lastDetailDate: cv.lastDetailDate ?? local.lastDetailDate,
+            );
+          } else {
+            garageMap[cv.id] = cv;
+          }
+        }
+        final mergedGarage = garageMap.values.toList();
         final mergedPackages = cloudProfile.servicePackages.isNotEmpty
             ? cloudProfile.servicePackages
             : localPackages;
@@ -91,20 +118,26 @@ class SupabaseAuthService {
           servicePackages: mergedPackages,
           startingPrice: startingPrice,
           isVerifiedHost: hasPackages || cloudProfile.isVerifiedHost,
+          myGarage: mergedGarage,
           teamMembers: teamMap.values.toList(),
           ownerPinHash: (cloudProfile.ownerPinHash != null && cloudProfile.ownerPinHash!.isNotEmpty)
               ? cloudProfile.ownerPinHash
               : localPinHash,
         );
+        await LocalStorageService.saveGarageVehicles(mergedGarage);
         await SupabaseDbService.saveUserProfile(merged);
+        final cloudVehicleIds = cloudProfile.myGarage.map((v) => v.id).toSet();
+        for (final v in mergedGarage) {
+          if (!cloudVehicleIds.contains(v.id)) {
+            await SupabaseDbService.saveVehicle(user.id, v);
+          }
+        }
         await LocalStorageService.saveCurrentUser(merged);
         return (success: true, error: null, profile: merged);
       }
 
-      // 2. Check if there was already locally saved profile data for this user ID
-      final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
+      // 3. Check if there was already locally saved profile data for this user ID
       if (existingLocalProfile != null) {
-        final localPackages = await LocalStorageService.loadServicePackages();
         final mergedPackages = existingLocalProfile.servicePackages.isNotEmpty
             ? existingLocalProfile.servicePackages
             : localPackages;
@@ -112,6 +145,11 @@ class SupabaseAuthService {
         final startingPrice = hasPackages
             ? mergedPackages.map((p) => p.basePrice).reduce((a, b) => a < b ? a : b)
             : existingLocalProfile.startingPrice;
+        final garageMap = <String, UserVehicle>{
+          for (final v in existingLocalProfile.myGarage) v.id: v,
+          for (final v in guestVehicles.values) v.id: v,
+        };
+        final mergedGarage = garageMap.values.toList();
         final merged = existingLocalProfile.copyWith(
           role: (existingLocalProfile.role == UserRole.detailer || hasPackages)
               ? UserRole.detailer
@@ -119,19 +157,23 @@ class SupabaseAuthService {
           servicePackages: mergedPackages,
           startingPrice: startingPrice,
           isVerifiedHost: hasPackages || existingLocalProfile.isVerifiedHost,
+          myGarage: mergedGarage,
         );
+        await LocalStorageService.saveGarageVehicles(mergedGarage);
         await SupabaseDbService.saveUserProfile(merged);
+        for (final v in mergedGarage) {
+          await SupabaseDbService.saveVehicle(user.id, v);
+        }
         await LocalStorageService.saveCurrentUser(merged);
         return (success: true, error: null, profile: merged);
       }
 
-      // 3. Load existing local service packages and draft profile (e.g. drafted by guest before signup)
-      final localPackages = await LocalStorageService.loadServicePackages();
+      // 4. Load existing local service packages and draft profile (e.g. drafted by guest before signup)
       final hasPackages = localPackages.isNotEmpty;
       final startingPrice = hasPackages
           ? localPackages.map((p) => p.basePrice).reduce((a, b) => a < b ? a : b)
           : 150.0;
-      final guestProfile = await LocalStorageService.loadUserById('usr_you');
+      final mergedGarage = guestVehicles.values.toList();
 
       final profile = UserProfile(
         id: user.id,
@@ -155,12 +197,16 @@ class SupabaseAuthService {
         servicePackages: localPackages,
         startingPrice: startingPrice,
         isVerifiedHost: hasPackages,
-        myGarage: const [],
+        myGarage: mergedGarage,
         teamMembers: const [],
       );
 
       // Seed profile in Supabase so the profile row exists
+      await LocalStorageService.saveGarageVehicles(mergedGarage);
       await SupabaseDbService.saveUserProfile(profile);
+      for (final v in mergedGarage) {
+        await SupabaseDbService.saveVehicle(user.id, v);
+      }
       await LocalStorageService.saveCurrentUser(profile);
 
       return (success: true, error: null, profile: profile);
@@ -209,17 +255,30 @@ class SupabaseAuthService {
                 }),
               );
 
+              final localGarage = await LocalStorageService.loadGarageVehicles();
+              final guestProfile = await LocalStorageService.loadUserById('usr_you');
+              final guestVehicles = <String, UserVehicle>{
+                if (guestProfile != null)
+                  for (final v in guestProfile.myGarage) v.id: v,
+                for (final v in localGarage) v.id: v,
+              };
+              final mergedGarage = guestVehicles.values.toList();
+
               final freshProfile = UserProfile(
                 id: existingUser.id,
                 role: UserRole.client,
                 username: email.split('@').first,
                 displayName: displayName.trim().isNotEmpty ? displayName.trim() : email.split('@').first,
                 phone: phone ?? '',
-                myGarage: const [],
+                myGarage: mergedGarage,
                 servicePackages: const [],
                 teamMembers: const [],
               );
+              await LocalStorageService.saveGarageVehicles(mergedGarage);
               await SupabaseDbService.saveUserProfile(freshProfile);
+              for (final v in mergedGarage) {
+                await SupabaseDbService.saveVehicle(existingUser.id, v);
+              }
               await LocalStorageService.saveCurrentUser(freshProfile);
               return (success: true, error: null, profile: freshProfile);
             }
@@ -237,6 +296,12 @@ class SupabaseAuthService {
       return (success: false, error: e.toString(), profile: null);
     }
   }
+
+  /// Sign In with Email and Password
+  static Future<({bool success, String? error, UserProfile? profile})> signInWithEmail({
+    required String email,
+    required String password,
+  }) => signIn(email: email, password: password);
 
   /// Sign In with Email and Password
   static Future<({bool success, String? error, UserProfile? profile})> signIn({
@@ -284,8 +349,14 @@ class SupabaseAuthService {
       // 1. Query SupabaseDbService.fetchUserProfile(user.id) FIRST on sign-in before falling back
       final cloudProfile = await SupabaseDbService.fetchUserProfile(user.id);
       final existingLocalProfile = await LocalStorageService.loadUserById(user.id);
+      final guestProfile = await LocalStorageService.loadUserById('usr_you');
       final localTeam = await LocalStorageService.loadTeamMembers();
       final localGarage = await LocalStorageService.loadGarageVehicles();
+      final guestVehicles = <String, UserVehicle>{
+        if (guestProfile != null)
+          for (final v in guestProfile.myGarage) v.id: v,
+        for (final v in localGarage) v.id: v,
+      };
       final localPinHash = await LocalStorageService.loadOwnerPinHash() ?? existingLocalProfile?.ownerPinHash;
 
       if (cloudProfile != null) {
@@ -315,34 +386,32 @@ class SupabaseAuthService {
           }
         }
 
-        // Authoritative reconciliation of garage vehicles from cloud, preserving local assets
-        List<UserVehicle> reconciledGarage;
-        if (cloudProfile.myGarage.isNotEmpty) {
-          final localMap = <String, UserVehicle>{
-            if (existingLocalProfile != null)
-              for (final v in existingLocalProfile.myGarage) v.id: v,
-            for (final v in localGarage) v.id: v,
-          };
-          reconciledGarage = cloudProfile.myGarage.map((cv) {
-            final local = localMap[cv.id];
-            if (local != null) {
-              return cv.copyWith(
-                localImageBytes: cv.localImageBytes ?? local.localImageBytes,
-                lastDetailService: cv.lastDetailService ?? local.lastDetailService,
-                lastDetailDate: cv.lastDetailDate ?? local.lastDetailDate,
-              );
-            }
-            return cv;
-          }).toList();
-        } else {
-          final garageMap = <String, UserVehicle>{
-            if (existingLocalProfile != null)
-              for (final v in existingLocalProfile.myGarage) v.id: v,
-            for (final v in localGarage) v.id: v,
-          };
-          reconciledGarage = garageMap.values.toList();
+        // Reconcile garage vehicles from cloud and local guest additions
+        final garageMap = <String, UserVehicle>{
+          if (existingLocalProfile != null)
+            for (final v in existingLocalProfile.myGarage) v.id: v,
+          for (final v in guestVehicles.values) v.id: v,
+        };
+        for (final cv in cloudProfile.myGarage) {
+          final local = garageMap[cv.id];
+          if (local != null) {
+            garageMap[cv.id] = cv.copyWith(
+              localImageBytes: cv.localImageBytes ?? local.localImageBytes,
+              lastDetailService: cv.lastDetailService ?? local.lastDetailService,
+              lastDetailDate: cv.lastDetailDate ?? local.lastDetailDate,
+            );
+          } else {
+            garageMap[cv.id] = cv;
+          }
         }
+        final reconciledGarage = garageMap.values.toList();
         await LocalStorageService.saveGarageVehicles(reconciledGarage);
+        final cloudVehicleIds = cloudProfile.myGarage.map((v) => v.id).toSet();
+        for (final v in reconciledGarage) {
+          if (!cloudVehicleIds.contains(v.id)) {
+            await SupabaseDbService.saveVehicle(user.id, v);
+          }
+        }
 
         final resolvedPinHash = (cloudProfile.ownerPinHash != null && cloudProfile.ownerPinHash!.isNotEmpty)
             ? cloudProfile.ownerPinHash
@@ -367,14 +436,30 @@ class SupabaseAuthService {
           for (final m in existingLocalProfile.teamMembers) m.id: m,
           for (final m in localTeam) m.id: m,
         };
+        final garageMap = <String, UserVehicle>{
+          for (final v in existingLocalProfile.myGarage) v.id: v,
+          for (final v in guestVehicles.values) v.id: v,
+        };
+        final reconciledGarage = garageMap.values.toList();
+        await LocalStorageService.saveGarageVehicles(reconciledGarage);
+        for (final v in reconciledGarage) {
+          await SupabaseDbService.saveVehicle(user.id, v);
+        }
         final mergedLocal = existingLocalProfile.copyWith(
           teamMembers: teamMap.values.toList(),
+          myGarage: reconciledGarage,
         );
+        await LocalStorageService.saveCurrentUser(mergedLocal);
         return (success: true, error: null, profile: mergedLocal);
       }
 
       final displayName = (user.userMetadata?['display_name'] as String?) ?? email.split('@').first;
       final phone = (user.userMetadata?['phone'] as String?) ?? '';
+      final reconciledGarage = guestVehicles.values.toList();
+      await LocalStorageService.saveGarageVehicles(reconciledGarage);
+      for (final v in reconciledGarage) {
+        await SupabaseDbService.saveVehicle(user.id, v);
+      }
 
       final profile = UserProfile(
         id: user.id,
@@ -390,10 +475,11 @@ class SupabaseAuthService {
         phone: phone,
         instagramHandle: '',
         servicePackages: const [],
-        myGarage: const [],
+        myGarage: reconciledGarage,
         teamMembers: const [],
       );
 
+      await LocalStorageService.saveCurrentUser(profile);
       return (success: true, error: null, profile: profile);
     } on AuthException catch (e) {
       final msg = e.message;
@@ -434,13 +520,21 @@ class SupabaseAuthService {
 
       // 1. Fetch or create verified cloud profile
       var profile = await SupabaseDbService.fetchUserProfile(user.id);
+      final guestProfile = await LocalStorageService.loadUserById('usr_you');
+      final localGarage = await LocalStorageService.loadGarageVehicles();
+      final guestVehicles = <String, UserVehicle>{
+        if (guestProfile != null)
+          for (final v in guestProfile.myGarage) v.id: v,
+        for (final v in localGarage) v.id: v,
+      };
+
       if (profile == null) {
-        final guestProfile = await LocalStorageService.loadUserById('usr_you');
         final localPackages = await LocalStorageService.loadServicePackages();
         final hasPackages = localPackages.isNotEmpty;
         final startingPrice = hasPackages
             ? localPackages.map((p) => p.basePrice).reduce((a, b) => a < b ? a : b)
             : 150.0;
+        final mergedGarage = guestVehicles.values.toList();
 
         profile = UserProfile(
           id: user.id,
@@ -463,10 +557,32 @@ class SupabaseAuthService {
           servicePackages: localPackages,
           startingPrice: startingPrice,
           isVerifiedHost: hasPackages,
-          myGarage: const [],
+          myGarage: mergedGarage,
           teamMembers: const [],
         );
+        await LocalStorageService.saveGarageVehicles(mergedGarage);
         await SupabaseDbService.saveUserProfile(profile);
+        for (final v in mergedGarage) {
+          await SupabaseDbService.saveVehicle(user.id, v);
+        }
+      } else {
+        if (guestVehicles.isNotEmpty) {
+          final cloudVehicleIds = profile.myGarage.map((v) => v.id).toSet();
+          final garageMap = <String, UserVehicle>{
+            for (final v in guestVehicles.values) v.id: v,
+          };
+          for (final cv in profile.myGarage) {
+            garageMap[cv.id] = cv;
+          }
+          final mergedGarage = garageMap.values.toList();
+          profile = profile.copyWith(myGarage: mergedGarage);
+          await LocalStorageService.saveGarageVehicles(mergedGarage);
+          for (final v in mergedGarage) {
+            if (!cloudVehicleIds.contains(v.id)) {
+              await SupabaseDbService.saveVehicle(user.id, v);
+            }
+          }
+        }
       }
 
       await LocalStorageService.saveCurrentUser(profile);

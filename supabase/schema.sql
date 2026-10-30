@@ -59,6 +59,8 @@ create table if not exists public.vehicles (
   image_url text default '',
   license_plate text default '',
   notes text default '',
+  vehicle_type text default 'Sedan',
+  body_type text default 'Sedan',
   last_detail_service text default '',
   last_detail_date text default '',
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
@@ -305,5 +307,35 @@ $$;
 
 revoke all on function public.claim_guest_bookings(text) from public;
 grant execute on function public.claim_guest_bookings(text) to authenticated, anon;
+
+-- 13. AUTO-CREATE PROFILES TRIGGER ON AUTH USER CREATION
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, email, display_name, role)
+  values (
+    new.id,
+    new.email,
+    coalesce(new.raw_user_meta_data->>'display_name', split_part(new.email, '@', 1), 'Vehicle Owner'),
+    coalesce(new.raw_user_meta_data->>'role', 'client')
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row
+  execute function public.handle_new_user();
+
+-- 14. RELOAD POSTGREST SCHEMA CACHE
+notify pgrst, 'reload schema';
+
 
 
