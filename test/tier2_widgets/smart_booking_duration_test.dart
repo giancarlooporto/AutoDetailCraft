@@ -8,6 +8,8 @@ import 'package:detail_craft/models/user_profile.dart';
 import 'package:detail_craft/models/user_vehicle.dart';
 import 'package:detail_craft/screens/booking_flow_screen.dart';
 import 'package:detail_craft/screens/bookings_list_screen.dart';
+import 'package:detail_craft/screens/calendar_preferences_dialog.dart';
+import 'package:detail_craft/screens/detailer_workbench_view.dart';
 import 'package:detail_craft/screens/service_package_editor_dialog.dart';
 import 'package:detail_craft/services/job_repository.dart';
 import 'package:intl/intl.dart';
@@ -597,6 +599,129 @@ void main() {
       );
       expect(slots, ['06:00 PM']);
       expect(slots.length, 1);
+    });
+
+    test('11. 30-min candidate slots, exact 1.5h job + 30m buffer leaving 10:00 AM open, and shop closing protection', () {
+      final repo = JobRepository();
+      final customWeekly = [
+        const DayBusinessHours(weekday: 1, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+      ];
+      repo.updateCalendarPreferences(DetailerCalendarPreferences(
+        weeklySchedule: customWeekly,
+        bufferMinutesBetweenJobs: 30,
+      ));
+
+      final monday = DateTime(2026, 11, 2); // Monday
+
+      // 1.5-hour package (90 mins)
+      const onePointFiveHourPkg = ServicePackage(
+        id: 'pkg_1_5hr',
+        title: 'Paint Polish & Seal',
+        description: '1.5 hr job',
+        basePrice: 180,
+        estimatedDuration: '1 hr 30 mins',
+        durationUnit: 'hours',
+        includes: [],
+      );
+
+      // Book 8:00 AM to 9:30 AM
+      final appt8am = BookingAppointment(
+        id: 'bk_8am_930am',
+        detailerId: repo.currentUser.id,
+        detailerName: 'Detailer',
+        detailerBusinessName: 'Studio',
+        detailerAvatar: '',
+        clientName: 'Early Client',
+        clientPhone: '555-0001',
+        clientEmail: 'early@test.com',
+        vehicleYearMakeModel: 'Porsche Cayman',
+        vehicleSize: VehicleSize.coupeSedan,
+        package: onePointFiveHourPkg,
+        locationType: ServiceLocationType.shop,
+        clientAddress: 'Studio',
+        scheduledDate: monday,
+        scheduledTimeSlot: '8:00 AM - 9:30 AM',
+        startTime: '8:00 AM',
+        endTime: '9:30 AM',
+        durationMinutes: 90,
+        totalPrice: 180,
+        depositAmount: 36,
+      );
+      repo.addBooking(appt8am);
+
+      // 8:00 AM, 8:30 AM, 9:00 AM conflict with the job itself
+      expect(repo.isBookingConflictingWithSlot(appt8am, monday, '8:00 AM - 9:30 AM'), isTrue);
+      expect(repo.isBookingConflictingWithSlot(appt8am, monday, '8:30 AM - 10:00 AM'), isTrue);
+      expect(repo.isBookingConflictingWithSlot(appt8am, monday, '9:00 AM - 10:30 AM'), isTrue);
+
+      // 9:30 AM conflicts with the 30-min buffer (9:30 AM - 10:00 AM)
+      expect(repo.isBookingConflictingWithSlot(appt8am, monday, '9:30 AM - 11:00 AM'), isTrue);
+
+      // 10:00 AM is completely OPEN and AVAILABLE!
+      expect(repo.isBookingConflictingWithSlot(appt8am, monday, '10:00 AM - 11:30 AM'), isFalse);
+      expect(repo.isBookingConflictingWithSlot(appt8am, monday, '10:30 AM - 12:00 PM'), isFalse);
+
+      // getAvailableStartTimesForPackage includes 10:00 AM and excludes 8:00 - 9:30 AM
+      final availableStarts = repo.getAvailableStartTimesForPackage(monday, onePointFiveHourPkg);
+      expect(availableStarts, contains('10:00 AM'));
+      expect(availableStarts, contains('10:30 AM'));
+      expect(availableStarts, isNot(contains('8:00 AM')));
+      expect(availableStarts, isNot(contains('8:30 AM')));
+      expect(availableStarts, isNot(contains('9:00 AM')));
+      expect(availableStarts, isNot(contains('9:30 AM')));
+
+      // Closing time protection: shop closes at 5:00 PM.
+      // 3:30 PM + 90m = 5:00 PM (<= 5:00 PM -> available)
+      // 4:00 PM + 90m = 5:30 PM (> 5:00 PM -> excluded)
+      expect(availableStarts, contains('3:30 PM'));
+      expect(availableStarts, isNot(contains('4:00 PM')));
+      expect(availableStarts, isNot(contains('4:30 PM')));
+
+      // Test buffer variation: If detailer changes buffer to 15 mins
+      repo.updateCalendarPreferences(repo.calendarPreferences.copyWith(bufferMinutesBetweenJobs: 15));
+      // 10:00 AM is still open
+      expect(repo.isBookingConflictingWithSlot(appt8am, monday, '10:00 AM - 11:30 AM'), isFalse);
+
+      // Test interval math in isSlotExplicitlyBlocked:
+      // Detailer blocks 8:00 AM - 10:00 AM
+      repo.toggleBlockSlot(monday, '8:00 AM - 10:00 AM');
+      expect(repo.isSlotExplicitlyBlocked(repo.currentUser.id, monday, '10:00 AM - 11:30 AM'), isFalse);
+      expect(repo.isSlotExplicitlyBlocked(repo.currentUser.id, monday, '9:30 AM - 11:00 AM'), isTrue);
+
+      // Verify false-positive blocking fix: blocking 10:00 AM - 11:00 AM does NOT block 8:00 AM - 8:30 AM
+      final wednesday = DateTime(2026, 11, 4);
+      repo.toggleBlockSlot(wednesday, '10:00 AM - 11:00 AM');
+      expect(repo.isSlotExplicitlyBlocked(repo.currentUser.id, wednesday, '8:00 AM - 8:30 AM'), isFalse);
+      expect(repo.isSlotExplicitlyBlocked(repo.currentUser.id, wednesday, '10:30 AM - 11:30 AM'), isTrue);
+
+      // Verify getAvailableStartTimesForPackage respects explicit custom day overrides:
+      // 1. Cleared slots override (customSlots: []) returns empty list without resurrecting default stepping
+      final tuesday = DateTime(2026, 11, 3);
+      repo.addAvailabilityBlock(CalendarAvailabilityBlock(
+        id: 'override_tues_clear',
+        detailerId: repo.currentUser.id,
+        date: tuesday,
+        isAllDay: false,
+        hasCustomSlotsOverride: true,
+        customSlots: const [],
+        createdAt: DateTime.now(),
+      ));
+      expect(repo.getAvailableStartTimesForPackage(tuesday, onePointFiveHourPkg), isEmpty);
+      expect(repo.isDateFullyBlocked(repo.currentUser.id, tuesday), isTrue);
+
+      // 2. Specific custom slots override returns ONLY custom slots without resurrecting default 30-min stepping
+      final thursday = DateTime(2026, 11, 5);
+      repo.addAvailabilityBlock(CalendarAvailabilityBlock(
+        id: 'override_thur_custom',
+        detailerId: repo.currentUser.id,
+        date: thursday,
+        isAllDay: false,
+        hasCustomSlotsOverride: true,
+        customSlots: const ['10:00 AM - 12:00 PM'],
+        createdAt: DateTime.now(),
+      ));
+      final thurStarts = repo.getAvailableStartTimesForPackage(thursday, onePointFiveHourPkg);
+      expect(thurStarts, ['10:00 AM']);
     });
   });
 
@@ -1314,6 +1439,279 @@ void main() {
       } finally {
         tearDownMockImageHttpClient();
       }
+    });
+
+    testWidgets('UI 9: BookingFlowScreen displays 30-min candidate slots, opens 10:00 AM when 8:00 AM-9:30 AM job + 30m buffer is booked, and marks late slots CLOSED', (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      setupMockImageHttpClient();
+      try {
+        final repo = JobRepository();
+        await repo.init();
+        repo.addVehicleToGarage(const UserVehicle(
+          id: 'v_smart_09',
+          make: 'Porsche',
+          model: '911 Carrera',
+          year: 2024,
+          colorName: 'GT Silver',
+          imageUrl: '',
+        ));
+
+        // Monday open 8:00 AM - 5:00 PM
+        final customSchedule = [
+          const DayBusinessHours(weekday: 1, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 2, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 3, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 4, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 5, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 6, isOpen: false, openTime: '09:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 7, isOpen: false, openTime: '09:00 AM', closeTime: '05:00 PM'),
+        ];
+        repo.updateCalendarPreferences(DetailerCalendarPreferences(
+          weeklySchedule: customSchedule,
+          bufferMinutesBetweenJobs: 30,
+        ));
+
+        DateTime monday = DateTime.now().add(const Duration(days: 1));
+        while (monday.weekday != DateTime.monday) {
+          monday = monday.add(const Duration(days: 1));
+        }
+
+        const onePointFiveHourPkg = ServicePackage(
+          id: 'pkg_1_5hr_ui',
+          title: 'Express Polish & Protect',
+          description: '1.5 hr job',
+          basePrice: 190.0,
+          estimatedDuration: '1 hr 30 mins',
+          durationUnit: 'hours',
+          includes: ['Polish', 'Sealant'],
+        );
+
+        final detailer = studioDetailer.copyWith(
+          servicePackages: [onePointFiveHourPkg],
+        );
+
+        // Add confirmed booking 8:00 AM - 9:30 AM
+        repo.addBooking(BookingAppointment(
+          id: 'bk_ui_8am_930am',
+          detailerId: detailer.id,
+          detailerName: detailer.displayName,
+          detailerBusinessName: detailer.businessName,
+          detailerAvatar: '',
+          clientName: 'Early Client',
+          clientPhone: '555-0001',
+          clientEmail: 'early@test.com',
+          vehicleYearMakeModel: 'Porsche Cayman',
+          vehicleSize: VehicleSize.coupeSedan,
+          package: onePointFiveHourPkg,
+          locationType: ServiceLocationType.shop,
+          clientAddress: 'Studio',
+          scheduledDate: monday,
+          scheduledTimeSlot: '8:00 AM - 9:30 AM',
+          startTime: '8:00 AM',
+          endTime: '9:30 AM',
+          durationMinutes: 90,
+          totalPrice: 190,
+          depositAmount: 38,
+        ));
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: Scaffold(
+              body: BookingFlowScreen(
+                detailer: detailer,
+                repository: repo,
+                initialDate: monday,
+                initialPackage: onePointFiveHourPkg,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Advance to Step 1 (Schedule & Vehicle)
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // Verify candidate slots are rendered in 30-min steps: 8:00 AM, 8:30 AM, 9:00 AM, 9:30 AM, 10:00 AM, 10:30 AM, etc.
+        expect(find.text('8:00 AM'), findsOneWidget);
+        expect(find.text('8:30 AM'), findsOneWidget);
+        expect(find.text('9:00 AM'), findsOneWidget);
+        expect(find.text('9:30 AM'), findsOneWidget);
+        expect(find.text('10:00 AM'), findsOneWidget);
+        expect(find.text('10:30 AM'), findsOneWidget);
+
+        // 8:00 AM, 8:30 AM, 9:00 AM, 9:30 AM must show BOOKED
+        expect(find.text('BOOKED'), findsWidgets);
+
+        // 10:00 AM is available! Let's tap 10:00 AM
+        final chip10am = find.widgetWithText(FilterChip, '10:00 AM');
+        await tester.ensureVisible(chip10am);
+        await tester.pumpAndSettle();
+        await tester.tap(chip10am);
+        await tester.pumpAndSettle();
+
+        // Check Live Schedule Window: 10:00 AM to 11:30 AM
+        expect(find.textContaining('Drop-off: 10:00 AM'), findsWidgets);
+        expect(find.textContaining('Estimated Finish: 11:30 AM'), findsWidgets);
+
+        // Closing time protection: shop closes at 5:00 PM.
+        // 4:00 PM (+ 1.5h = 5:30 PM > 5:00 PM) must be marked CLOSED
+        expect(find.text('CLOSED'), findsWidgets);
+
+        // 4. Test explicit custom day cleared override (hasCustomSlotsOverride: true, customSlots: [])
+        final tuesday = monday.add(const Duration(days: 1));
+        repo.addAvailabilityBlock(CalendarAvailabilityBlock(
+          id: 'custom_override_tuesday',
+          detailerId: detailer.id,
+          date: tuesday,
+          isAllDay: false,
+          hasCustomSlotsOverride: true,
+          customSlots: const [],
+          createdAt: DateTime.now(),
+        ));
+
+        // Tap Tuesday on calendar
+        final tuesdayFinder = find.descendant(
+          of: find.byType(GridView),
+          matching: find.text('${tuesday.day}'),
+        ).first;
+        await tester.tap(tuesdayFinder);
+        await tester.pumpAndSettle();
+
+        // Cleared override has 0 slots, does NOT resurrect default slots!
+        expect(find.byType(FilterChip), findsNothing);
+        expect(find.text('No appointment slots available for this date. Please select another date.'), findsOneWidget);
+
+        // Attempting to advance to Step 2 without a valid slot triggers error SnackBar and stays on Step 1
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+        expect(find.byType(SnackBar), findsOneWidget);
+        expect(find.textContaining('No time slots available for this date'), findsOneWidget);
+        expect(find.text('Select Arrival / Start Time'), findsOneWidget);
+      } finally {
+        tearDownMockImageHttpClient();
+      }
+    });
+
+    testWidgets('UI 10: CalendarPreferencesDialog includes 15 and 45 minute buffer options', (tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final repo = JobRepository();
+      await repo.init();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: Scaffold(
+            body: CalendarPreferencesDialog(repository: repo),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Scroll to the buffer dropdown row
+      final rowFinder = find.text('Turnaround Buffer Between Jobs');
+      await tester.scrollUntilVisible(
+        rowFinder,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(rowFinder, findsOneWidget);
+
+      final bufferFinder = find.text('30 minutes turnaround');
+      expect(bufferFinder, findsOneWidget);
+      await tester.tap(bufferFinder);
+      await tester.pumpAndSettle();
+
+      // Verify 15 and 45 minute options exist
+      expect(find.text('15 minutes turnaround'), findsWidgets);
+      expect(find.text('45 minutes turnaround'), findsWidgets);
+    });
+
+    testWidgets('UI 11: DetailerWorkbenchView Add Slot dialog respects slotDurationHours and offers 30-min increments', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final repo = JobRepository();
+      await repo.init();
+      repo.updateCalendarPreferences(repo.calendarPreferences.copyWith(
+        slotDurationHours: 2,
+      ));
+
+      final testDate = DateTime(2026, 11, 2);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: Scaffold(
+            body: DetailerWorkbenchView(
+              repository: repo,
+              initialCalendarDate: testDate,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Navigate to Calendar section
+      await tester.tap(find.text('Calendar'));
+      await tester.pumpAndSettle();
+
+      // Tap "Add Slot" button
+      final addSlotBtn = find.widgetWithText(ElevatedButton, 'Add Slot');
+      expect(addSlotBtn, findsWidgets);
+      await tester.tap(addSlotBtn.first);
+      await tester.pumpAndSettle();
+
+      // Verify Dialog opened
+      expect(find.text('Add Booking Slot'), findsOneWidget);
+
+      // Verify End Time computed as startTime (8:00 AM) + 2 hours (120 mins) = 10:00 AM
+      expect(find.text('10:00 AM'), findsWidgets);
+
+      // Open Start Time dropdown to verify 30-min options exist
+      final startDropdown = find.text('8:00 AM');
+      expect(startDropdown, findsWidgets);
+      await tester.tap(startDropdown.first);
+      await tester.pumpAndSettle();
+
+      // 8:30 AM exists in the dropdown options
+      expect(find.text('8:30 AM'), findsWidgets);
+
+      // Select 8:30 AM
+      await tester.tap(find.text('8:30 AM').last);
+      await tester.pumpAndSettle();
+
+      // End time automatically updates to 8:30 AM + 2 hours = 10:30 AM
+      expect(find.text('10:30 AM'), findsWidgets);
+
+      // Save slot
+      final saveBtn = find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(ElevatedButton, 'Add Slot'),
+      );
+      await tester.tap(saveBtn);
+      await tester.pumpAndSettle();
+
+      // Verify new custom slot is saved in repository preferences
+      expect(repo.calendarPreferences.customTimeSlots, contains('8:30 AM - 10:30 AM'));
     });
   });
 }

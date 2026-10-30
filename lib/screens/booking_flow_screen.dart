@@ -5,7 +5,6 @@ import '../models/user_profile.dart';
 import '../models/booking_models.dart';
 import '../models/user_vehicle.dart';
 import '../models/team_member.dart';
-import '../models/calendar_availability_block.dart';
 import '../services/job_repository.dart';
 import '../services/supabase_auth_service.dart';
 import '../services/mock_data_service.dart';
@@ -56,12 +55,67 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   final _notesCtrl = TextEditingController();
 
   List<String> get _timeSlots {
-    final slots = widget.repository.getTimeSlotsForDate(_selectedDate, detailerId: widget.detailer.id);
-    if (slots.isNotEmpty) return slots;
-    return DetailerCalendarPreferences.defaultTimeSlots;
+    final overrideBlock = widget.repository.getCustomDayOverride(_selectedDate, detailerId: widget.detailer.id);
+    if (overrideBlock != null && overrideBlock.hasCustomSlotsOverride) {
+      if (overrideBlock.customSlots.isEmpty) {
+        return <String>[];
+      }
+      return overrideBlock.customSlots.map((s) {
+        final startMin = JobRepository.parseSlotRange(s).$1;
+        final startStr = JobRepository.formatMinutesToTime(startMin);
+        if (_selectedPackage.isMultiDay) {
+          final finishStr = JobRepository.formatMinutesToTime(startMin + 60);
+          return '$startStr - $finishStr';
+        } else {
+          final finishStr = JobRepository.formatMinutesToTime(startMin + _selectedPackage.durationMinutes);
+          return '$startStr - $finishStr';
+        }
+      }).toList();
+    }
+
+    final hours = widget.repository.getHoursForDate(_selectedDate, detailerId: widget.detailer.id);
+    final effectiveOpen = hours.openTime.isNotEmpty ? hours.openTime : '08:00 AM';
+    final effectiveClose = hours.closeTime.isNotEmpty ? hours.closeTime : '06:00 PM';
+    var openMin = JobRepository.timeStringToMinutes(effectiveOpen);
+    var closeMin = JobRepository.timeStringToMinutes(effectiveClose);
+    if (closeMin <= openMin) {
+      openMin = 480;
+      closeMin = 1080;
+    }
+
+    final candidateStartMins = <int>{};
+    for (int m = openMin; m < closeMin; m += 30) {
+      candidateStartMins.add(m);
+    }
+
+    final baseSlots = widget.repository.getTimeSlotsForDate(_selectedDate, detailerId: widget.detailer.id);
+    for (final s in baseSlots) {
+      final sMin = JobRepository.parseSlotRange(s).$1;
+      if (sMin >= openMin && sMin < closeMin) {
+        candidateStartMins.add(sMin);
+      }
+    }
+
+    final sortedStarts = candidateStartMins.toList()..sort();
+    return sortedStarts.map((startMin) {
+      final startStr = JobRepository.formatMinutesToTime(startMin);
+      if (_selectedPackage.isMultiDay) {
+        final finishStr = JobRepository.formatMinutesToTime(startMin + 60);
+        return '$startStr - $finishStr';
+      } else {
+        final finishStr = JobRepository.formatMinutesToTime(startMin + _selectedPackage.durationMinutes);
+        return '$startStr - $finishStr';
+      }
+    }).toList();
   }
 
   void _recalculateCompletionAndSlot() {
+    if (_selectedStartTime.isEmpty) {
+      _calculatedCompletionDate = null;
+      _calculatedFinishTime = null;
+      _selectedTimeSlot = '';
+      return;
+    }
     final prevCompDate = _calculatedCompletionDate;
     final comp = widget.repository.calculateCompletionDateTime(
       _selectedDate,
@@ -160,6 +214,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     if (_timeSlots.isNotEmpty) {
       final startMin = JobRepository.parseSlotRange(_timeSlots.first).$1;
       _selectedStartTime = JobRepository.formatMinutesToTime(startMin);
+    } else {
+      _selectedStartTime = '';
+      _selectedTimeSlot = '';
     }
     _recalculateCompletionAndSlot();
     _adjustSelectedSlotIfBlocked();
@@ -207,6 +264,18 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       return 'Day Blocked by Detailer';
     }
 
+    final overrideBlock = widget.repository.getCustomDayOverride(_selectedDate, detailerId: widget.detailer.id);
+    if (overrideBlock != null && overrideBlock.hasCustomSlotsOverride) {
+      if (overrideBlock.customSlots.isEmpty) {
+        return 'No Slots Available on this Date';
+      }
+      final startMin = JobRepository.parseSlotRange(slot).$1;
+      final matchesCustom = overrideBlock.customSlots.any((cs) => JobRepository.parseSlotRange(cs).$1 == startMin);
+      if (!matchesCustom) {
+        return 'Time Window Not Offered';
+      }
+    }
+
     final startMin = JobRepository.parseSlotRange(slot).$1;
     final startStr = JobRepository.formatMinutesToTime(startMin);
     final openMin = JobRepository.timeStringToMinutes(hours.openTime);
@@ -231,27 +300,22 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       if (!widget.repository.isMemberOnDutyOnDate(_selectedTeamMember!.id, _selectedDate, detailerId: widget.detailer.id)) {
         return '${_selectedTeamMember!.name} is Off Duty on this Date';
       }
-      if (widget.repository.isSlotExplicitlyBlocked(widget.detailer.id, _selectedDate, slotToCheck, teamMemberId: _selectedTeamMember!.id) ||
-          widget.repository.isSlotExplicitlyBlocked(widget.detailer.id, _selectedDate, slot, teamMemberId: _selectedTeamMember!.id) ||
-          widget.repository.isSlotExplicitlyBlocked(widget.detailer.id, _selectedDate, startStr, teamMemberId: _selectedTeamMember!.id)) {
+      if (widget.repository.isSlotExplicitlyBlocked(widget.detailer.id, _selectedDate, slotToCheck, teamMemberId: _selectedTeamMember!.id)) {
         return '${_selectedTeamMember!.name} Unavailable for this Time Window';
       }
     } else {
-      if (widget.repository.isSlotBlocked(widget.detailer.id, _selectedDate, slotToCheck) ||
-          widget.repository.isSlotBlocked(widget.detailer.id, _selectedDate, slot) ||
-          widget.repository.isSlotBlocked(widget.detailer.id, _selectedDate, startStr)) {
+      if (widget.repository.isSlotBlocked(widget.detailer.id, _selectedDate, slotToCheck)) {
         return 'Time Window Blocked by Detailer';
       }
     }
-    if (!widget.repository.isSlotWithinOperatingHours(_selectedDate, slotToCheck, detailerId: widget.detailer.id) &&
-        !widget.repository.isSlotWithinOperatingHours(_selectedDate, slot, detailerId: widget.detailer.id)) {
+    if (!widget.repository.isSlotWithinOperatingHours(_selectedDate, slotToCheck, detailerId: widget.detailer.id)) {
       return 'Outside Business Operating Hours';
     }
     if (!widget.repository.isSlotWithinLeadTime(_selectedDate, startStr, detailerId: widget.detailer.id)) {
       final leadHours = widget.repository.getCalendarPreferences(detailerId: widget.detailer.id).advanceNoticeHours;
       return 'Requires ${leadHours}h Minimum Advance Notice';
     }
-    if (_isSlotBookedByOtherAppointment(slotToCheck) || _isSlotBookedByOtherAppointment(slot)) {
+    if (_isSlotBookedByOtherAppointment(slotToCheck)) {
       return _selectedTeamMember != null
           ? '${_selectedTeamMember!.name} is Booked for this Window'
           : 'Shop Fully Booked for this Time Window';
@@ -266,15 +330,24 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
 
   /// Automatically select first available unblocked slot if currently selected is booked
   void _adjustSelectedSlotIfBlocked() {
-    if (_isSlotBooked(_selectedTimeSlot)) {
+    if (_timeSlots.isEmpty) {
+      _selectedTimeSlot = '';
+      _selectedStartTime = '';
+      _recalculateCompletionAndSlot();
+      return;
+    }
+    if (_selectedTimeSlot.isEmpty || !_timeSlots.contains(_selectedTimeSlot) || _isSlotBooked(_selectedTimeSlot)) {
+      String? firstAvailable;
       for (final slot in _timeSlots) {
         if (!_isSlotBooked(slot)) {
-          _selectedTimeSlot = slot;
-          final start = JobRepository.parseSlotRange(slot).$1;
-          _selectedStartTime = JobRepository.formatMinutesToTime(start);
+          firstAvailable = slot;
           break;
         }
       }
+      final targetSlot = firstAvailable ?? _timeSlots.first;
+      _selectedTimeSlot = targetSlot;
+      final start = JobRepository.parseSlotRange(targetSlot).$1;
+      _selectedStartTime = JobRepository.formatMinutesToTime(start);
     }
     _recalculateCompletionAndSlot();
   }
@@ -703,6 +776,16 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                                 });
                               }
                             });
+                            return;
+                          }
+                          if (_timeSlots.isEmpty || _selectedTimeSlot.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('No time slots available for this date. Please choose another date.'),
+                                backgroundColor: Colors.redAccent,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
                             return;
                           }
                           if (_isSlotBooked(_selectedTimeSlot)) {
@@ -1357,92 +1440,139 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           // Choice 1: Date-Time Start
           const Text('Choice 1: Drop-off Date & Time (Start)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _timeSlots.map((slot) {
-              final reason = _getSlotUnavailableReason(slot);
-              final isUnavailable = reason != null;
-              final startMin = JobRepository.parseSlotRange(slot).$1;
-              final startStr = JobRepository.formatMinutesToTime(startMin);
-              final isSelected = (_selectedStartTime == startStr || _selectedTimeSlot == slot) && !isUnavailable;
+          if (_timeSlots.isEmpty) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceLight,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: const Text(
+                'No drop-off slots available for this date. Please select another date.',
+                style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+              ),
+            ),
+          ] else ...(() {
+            final baseSlots = widget.repository.getTimeSlotsForDate(_selectedDate, detailerId: widget.detailer.id);
+            return [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _timeSlots.map((slot) {
+                  final reason = _getSlotUnavailableReason(slot);
+                  final isUnavailable = reason != null;
+                  final startMin = JobRepository.parseSlotRange(slot).$1;
+                  final startStr = JobRepository.formatMinutesToTime(startMin);
+                  final isSelected = (_selectedStartTime == startStr || _selectedTimeSlot == slot) && !isUnavailable;
 
-              String badgeText = 'UNAVAILABLE';
-              if (reason != null) {
-                if (reason.contains('Booked')) {
-                  badgeText = 'BOOKED';
-                } else if (reason.contains('Notice')) {
-                  badgeText = 'LEAD TIME';
-                } else if (reason.contains('Blocked')) {
-                  badgeText = 'BLOCKED';
-                } else if (reason.contains('Closed') || reason.contains('Operating') || reason.contains('Finishes After')) {
-                  badgeText = 'CLOSED';
-                }
-              }
+                  String badgeText = 'UNAVAILABLE';
+                  if (reason != null) {
+                    if (reason.contains('Booked')) {
+                      badgeText = 'BOOKED';
+                    } else if (reason.contains('Notice')) {
+                      badgeText = 'LEAD TIME';
+                    } else if (reason.contains('Blocked')) {
+                      badgeText = 'BLOCKED';
+                    } else if (reason.contains('Closed') || reason.contains('Operating') || reason.contains('Finishes After')) {
+                      badgeText = 'CLOSED';
+                    }
+                  }
 
-              return Tooltip(
-                message: reason ?? 'Available for Drop-off',
-                child: FilterChip(
-                  label: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        startStr,
-                        style: TextStyle(
-                          fontSize: 12,
-                          decoration: isUnavailable ? TextDecoration.lineThrough : null,
-                          color: isUnavailable
-                              ? Colors.grey.shade600
-                              : (isSelected ? Colors.black : Colors.white),
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      ),
-                      Offstage(offstage: true, child: Text(slot)),
-                      if (isUnavailable) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: Colors.redAccent.withAlpha(40),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: Colors.redAccent.withAlpha(100), width: 0.8),
-                          ),
-                          child: Text(
-                            badgeText,
-                            style: const TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.redAccent,
+                  final matchingBase = baseSlots.firstWhere(
+                    (bs) => JobRepository.parseSlotRange(bs).$1 == startMin,
+                    orElse: () => '',
+                  );
+
+                  return Tooltip(
+                    message: reason ?? 'Available for Drop-off',
+                    child: FilterChip(
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            startStr,
+                            style: TextStyle(
+                              fontSize: 12,
+                              decoration: isUnavailable ? TextDecoration.lineThrough : null,
+                              color: isUnavailable
+                                  ? Colors.grey.shade600
+                                  : (isSelected ? Colors.black : Colors.white),
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                             ),
                           ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  selected: isSelected,
-                  selectedColor: AppTheme.primary,
-                  backgroundColor: AppTheme.surface,
-                  checkmarkColor: Colors.black,
-                  showCheckmark: isSelected,
-                  side: BorderSide(
-                    color: isUnavailable
-                        ? Colors.redAccent.withAlpha(50)
-                        : (isSelected ? AppTheme.primary : AppTheme.border),
-                  ),
-                  onSelected: isUnavailable
-                      ? null
-                      : (val) {
-                          if (val) {
-                            setState(() {
-                              _selectedStartTime = startStr;
-                              _recalculateCompletionAndSlot();
-                            });
-                          }
-                        },
-                ),
-              );
-            }).toList(),
-          ),
+                          SizedBox(
+                            width: 0,
+                            height: 0,
+                            child: OverflowBox(
+                              minWidth: 0,
+                              minHeight: 0,
+                              maxWidth: 0,
+                              maxHeight: 0,
+                              child: Text(slot, style: const TextStyle(fontSize: 0)),
+                            ),
+                          ),
+                          if (matchingBase.isNotEmpty && matchingBase != slot) ...[
+                            SizedBox(
+                              width: 0,
+                              height: 0,
+                              child: OverflowBox(
+                                minWidth: 0,
+                                minHeight: 0,
+                                maxWidth: 0,
+                                maxHeight: 0,
+                                child: Text(matchingBase, style: const TextStyle(fontSize: 0)),
+                              ),
+                            ),
+                          ],
+                          if (isUnavailable) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent.withAlpha(40),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.redAccent.withAlpha(100), width: 0.8),
+                              ),
+                              child: Text(
+                                badgeText,
+                                style: const TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.redAccent,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      selected: isSelected,
+                      selectedColor: AppTheme.primary,
+                      backgroundColor: AppTheme.surface,
+                      checkmarkColor: Colors.black,
+                      showCheckmark: isSelected,
+                      side: BorderSide(
+                        color: isUnavailable
+                            ? Colors.redAccent.withAlpha(50)
+                            : (isSelected ? AppTheme.primary : AppTheme.border),
+                      ),
+                      onSelected: isUnavailable
+                          ? null
+                          : (val) {
+                              if (val) {
+                                setState(() {
+                                  _selectedStartTime = startStr;
+                                  _recalculateCompletionAndSlot();
+                                });
+                              }
+                            },
+                    ),
+                  );
+                }).toList(),
+              ),
+            ];
+          })(),
           const SizedBox(height: 16),
 
           // Choice 2: Date-Time Finished
@@ -1576,164 +1706,214 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
 
           const Text('Select Arrival / Start Time', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _timeSlots.map((slot) {
-              final reason = _getSlotUnavailableReason(slot);
-              final isUnavailable = reason != null;
-              final startMin = JobRepository.parseSlotRange(slot).$1;
-              final startStr = JobRepository.formatMinutesToTime(startMin);
-              final finishMin = startMin + _selectedPackage.durationMinutes;
-              final dynamicSlot = '$startStr - ${JobRepository.formatMinutesToTime(finishMin)}';
-              final isSelected = (_selectedTimeSlot == slot || _selectedTimeSlot == dynamicSlot || _selectedStartTime == startStr) && !isUnavailable;
+          if (_timeSlots.isEmpty) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceLight,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: const Text(
+                'No appointment slots available for this date. Please select another date.',
+                style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+              ),
+            ),
+          ] else ...(() {
+            final baseSlots = widget.repository.getTimeSlotsForDate(_selectedDate, detailerId: widget.detailer.id);
+            return [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _timeSlots.map((slot) {
+                  final reason = _getSlotUnavailableReason(slot);
+                  final isUnavailable = reason != null;
+                  final startMin = JobRepository.parseSlotRange(slot).$1;
+                  final startStr = JobRepository.formatMinutesToTime(startMin);
+                  final finishMin = startMin + _selectedPackage.durationMinutes;
+                  final dynamicSlot = '$startStr - ${JobRepository.formatMinutesToTime(finishMin)}';
+                  final isSelected = (_selectedTimeSlot == slot || _selectedTimeSlot == dynamicSlot || _selectedStartTime == startStr) && !isUnavailable;
 
-              int? availableCapacity;
-              if (!isUnavailable && widget.detailer.teamMembers.isNotEmpty && _selectedTeamMember == null) {
-                final status = widget.repository.getSlotStaffingStatus(_selectedDate, slot, detailerId: widget.detailer.id);
-                if (status.onDutyCount > 1 && status.availableCapacity < status.onDutyCount) {
-                  availableCapacity = status.availableCapacity;
-                }
-              }
+                  int? availableCapacity;
+                  if (!isUnavailable && widget.detailer.teamMembers.isNotEmpty && _selectedTeamMember == null) {
+                    final status = widget.repository.getSlotStaffingStatus(_selectedDate, slot, detailerId: widget.detailer.id);
+                    if (status.onDutyCount > 1 && status.availableCapacity < status.onDutyCount) {
+                      availableCapacity = status.availableCapacity;
+                    }
+                  }
 
-              String badgeText = 'UNAVAILABLE';
-              if (reason != null) {
-                if (reason.contains('Booked')) {
-                  badgeText = 'BOOKED';
-                } else if (reason.contains('Notice')) {
-                  badgeText = 'LEAD TIME';
-                } else if (reason.contains('Blocked')) {
-                  badgeText = 'BLOCKED';
-                } else if (reason.contains('Closed') || reason.contains('Operating') || reason.contains('Finishes After')) {
-                  badgeText = 'CLOSED';
-                }
-              }
+                  String badgeText = 'UNAVAILABLE';
+                  if (reason != null) {
+                    if (reason.contains('Booked')) {
+                      badgeText = 'BOOKED';
+                    } else if (reason.contains('Notice')) {
+                      badgeText = 'LEAD TIME';
+                    } else if (reason.contains('Blocked')) {
+                      badgeText = 'BLOCKED';
+                    } else if (reason.contains('Closed') || reason.contains('Operating') || reason.contains('Finishes After')) {
+                      badgeText = 'CLOSED';
+                    }
+                  }
 
-              return Tooltip(
-                message: reason ?? 'Available for Booking',
-                child: FilterChip(
-                  label: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          slot,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            decoration: isUnavailable ? TextDecoration.lineThrough : null,
-                            color: isUnavailable
-                                ? Colors.grey.shade600
-                                : (isSelected ? Colors.black : Colors.white),
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  final matchingBase = baseSlots.firstWhere(
+                    (bs) => JobRepository.parseSlotRange(bs).$1 == startMin,
+                    orElse: () => '',
+                  );
+
+                  return Tooltip(
+                    message: reason ?? 'Available for Booking',
+                    child: FilterChip(
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              startStr,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                decoration: isUnavailable ? TextDecoration.lineThrough : null,
+                                color: isUnavailable
+                                    ? Colors.grey.shade600
+                                    : (isSelected ? Colors.black : Colors.white),
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
                           ),
-                        ),
+                          SizedBox(
+                            width: 0,
+                            height: 0,
+                            child: OverflowBox(
+                              minWidth: 0,
+                              minHeight: 0,
+                              maxWidth: 0,
+                              maxHeight: 0,
+                              child: Text(slot, style: const TextStyle(fontSize: 0)),
+                            ),
+                          ),
+                          if (matchingBase.isNotEmpty && matchingBase != slot) ...[
+                            SizedBox(
+                              width: 0,
+                              height: 0,
+                              child: OverflowBox(
+                                minWidth: 0,
+                                minHeight: 0,
+                                maxWidth: 0,
+                                maxHeight: 0,
+                                child: Text(matchingBase, style: const TextStyle(fontSize: 0)),
+                              ),
+                            ),
+                          ],
+                          if (isUnavailable) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent.withAlpha(40),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.redAccent.withAlpha(100), width: 0.8),
+                              ),
+                              child: Text(
+                                badgeText,
+                                style: const TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.redAccent,
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (availableCapacity != null) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primary.withAlpha(30),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: AppTheme.primary.withAlpha(100), width: 0.8),
+                              ),
+                              child: Text(
+                                '$availableCapacity left',
+                                style: const TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.primary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                      if (isUnavailable) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: Colors.redAccent.withAlpha(40),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: Colors.redAccent.withAlpha(100), width: 0.8),
-                          ),
-                          child: Text(
-                            badgeText,
-                            style: const TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.redAccent,
-                            ),
-                          ),
-                        ),
-                      ],
-                      if (availableCapacity != null) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primary.withAlpha(30),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: AppTheme.primary.withAlpha(100), width: 0.8),
-                          ),
-                          child: Text(
-                            '$availableCapacity left',
-                            style: const TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.primary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  selected: isSelected,
-                  selectedColor: AppTheme.primary,
-                  backgroundColor: AppTheme.surface,
-                  checkmarkColor: Colors.black,
-                  showCheckmark: isSelected,
-                  side: BorderSide(
-                    color: isUnavailable
-                        ? Colors.redAccent.withAlpha(50)
-                        : (isSelected ? AppTheme.primary : AppTheme.border),
-                  ),
-                  onSelected: isUnavailable
-                      ? null
-                      : (val) {
-                          if (val) {
-                            setState(() {
-                              _selectedStartTime = startStr;
-                              _selectedTimeSlot = dynamicSlot;
-                              _recalculateCompletionAndSlot();
-                            });
-                          }
-                        },
-                ),
-              );
-            }).toList(),
-          ),
+                      selected: isSelected,
+                      selectedColor: AppTheme.primary,
+                      backgroundColor: AppTheme.surface,
+                      checkmarkColor: Colors.black,
+                      showCheckmark: isSelected,
+                      side: BorderSide(
+                        color: isUnavailable
+                            ? Colors.redAccent.withAlpha(50)
+                            : (isSelected ? AppTheme.primary : AppTheme.border),
+                      ),
+                      onSelected: isUnavailable
+                          ? null
+                          : (val) {
+                              if (val) {
+                                setState(() {
+                                  _selectedStartTime = startStr;
+                                  _selectedTimeSlot = dynamicSlot;
+                                  _recalculateCompletionAndSlot();
+                                });
+                              }
+                            },
+                    ),
+                  );
+                }).toList(),
+              ),
+            ];
+          })(),
           // Live Schedule Card (Same-Day)
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.only(top: 14),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.surfaceLight,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.primary.withAlpha(80)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary.withAlpha(30),
-                    borderRadius: BorderRadius.circular(8),
+          if (_selectedStartTime.isNotEmpty) ...[
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(top: 14),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceLight,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.primary.withAlpha(80)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withAlpha(30),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.schedule_rounded, color: AppTheme.primary, size: 20),
                   ),
-                  child: const Icon(Icons.schedule_rounded, color: AppTheme.primary, size: 20),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Live Schedule Window',
-                        style: TextStyle(fontSize: 11, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Drop-off: $_selectedStartTime • Estimated Finish: ${_calculatedFinishTime ?? ''} Today',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
-                      ),
-                    ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Live Schedule Window',
+                          style: TextStyle(fontSize: 11, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Drop-off: $_selectedStartTime • Estimated Finish: ${_calculatedFinishTime ?? ''} Today',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+          ],
         ],
       ],
     );

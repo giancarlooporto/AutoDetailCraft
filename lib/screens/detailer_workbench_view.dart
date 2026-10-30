@@ -9238,15 +9238,16 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
   void _showAddSlotDialog(BuildContext context, DateTime date) {
     final hours = widget.repository.getHoursForDate(date);
-    String startTime = hours.isOpen ? hours.openTime : '08:00 AM';
-    final startMin = JobRepository.timeStringToMinutes(startTime);
-    String endTime = JobRepository.formatMinutesToTime(startMin + 180);
+    final prefs = widget.repository.calendarPreferences;
+    final slotDurationMins = prefs.slotDurationHours > 0 ? (prefs.slotDurationHours * 60).round() : 60;
+    String rawStart = hours.isOpen ? hours.openTime : '08:00 AM';
+    final startMin = JobRepository.timeStringToMinutes(rawStart);
+    String startTime = JobRepository.formatMinutesToTime(startMin);
+    String endTime = JobRepository.formatMinutesToTime(startMin + slotDurationMins);
     bool applyAllDays = true;
 
     final timeOptions = [
-      '05:00 AM', '06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM',
-      '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM',
-      '07:00 PM', '08:00 PM', '09:00 PM', '10:00 PM',
+      for (int m = 300; m <= 1380; m += 30) JobRepository.formatMinutesToTime(m)
     ];
 
     showDialog(
@@ -9300,7 +9301,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                                       setDialogState(() {
                                         startTime = val;
                                         final sMin = JobRepository.timeStringToMinutes(val);
-                                        endTime = JobRepository.formatMinutesToTime(sMin + 180);
+                                        endTime = JobRepository.formatMinutesToTime(sMin + slotDurationMins);
                                       });
                                     }
                                   },
@@ -9412,12 +9413,14 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       startTime = parts.first.trim();
       endTime = parts.last.trim();
     }
+    final sMin = JobRepository.timeStringToMinutes(startTime);
+    final eMin = JobRepository.timeStringToMinutes(endTime);
+    startTime = JobRepository.formatMinutesToTime(sMin);
+    endTime = JobRepository.formatMinutesToTime(eMin);
     bool applyAllDays = true;
 
     final timeOptions = [
-      '05:00 AM', '06:00 AM', '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM',
-      '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM',
-      '07:00 PM', '08:00 PM', '09:00 PM', '10:00 PM',
+      for (int m = 300; m <= 1380; m += 30) JobRepository.formatMinutesToTime(m)
     ];
 
     showDialog(

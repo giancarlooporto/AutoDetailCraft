@@ -2510,13 +2510,9 @@ class JobRepository extends ChangeNotifier {
     return result;
   }
 
-  List<String> getTimeSlotsForDate(DateTime date, {String? detailerId}) {
+  CalendarAvailabilityBlock? getCustomDayOverride(DateTime date, {String? detailerId}) {
     final targetDetailerId = detailerId ?? _currentUser.id;
-    final prefs = getCalendarPreferences(detailerId: targetDetailerId);
-    final dayHours = getHoursForDate(date, detailerId: targetDetailerId);
     final normDate = DateTime(date.year, date.month, date.day);
-
-    // 1. Check if date-specific custom slots override exists
     final specificBlockIdx = _availabilityBlocks.indexWhere(
       (b) => b.detailerId == targetDetailerId &&
              b.date.year == normDate.year &&
@@ -2525,7 +2521,19 @@ class JobRepository extends ChangeNotifier {
              (b.hasCustomSlotsOverride || b.customSlots.isNotEmpty),
     );
     if (specificBlockIdx != -1) {
-      final specificBlock = _availabilityBlocks[specificBlockIdx];
+      return _availabilityBlocks[specificBlockIdx];
+    }
+    return null;
+  }
+
+  List<String> getTimeSlotsForDate(DateTime date, {String? detailerId}) {
+    final targetDetailerId = detailerId ?? _currentUser.id;
+    final prefs = getCalendarPreferences(detailerId: targetDetailerId);
+    final dayHours = getHoursForDate(date, detailerId: targetDetailerId);
+
+    // 1. Check if date-specific custom slots override exists
+    final specificBlock = getCustomDayOverride(date, detailerId: targetDetailerId);
+    if (specificBlock != null) {
       // Detailer explicitly configured slots for this specific date (even if empty)
       return List<String>.from(specificBlock.customSlots);
     }
@@ -2947,7 +2955,7 @@ class JobRepository extends ChangeNotifier {
              b.date.year == normDate.year &&
              b.date.month == normDate.month &&
              b.date.day == normDate.day &&
-             b.isAllDay &&
+             (b.isAllDay || (b.hasCustomSlotsOverride && b.customSlots.isEmpty)) &&
              (teamMemberId == null
                  ? (b.teamMemberId == null || b.teamMemberId == 'all')
                  : (b.teamMemberId == null || b.teamMemberId == 'all' || b.teamMemberId == teamMemberId)),
@@ -2970,7 +2978,7 @@ class JobRepository extends ChangeNotifier {
              b.date.year == normDate.year &&
              b.date.month == normDate.month &&
              b.date.day == normDate.day &&
-             b.isAllDay &&
+             (b.isAllDay || (b.hasCustomSlotsOverride && b.customSlots.isEmpty)) &&
              (b.teamMemberId == memberId || b.teamMemberId == null || b.teamMemberId == 'all'),
     );
     if (memberBlocked) return false;
@@ -2982,6 +2990,10 @@ class JobRepository extends ChangeNotifier {
     final hours = getHoursForDate(date, detailerId: detailerId);
     if (!hours.isOpen) return true;
     if (isDateExplicitlyBlocked(detailerId, date)) return true;
+    final overrideBlock = getCustomDayOverride(date, detailerId: detailerId);
+    if (overrideBlock != null && overrideBlock.hasCustomSlotsOverride && overrideBlock.customSlots.isEmpty) {
+      return true;
+    }
 
     // Check if ALL studio staff are off or blocked on this date
     final staff = getStudioStaff(detailerId: detailerId);
@@ -3028,9 +3040,10 @@ class JobRepository extends ChangeNotifier {
               b.blockedSlots.any((bs) {
                 final cleanBs = bs.trim().toLowerCase();
                 final cleanSlot = slot.trim().toLowerCase();
-                return cleanBs == cleanSlot ||
-                       cleanBs.contains(cleanSlot) ||
-                       cleanSlot.contains(cleanBs);
+                if (cleanBs == cleanSlot) return true;
+                final bsRange = parseSlotRange(bs);
+                final slotRange = parseSlotRange(slot);
+                return slotRange.$1 < bsRange.$2 && bsRange.$1 < slotRange.$2;
               })),
     );
   }
@@ -3231,11 +3244,11 @@ class JobRepository extends ChangeNotifier {
       return (start, end + bufferMinutes);
     }
     final slotRange = parseSlotRange(appointment.scheduledTimeSlot);
-    final slotSpan = slotRange.$2 > slotRange.$1 ? slotRange.$2 - slotRange.$1 : 180;
     final durationMin = appointment.durationMinutes ?? appointment.package.durationMinutes;
-    final effectiveDuration = durationMin > slotSpan ? durationMin : slotSpan;
     final startMin = slotRange.$1;
-    final endMin = startMin + effectiveDuration + bufferMinutes;
+    final endMin = (durationMin > 0)
+        ? startMin + durationMin + bufferMinutes
+        : (slotRange.$2 > slotRange.$1 ? slotRange.$2 + bufferMinutes : startMin + 180 + bufferMinutes);
     return (startMin, endMin);
   }
 
@@ -3369,14 +3382,23 @@ class JobRepository extends ChangeNotifier {
     final List<String> available = [];
     final durationMin = package.durationMinutes;
 
-    // Use configured slot start times and hourly steps starting from openMin
-    final baseSlots = getTimeSlotsForDate(date, detailerId: targetId);
+    final overrideBlock = getCustomDayOverride(date, detailerId: targetId);
     final candidateStartMins = <int>{};
-    for (final slot in baseSlots) {
-      candidateStartMins.add(parseSlotRange(slot).$1);
-    }
-    for (int m = openMin; m < closeMin; m += 60) {
-      candidateStartMins.add(m);
+    if (overrideBlock != null && overrideBlock.hasCustomSlotsOverride) {
+      if (overrideBlock.customSlots.isEmpty) {
+        return [];
+      }
+      for (final slot in overrideBlock.customSlots) {
+        candidateStartMins.add(parseSlotRange(slot).$1);
+      }
+    } else {
+      final baseSlots = getTimeSlotsForDate(date, detailerId: targetId);
+      for (final slot in baseSlots) {
+        candidateStartMins.add(parseSlotRange(slot).$1);
+      }
+      for (int m = openMin; m < closeMin; m += 30) {
+        candidateStartMins.add(m);
+      }
     }
 
     final sortedStarts = candidateStartMins.toList()..sort();
@@ -3394,8 +3416,7 @@ class JobRepository extends ChangeNotifier {
           ? '$startTimeStr - ${formatMinutesToTime(startMin + 60)}'
           : '$startTimeStr - ${formatMinutesToTime(startMin + durationMin)}';
 
-      final isBlocked = isSlotExplicitlyBlocked(targetId, date, slotStr, teamMemberId: teamMemberId) ||
-          isSlotExplicitlyBlocked(targetId, date, startTimeStr, teamMemberId: teamMemberId);
+      final isBlocked = isSlotExplicitlyBlocked(targetId, date, slotStr, teamMemberId: teamMemberId);
       if (isBlocked) continue;
 
       final isConflicted = isSlotConflictedByBooking(date, slotStr, detailerId: targetId, teamMemberId: teamMemberId);

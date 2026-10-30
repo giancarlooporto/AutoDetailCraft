@@ -209,7 +209,9 @@ class _CalendarPreferencesDialogState extends State<CalendarPreferencesDialog> {
                     value: _bufferMinutes,
                     items: const [
                       DropdownMenuItem(value: 0, child: Text('No buffer (Back-to-back)')),
+                      DropdownMenuItem(value: 15, child: Text('15 minutes turnaround')),
                       DropdownMenuItem(value: 30, child: Text('30 minutes turnaround')),
+                      DropdownMenuItem(value: 45, child: Text('45 minutes turnaround')),
                       DropdownMenuItem(value: 60, child: Text('1 hour turnaround')),
                       DropdownMenuItem(value: 120, child: Text('2 hours turnaround')),
                     ],
