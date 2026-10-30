@@ -3189,6 +3189,11 @@ class JobRepository extends ChangeNotifier {
   /// Calculates the completion date and time for a booking.
   /// For same-day: completionDate = startDate, completionTime = startTime + durationMinutes.
   /// For multi-day: loops through business days for turnaroundDays, skipping closed/off days.
+  /// If dropped off in the morning (before 12:00 PM), the detailer has the full first day,
+  /// so N turnaround days complete at the closing of business day N.
+  /// If dropped off in the afternoon (12:00 PM or later), Day 1 only provides partial hours
+  /// (from startTime until closing). The missing morning hours roll over to Day N+1, pushing
+  /// completion into Day N+1 until the required full working days have elapsed.
   ({DateTime completionDate, String completionTime}) calculateCompletionDateTime(
     DateTime startDate,
     String startTime,
@@ -3203,28 +3208,92 @@ class JobRepository extends ChangeNotifier {
       return (completionDate: compDate, completionTime: formatMinutesToTime(endMin));
     }
 
-    // Multi-day turnaround calculation
     final neededDays = package.turnaroundDays.clamp(1, 30);
-    DateTime curr = DateTime(startDate.year, startDate.month, startDate.day);
-    int daysAccounted = 0;
     int safetyLoops = 0;
+    DateTime curr = DateTime(startDate.year, startDate.month, startDate.day);
 
-    while (daysAccounted < neededDays && safetyLoops < 365) {
+    // Advance to the first open business day
+    while (safetyLoops < 365 &&
+        (isDateRecurringDayOff(curr, detailerId: targetId) ||
+         !getHoursForDate(curr, detailerId: targetId).isOpen)) {
       safetyLoops++;
-      final isOff = isDateRecurringDayOff(curr, detailerId: targetId);
-      final hours = getHoursForDate(curr, detailerId: targetId);
-      if (!isOff && hours.isOpen) {
-        daysAccounted++;
-        if (daysAccounted == neededDays) {
-          break;
-        }
-      }
       curr = DateTime(curr.year, curr.month, curr.day + 1);
     }
 
-    final closeHours = getHoursForDate(curr, detailerId: targetId);
-    final completionTime = closeHours.closeTime.isNotEmpty ? closeHours.closeTime : '5:00 PM';
-    return (completionDate: curr, completionTime: completionTime);
+    final startHours = getHoursForDate(curr, detailerId: targetId);
+    final openMin = timeStringToMinutes(startHours.openTime);
+    final closeMin = timeStringToMinutes(startHours.closeTime);
+    final parsedStartMin = timeStringToMinutes(startTime);
+    final effectiveStartMin = parsedStartMin.clamp(openMin, closeMin);
+
+    // Morning cutoff: 12:00 PM (noon, 720 mins) or midpoint if unusual hours
+    final midday = openMin + (closeMin - openMin) ~/ 2;
+    final noonThreshold = (720 > openMin && 720 < closeMin) ? 720 : midday;
+    final isMorning = effectiveStartMin < noonThreshold;
+
+    if (isMorning) {
+      // Morning drop-off: Day 1 counts as the first full day of work.
+      // Job requires neededDays full days of work, completing at closing of day neededDays.
+      int daysAccounted = 1;
+      while (daysAccounted < neededDays && safetyLoops < 365) {
+        safetyLoops++;
+        curr = DateTime(curr.year, curr.month, curr.day + 1);
+        final isOff = isDateRecurringDayOff(curr, detailerId: targetId);
+        final hours = getHoursForDate(curr, detailerId: targetId);
+        if (!isOff && hours.isOpen) {
+          daysAccounted++;
+        }
+      }
+      final closeHours = getHoursForDate(curr, detailerId: targetId);
+      final completionTime = closeHours.closeTime.isNotEmpty ? closeHours.closeTime : '5:00 PM';
+      return (completionDate: curr, completionTime: completionTime);
+    } else {
+      // Afternoon / late drop-off: Day 1 provides partial work (from effectiveStartMin to closeMin).
+      // The unworked morning hours from Day 1 must be made up after neededDays - 1 full intermediate days.
+      final shortfallMin = effectiveStartMin - openMin;
+      int fullDaysAccounted = 0;
+      final fullDaysNeeded = neededDays - 1;
+
+      while (fullDaysAccounted < fullDaysNeeded && safetyLoops < 365) {
+        safetyLoops++;
+        curr = DateTime(curr.year, curr.month, curr.day + 1);
+        final isOff = isDateRecurringDayOff(curr, detailerId: targetId);
+        final hours = getHoursForDate(curr, detailerId: targetId);
+        if (!isOff && hours.isOpen) {
+          fullDaysAccounted++;
+        }
+      }
+
+      int remainingMin = shortfallMin;
+      while (remainingMin > 0 && safetyLoops < 365) {
+        safetyLoops++;
+        curr = DateTime(curr.year, curr.month, curr.day + 1);
+        final isOff = isDateRecurringDayOff(curr, detailerId: targetId);
+        final hours = getHoursForDate(curr, detailerId: targetId);
+        if (!isOff && hours.isOpen) {
+          final dayOpen = timeStringToMinutes(hours.openTime);
+          final dayClose = timeStringToMinutes(hours.closeTime);
+          final dayCap = dayClose - dayOpen;
+          if (dayCap <= 0) continue;
+
+          if (remainingMin <= dayCap) {
+            final compMin = dayOpen + remainingMin;
+            final formatted = (compMin == dayClose && hours.closeTime.isNotEmpty)
+                ? hours.closeTime
+                : formatMinutesToTime(compMin);
+            return (completionDate: curr, completionTime: formatted);
+          } else {
+            remainingMin -= dayCap;
+          }
+        }
+      }
+
+      final fallbackHours = getHoursForDate(curr, detailerId: targetId);
+      return (
+        completionDate: curr,
+        completionTime: fallbackHours.closeTime.isNotEmpty ? fallbackHours.closeTime : '5:00 PM',
+      );
+    }
   }
 
   /// Generates start times for [package] on [date] within shop hours, excluding times that
@@ -3286,31 +3355,61 @@ class JobRepository extends ChangeNotifier {
   }
 
   /// Returns afternoon/evening pick-up slots on [completionDate].
-  List<String> getAvailablePickUpTimes(DateTime completionDate, {String? detailerId}) {
+  /// If [earliestTime] is provided, only slots at or after [earliestTime] are offered.
+  List<String> getAvailablePickUpTimes(
+    DateTime completionDate, {
+    String? detailerId,
+    String? earliestTime,
+  }) {
     final targetId = detailerId ?? _currentUser.id;
     final hours = getHoursForDate(completionDate, detailerId: targetId);
-    if (!hours.isOpen) return ['5:00 PM'];
+    if (!hours.isOpen) return [hours.closeTime.isNotEmpty ? hours.closeTime : '5:00 PM'];
 
     final openMin = timeStringToMinutes(hours.openTime);
     final closeMin = timeStringToMinutes(hours.closeTime);
     if (closeMin <= openMin) {
       return [hours.closeTime.isNotEmpty ? hours.closeTime : '5:00 PM'];
     }
+
+    final int minPickUpMin;
+    if (earliestTime != null && earliestTime.isNotEmpty) {
+      minPickUpMin = timeStringToMinutes(earliestTime).clamp(openMin, closeMin);
+    } else {
+      minPickUpMin = (closeMin - 240 > openMin + 120) ? (closeMin - 240) : (openMin + 120);
+    }
+
     final List<String> slots = [];
 
-    final startPickUp = (closeMin - 240 > openMin + 120) ? (closeMin - 240) : (openMin + 120);
-    for (int m = startPickUp; m <= closeMin; m += 60) {
-      if (m >= openMin && m <= closeMin) {
-        slots.add(formatMinutesToTime(m));
+    void addSlot(String timeStr) {
+      final mins = timeStringToMinutes(timeStr);
+      if (!slots.any((s) => timeStringToMinutes(s) == mins)) {
+        slots.add(timeStr);
       }
     }
-    if (slots.isEmpty) {
-      slots.add(hours.closeTime.isNotEmpty ? hours.closeTime : '5:00 PM');
-    } else if (!slots.contains(formatMinutesToTime(closeMin)) && closeMin > openMin) {
-      slots.add(formatMinutesToTime(closeMin));
+
+    // If earliestTime is provided, include it as the first option
+    if (earliestTime != null && earliestTime.isNotEmpty) {
+      addSlot(earliestTime);
     }
 
-    return slots.toSet().toList();
+    final nextHourMin = ((minPickUpMin + 59) ~/ 60) * 60;
+    for (int m = nextHourMin; m <= closeMin; m += 60) {
+      if (m >= openMin && m <= closeMin) {
+        final formatted = formatMinutesToTime(m);
+        addSlot(formatted);
+      }
+    }
+
+    final hasClose = slots.any((s) => timeStringToMinutes(s) == closeMin);
+    if (!hasClose) {
+      addSlot(hours.closeTime.isNotEmpty ? hours.closeTime : formatMinutesToTime(closeMin));
+    }
+
+    if (slots.isEmpty) {
+      addSlot(hours.closeTime.isNotEmpty ? hours.closeTime : '5:00 PM');
+    }
+
+    return slots;
   }
 
   /// Determines whether an appointment conflicts with a requested time slot on [date].

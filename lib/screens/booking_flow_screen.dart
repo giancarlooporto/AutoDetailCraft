@@ -62,6 +62,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   }
 
   void _recalculateCompletionAndSlot() {
+    final prevCompDate = _calculatedCompletionDate;
     final comp = widget.repository.calculateCompletionDateTime(
       _selectedDate,
       _selectedStartTime,
@@ -75,9 +76,21 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       final pickUpTimes = widget.repository.getAvailablePickUpTimes(
         _calculatedCompletionDate ?? _selectedDate,
         detailerId: widget.detailer.id,
+        earliestTime: comp.completionTime,
       );
-      if (pickUpTimes.isNotEmpty && !pickUpTimes.contains(_selectedPickUpTime)) {
-        _selectedPickUpTime = pickUpTimes.last;
+      final compMins = JobRepository.timeStringToMinutes(comp.completionTime);
+      final currentPickUpMins = JobRepository.timeStringToMinutes(_selectedPickUpTime);
+      final hasSelected = pickUpTimes.any(
+        (t) => JobRepository.timeStringToMinutes(t) == currentPickUpMins,
+      );
+      final dateChanged = prevCompDate == null || !DateUtils.isSameDay(prevCompDate, comp.completionDate);
+
+      if (pickUpTimes.isNotEmpty && (dateChanged || !hasSelected || currentPickUpMins < compMins)) {
+        final matchingCompTime = pickUpTimes.firstWhere(
+          (t) => JobRepository.timeStringToMinutes(t) == compMins,
+          orElse: () => pickUpTimes.first,
+        );
+        _selectedPickUpTime = matchingCompTime;
       } else if (_selectedPickUpTime.isEmpty) {
         _selectedPickUpTime = comp.completionTime;
       }
@@ -259,11 +272,11 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           _selectedTimeSlot = slot;
           final start = JobRepository.parseSlotRange(slot).$1;
           _selectedStartTime = JobRepository.formatMinutesToTime(start);
-          _recalculateCompletionAndSlot();
           break;
         }
       }
     }
+    _recalculateCompletionAndSlot();
   }
 
   @override
@@ -1467,8 +1480,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                   children: widget.repository.getAvailablePickUpTimes(
                     _calculatedCompletionDate ?? _selectedDate,
                     detailerId: widget.detailer.id,
+                    earliestTime: _calculatedFinishTime,
                   ).map((pickUpTime) {
-                    final isSelected = _selectedPickUpTime == pickUpTime;
+                    final isSelected = JobRepository.timeStringToMinutes(_selectedPickUpTime) == JobRepository.timeStringToMinutes(pickUpTime);
                     return FilterChip(
                       label: Text(
                         pickUpTime,
@@ -1487,7 +1501,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                         if (val) {
                           setState(() {
                             _selectedPickUpTime = pickUpTime;
-                            _recalculateCompletionAndSlot();
+                            _selectedTimeSlot = 'Drop-off: $_selectedStartTime • Ready: $_selectedPickUpTime';
                           });
                         }
                       },

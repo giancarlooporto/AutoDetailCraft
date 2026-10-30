@@ -142,14 +142,16 @@ class ServicePackage {
       return durationValue!.clamp(1, 30);
     }
     final clean = estimatedDuration.toLowerCase();
-    final matches = RegExp(r'(\d+(?:\.\d+)?)')
-        .allMatches(clean)
-        .map((m) => double.tryParse(m.group(0)!))
-        .whereType<double>()
-        .toList();
-    if (matches.isNotEmpty) {
-      final maxDays = matches.reduce((a, b) => a > b ? a : b);
-      return maxDays.ceil().clamp(1, 30);
+    if (clean.contains('day')) {
+      final matches = RegExp(r'(\d+(?:\.\d+)?)')
+          .allMatches(clean)
+          .map((m) => double.tryParse(m.group(0)!))
+          .whereType<double>()
+          .toList();
+      if (matches.isNotEmpty) {
+        final maxDays = matches.reduce((a, b) => a > b ? a : b);
+        return maxDays.ceil().clamp(1, 30);
+      }
     }
     return (durationMinutes / 1440).ceil().clamp(1, 30);
   }

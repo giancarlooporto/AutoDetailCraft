@@ -10,6 +10,7 @@ import 'package:detail_craft/screens/booking_flow_screen.dart';
 import 'package:detail_craft/screens/bookings_list_screen.dart';
 import 'package:detail_craft/screens/service_package_editor_dialog.dart';
 import 'package:detail_craft/services/job_repository.dart';
+import 'package:intl/intl.dart';
 import '../core/mock_http_client.dart';
 
 void main() {
@@ -476,6 +477,126 @@ void main() {
       // Tuesday Nov 10 is after ready day
       final tuesday = DateTime(2026, 11, 10);
       expect(repo.getBookingsForDate(tuesday).map((b) => b.id), isNot(contains('bk_legacy_rollover')));
+    });
+
+    test('9. Multi-day 2-day work precision: morning vs afternoon drop-offs and pick-up constraints', () {
+      final repo = JobRepository();
+      final schedule = [
+        const DayBusinessHours(weekday: 1, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+        const DayBusinessHours(weekday: 2, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+        const DayBusinessHours(weekday: 3, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+        const DayBusinessHours(weekday: 4, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+        const DayBusinessHours(weekday: 5, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+        const DayBusinessHours(weekday: 6, isOpen: false, openTime: '09:00 AM', closeTime: '05:00 PM'),
+        const DayBusinessHours(weekday: 7, isOpen: false, openTime: '09:00 AM', closeTime: '05:00 PM'),
+      ];
+      repo.updateCalendarPreferences(DetailerCalendarPreferences(weeklySchedule: schedule));
+
+      const twoDayPkg = ServicePackage(
+        id: 'pkg_precise_2day',
+        title: '2-Day Ceramic Coating',
+        description: 'Multi-stage paint correction and 2-layer coating',
+        basePrice: 1000,
+        estimatedDuration: '2 days',
+        durationValue: 2,
+        durationUnit: 'days',
+        includes: [],
+      );
+
+      final monday = DateTime(2026, 11, 2); // Monday
+
+      // 1. Drop-off on Monday morning (9:00 AM): 2 full days of work -> ready end of Tuesday (Day 2 closing)
+      final morningResult = repo.calculateCompletionDateTime(monday, '9:00 AM', twoDayPkg);
+      expect(morningResult.completionDate.weekday, DateTime.tuesday);
+      expect(morningResult.completionDate.day, 3);
+      expect(morningResult.completionTime, '05:00 PM');
+
+      // Pick-up times on Tuesday: ONLY 5:00 PM (closing). Client cannot take car back before 2 full days!
+      final tuesdayPickUp = repo.getAvailablePickUpTimes(
+        morningResult.completionDate,
+        earliestTime: morningResult.completionTime,
+      );
+      expect(tuesdayPickUp, ['05:00 PM']);
+      expect(tuesdayPickUp, isNot(contains('1:00 PM')));
+      expect(tuesdayPickUp, isNot(contains('2:00 PM')));
+      expect(tuesdayPickUp, isNot(contains('3:00 PM')));
+
+      // 2. Drop-off on Monday afternoon (1:00 PM): Day 1 provides 4h, Day 2 provides 9h, Day 3 provides 5h
+      // Ready Wednesday at 1:00 PM (Day 3)!
+      final afternoon1pmResult = repo.calculateCompletionDateTime(monday, '1:00 PM', twoDayPkg);
+      expect(afternoon1pmResult.completionDate.weekday, DateTime.wednesday);
+      expect(afternoon1pmResult.completionDate.day, 4);
+      expect(afternoon1pmResult.completionTime, '1:00 PM');
+
+      // Pick-up times on Wednesday: from 1:00 PM to 5:00 PM closing
+      final wednesday1pmPickUp = repo.getAvailablePickUpTimes(
+        afternoon1pmResult.completionDate,
+        earliestTime: afternoon1pmResult.completionTime,
+      );
+      expect(wednesday1pmPickUp, contains('1:00 PM'));
+      expect(wednesday1pmPickUp, contains('2:00 PM'));
+      expect(wednesday1pmPickUp, contains('5:00 PM'));
+      expect(wednesday1pmPickUp, isNot(contains('9:00 AM')));
+      expect(wednesday1pmPickUp, isNot(contains('10:00 AM')));
+      expect(wednesday1pmPickUp, isNot(contains('11:00 AM')));
+      expect(wednesday1pmPickUp, isNot(contains('12:00 PM')));
+
+      // 3. Drop-off on Monday afternoon (2:00 PM): ready Wednesday at 2:00 PM
+      final afternoon2pmResult = repo.calculateCompletionDateTime(monday, '2:00 PM', twoDayPkg);
+      expect(afternoon2pmResult.completionDate.weekday, DateTime.wednesday);
+      expect(afternoon2pmResult.completionDate.day, 4);
+      expect(afternoon2pmResult.completionTime, '2:00 PM');
+
+      // 4. Drop-off on Friday afternoon (1:00 PM): weekend closed -> ready Tuesday (Day 3) at 1:00 PM
+      final friday = DateTime(2026, 11, 6);
+      final friAfternoonResult = repo.calculateCompletionDateTime(friday, '1:00 PM', twoDayPkg);
+      expect(friAfternoonResult.completionDate.weekday, DateTime.tuesday);
+      expect(friAfternoonResult.completionDate.day, 10);
+      expect(friAfternoonResult.completionTime, '1:00 PM');
+    });
+
+    test('10. Turnaround days parsing handles multi-day hours and clean deduplication', () {
+      const pkg48Hrs = ServicePackage(
+        id: 'pkg_48',
+        title: '48 Hour Coating',
+        description: 'Multi-day work expressed in hours',
+        basePrice: 800,
+        estimatedDuration: '48 hours',
+        includes: [],
+      );
+      expect(pkg48Hrs.isMultiDay, isTrue);
+      expect(pkg48Hrs.turnaroundDays, 2); // 48h = 2 days, not 30!
+
+      const pkg24Hrs = ServicePackage(
+        id: 'pkg_24',
+        title: '24 Hour Paint Correction',
+        description: 'Full day work expressed in hours',
+        basePrice: 500,
+        estimatedDuration: '24 hrs',
+        includes: [],
+      );
+      expect(pkg24Hrs.isMultiDay, isTrue);
+      expect(pkg24Hrs.turnaroundDays, 1); // 24h = 1 day, not 24!
+
+      const pkg3Days = ServicePackage(
+        id: 'pkg_3d',
+        title: '3-Day Restoration',
+        description: 'Multi-stage paint correction and curing',
+        basePrice: 1500,
+        estimatedDuration: '3 days',
+        includes: [],
+      );
+      expect(pkg3Days.isMultiDay, isTrue);
+      expect(pkg3Days.turnaroundDays, 3);
+
+      final repo = JobRepository();
+      // Default closing is 06:00 PM; verify pickup times deduplication even if earliestTime has leading zero
+      final slots = repo.getAvailablePickUpTimes(
+        DateTime(2026, 11, 2),
+        earliestTime: '06:00 PM',
+      );
+      expect(slots, ['06:00 PM']);
+      expect(slots.length, 1);
     });
   });
 
@@ -1003,6 +1124,196 @@ void main() {
 
       // Multi-day callout is rendered
       expect(find.textContaining('Multi-Day Turnaround: Clients will choose both a Drop-off Date/Time and a Ready Pick-up Date/Time'), findsOneWidget);
+    });
+
+    testWidgets('UI 7: Multi-Day 2-day work in BookingFlowScreen: switching to afternoon drop-off pushes ready date to Day 3', (tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      setupMockImageHttpClient();
+      try {
+        final repo = JobRepository();
+        await repo.init();
+        repo.addVehicleToGarage(const UserVehicle(
+          id: 'v_smart_07',
+          make: 'Porsche',
+          model: 'Taycan Turbo S',
+          year: 2024,
+          colorName: 'Frozen Blue',
+          imageUrl: '',
+        ));
+
+        // Monday-Friday 8:00 AM - 5:00 PM
+        final customSchedule = [
+          const DayBusinessHours(weekday: 1, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 2, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 3, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 4, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 5, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 6, isOpen: false, openTime: '09:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 7, isOpen: false, openTime: '09:00 AM', closeTime: '05:00 PM'),
+        ];
+        repo.updateCalendarPreferences(DetailerCalendarPreferences(
+          weeklySchedule: customSchedule,
+          customTimeSlots: ['9:00 AM - 12:00 PM', '1:00 PM - 4:00 PM'],
+        ));
+
+        DateTime monday = DateTime.now().add(const Duration(days: 1));
+        while (monday.weekday != DateTime.monday) {
+          monday = monday.add(const Duration(days: 1));
+        }
+
+        final twoDayPkg = studioDetailer.servicePackages[1]; // 2 days
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: Scaffold(
+              body: BookingFlowScreen(
+                detailer: studioDetailer,
+                repository: repo,
+                initialDate: monday,
+                initialPackage: twoDayPkg,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Advance to Step 1 (Schedule & Vehicle)
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // 1. Initial default is morning (9:00 AM).
+        // 2-day work from Monday morning is ready Tuesday at closing (Day 2 closing)!
+        final tuesday = monday.add(const Duration(days: 1));
+        final expectedTuesdayStr = DateFormat('EEEE, MMMM d, yyyy').format(tuesday);
+        expect(find.textContaining('Estimated Ready Date: $expectedTuesdayStr'), findsOneWidget);
+
+        // 2. Select 1:00 PM drop-off slot (Monday afternoon)
+        final chip1pm = find.widgetWithText(FilterChip, '1:00 PM');
+        await tester.ensureVisible(chip1pm);
+        await tester.pumpAndSettle();
+        await tester.tap(chip1pm);
+        await tester.pumpAndSettle();
+
+        // 3. Since Monday afternoon drop-off has only 4h, 2 full days pushes to Wednesday 1:00 PM (Day 3)!
+        final wednesday = monday.add(const Duration(days: 2));
+        final expectedWednesdayStr = DateFormat('EEEE, MMMM d, yyyy').format(wednesday);
+        expect(find.textContaining('Estimated Ready Date: $expectedWednesdayStr'), findsOneWidget);
+
+        // Turnaround schedule summary card reflects Monday drop-off & Wednesday pick-up
+        expect(find.textContaining('1:00 PM • Ready: ${DateFormat('EEE, MMM d').format(wednesday)} 1:00 PM'), findsOneWidget);
+      } finally {
+        tearDownMockImageHttpClient();
+      }
+    });
+
+    testWidgets('UI 8: Multi-Day Calendar date tap updates Estimated Ready Date and custom pickup selection is preserved', (tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      setupMockImageHttpClient();
+      try {
+        final repo = JobRepository();
+        await repo.init();
+        repo.addVehicleToGarage(const UserVehicle(
+          id: 'v_smart_08',
+          make: 'BMW',
+          model: 'M4 Competition',
+          year: 2024,
+          colorName: 'Isle of Man Green',
+          imageUrl: '',
+        ));
+
+        // Monday-Friday 8:00 AM - 5:00 PM
+        final customSchedule = [
+          const DayBusinessHours(weekday: 1, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 2, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 3, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 4, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 5, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 6, isOpen: false, openTime: '09:00 AM', closeTime: '05:00 PM'),
+          const DayBusinessHours(weekday: 7, isOpen: false, openTime: '09:00 AM', closeTime: '05:00 PM'),
+        ];
+        repo.updateCalendarPreferences(DetailerCalendarPreferences(
+          weeklySchedule: customSchedule,
+          customTimeSlots: ['9:00 AM - 12:00 PM', '1:00 PM - 4:00 PM'],
+        ));
+
+        DateTime monday = DateTime.now().add(const Duration(days: 1));
+        while (monday.weekday != DateTime.monday) {
+          monday = monday.add(const Duration(days: 1));
+        }
+
+        final twoDayPkg = studioDetailer.servicePackages[1]; // 2 days
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: Scaffold(
+              body: BookingFlowScreen(
+                detailer: studioDetailer,
+                repository: repo,
+                initialDate: monday,
+                initialPackage: twoDayPkg,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Advance to Step 1 (Schedule & Vehicle)
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // 1. Initial Monday drop-off is ready Tuesday
+        final tuesday = monday.add(const Duration(days: 1));
+        expect(find.textContaining('Estimated Ready Date: ${DateFormat('EEEE, MMMM d, yyyy').format(tuesday)}'), findsOneWidget);
+
+        // 2. Select Tuesday in the calendar grid as the new drop-off date
+        final tuesdayDayNumber = '${tuesday.day}';
+        final tuesdayFinder = find.descendant(
+          of: find.byType(GridView),
+          matching: find.text(tuesdayDayNumber),
+        ).first;
+        await tester.tap(tuesdayFinder);
+        await tester.pumpAndSettle();
+
+        // 3. Estimated Ready Date must immediately update to Wednesday (Day 2 for Tuesday drop-off)
+        final wednesday = tuesday.add(const Duration(days: 1));
+        expect(find.textContaining('Estimated Ready Date: ${DateFormat('EEEE, MMMM d, yyyy').format(wednesday)}'), findsOneWidget);
+
+        // 4. Drop-off in the afternoon (1:00 PM Tuesday) -> pushes to Thursday (Day 3)
+        final chip1pm = find.widgetWithText(FilterChip, '1:00 PM');
+        await tester.ensureVisible(chip1pm);
+        await tester.pumpAndSettle();
+        await tester.tap(chip1pm);
+        await tester.pumpAndSettle();
+
+        final thursday = wednesday.add(const Duration(days: 1));
+        expect(find.textContaining('Estimated Ready Date: ${DateFormat('EEEE, MMMM d, yyyy').format(thursday)}'), findsOneWidget);
+
+        // 5. Select a custom later pickup time on Thursday (3:00 PM) in Choice 2
+        final chip3pm = find.widgetWithText(FilterChip, '3:00 PM').last;
+        await tester.ensureVisible(chip3pm);
+        await tester.pumpAndSettle();
+        await tester.tap(chip3pm);
+        await tester.pumpAndSettle();
+
+        // Turnaround schedule summary card reflects Thursday 3:00 PM
+        expect(find.textContaining('1:00 PM • Ready: ${DateFormat('EEE, MMM d').format(thursday)} 3:00 PM'), findsOneWidget);
+      } finally {
+        tearDownMockImageHttpClient();
+      }
     });
   });
 }
