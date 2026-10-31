@@ -2242,11 +2242,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 ? widget.repository.isDateFullyBlocked(user.id, cellDate)
                 : !widget.repository.isMemberOnDutyOnDate(_selectedCalendarTeamMemberId, cellDate, detailerId: user.id);
             final dayBlocks = widget.repository.getBlocksForDate(cellDate, detailerId: user.id);
-            final isPartiallyBlocked = isViewingAll
-                ? (!isExplicitlyBlocked && dayBlocks.any((b) => b.blockedSlots.isNotEmpty))
-                : (!isExplicitlyBlocked && widget.repository.getTimeSlotsForDate(cellDate, detailerId: user.id).any(
-                    (s) => widget.repository.isSlotExplicitlyBlocked(user.id, cellDate, s, teamMemberId: _selectedCalendarTeamMemberId),
-                  ));
+            final isPartiallyBlocked = !isExplicitlyBlocked && dayBlocks.any((b) {
+              final applies = isViewingAll || b.teamMemberId == null || b.teamMemberId == 'all' || b.teamMemberId == _selectedCalendarTeamMemberId;
+              return applies && b.blockedSlots.isNotEmpty;
+            });
             final staff = widget.repository.getStudioStaff(detailerId: user.id);
             final dayBookings = isViewingAll
                 ? widget.repository.getBookingsForDate(cellDate, detailerId: user.id)
@@ -7781,13 +7780,42 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
 
     final hours = widget.repository.getHoursForDate(date, detailerId: user.id);
     final allDayBookings = widget.repository.getBookingsForDate(date, detailerId: user.id);
-    final dayBookings = isViewingAll
+    final dayBookings = (isViewingAll
         ? allDayBookings
-        : allDayBookings.where((b) => b.assignedTeamMemberId == _selectedCalendarTeamMemberId || staff.length <= 1).toList();
+        : allDayBookings.where((b) => b.assignedTeamMemberId == _selectedCalendarTeamMemberId || staff.length <= 1).toList())
+      ..sort((a, b) {
+        final aMin = a.startTime != null ? JobRepository.timeStringToMinutes(a.startTime!) : JobRepository.parseSlotRange(a.scheduledTimeSlot).$1;
+        final bMin = b.startTime != null ? JobRepository.timeStringToMinutes(b.startTime!) : JobRepository.parseSlotRange(b.scheduledTimeSlot).$1;
+        return aMin.compareTo(bMin);
+      });
     final dayBlocks = widget.repository.getBlocksForDate(date, detailerId: user.id);
+    final isAllDayBlocked = dayBlocks.any((b) => b.isAllDay && (isViewingAll || b.teamMemberId == null || b.teamMemberId == 'all' || b.teamMemberId == _selectedCalendarTeamMemberId));
     final prefs = widget.repository.getCalendarPreferences(detailerId: user.id);
 
     final daySlots = widget.repository.getTimeSlotsForDate(date, detailerId: user.id);
+
+    final List<({String slot, String? reason, String? teamMemberId, String? teamMemberName})> visibleBlockedSlots = [];
+    for (final block in dayBlocks) {
+      if (block.isAllDay) continue;
+      final applies = isViewingAll || block.teamMemberId == null || block.teamMemberId == 'all' || block.teamMemberId == _selectedCalendarTeamMemberId;
+      if (!applies) continue;
+      final member = block.teamMemberId != null && block.teamMemberId != 'all'
+          ? staff.where((s) => s.id == block.teamMemberId).firstOrNull
+          : null;
+      for (final s in block.blockedSlots) {
+        visibleBlockedSlots.add((
+          slot: s,
+          reason: block.reason,
+          teamMemberId: block.teamMemberId,
+          teamMemberName: member?.name,
+        ));
+      }
+    }
+    visibleBlockedSlots.sort((a, b) {
+      final aMin = JobRepository.timeStringToMinutes(a.slot.split('-').first.trim());
+      final bMin = JobRepository.timeStringToMinutes(b.slot.split('-').first.trim());
+      return aMin.compareTo(bMin);
+    });
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -8017,630 +8045,236 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
         const SizedBox(height: 20),
 
         // Section 1: Turo-Style Slot Availability
-        Row(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 8,
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'HOURLY SLOT AVAILABILITY',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        children: [
+                          Text(
+                            isViewingAll ? 'HOURLY SLOT AVAILABILITY' : '${currentMember.name.toUpperCase()}\'S AVAILABILITY',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
+                          ),
+                          _badge(
+                            isViewingAll ? 'ALL TEAM' : currentMember.name.toUpperCase(),
+                            AppTheme.primary,
+                          ),
+                        ],
                       ),
-                      _badge(
-                        isViewingAll ? 'ALL TEAM' : currentMember.name.toUpperCase(),
-                        AppTheme.primary,
+                      const SizedBox(height: 2),
+                      Text(
+                        isViewingAll
+                            ? 'Smart 30-minute booking availability and daily timeline.'
+                            : 'Manage ${currentMember.name.split(" ").first}\'s hourly working availability.',
+                        style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    isViewingAll
-                        ? 'Tap any window to manage studio or technician booking capacity.'
-                        : 'Manage ${currentMember.name.split(" ").first}\'s hourly working availability.',
-                    style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                if (hours.isOpen && !isRecurringOff && !isExplicitlyBlocked && isMemberOnDuty) ...[
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent.withAlpha(220),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    ),
+                    icon: const Icon(Icons.block_rounded, size: 13),
+                    label: const Text('+ Block Window', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    onPressed: () => _showBlock30MinSlotDialog(context, date),
                   ),
                 ],
-              ),
-            ),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                visualDensity: VisualDensity.compact,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-              ),
-              icon: const Icon(Icons.add_rounded, size: 14),
-              label: const Text('Add Slot', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-              onPressed: () => _showAddSlotDialog(context, date),
-            ),
-            const SizedBox(width: 6),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.textSecondary,
-                side: const BorderSide(color: AppTheme.border),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                visualDensity: VisualDensity.compact,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-              ),
-              icon: const Icon(Icons.auto_awesome_rounded, size: 13),
-              label: const Text('Auto-Gen', style: TextStyle(fontSize: 11)),
-              onPressed: () => _showAutoGenerateSlotsDialog(context, date, hours),
-            ),
-            if (daySlots.isNotEmpty) ...[
-              const SizedBox(width: 6),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.redAccent,
-                  side: BorderSide(color: Colors.redAccent.withAlpha(120)),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  visualDensity: VisualDensity.compact,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    visualDensity: VisualDensity.compact,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  ),
+                  icon: const Icon(Icons.add_rounded, size: 14),
+                  label: const Text('Add Slot', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  onPressed: () => _showAddSlotDialog(context, date),
                 ),
-                icon: const Icon(Icons.delete_sweep_rounded, size: 13),
-                label: const Text('Clear Slots', style: TextStyle(fontSize: 11)),
-                onPressed: () => _confirmClearAllSlots(context, date),
-              ),
-            ],
-            if (dayBlocks.any((b) => b.blockedSlots.isNotEmpty || b.isAllDay)) ...[
-              const SizedBox(width: 6),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.greenAccent,
-                  side: BorderSide(color: Colors.greenAccent.withAlpha(120)),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  visualDensity: VisualDensity.compact,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.textSecondary,
+                    side: const BorderSide(color: AppTheme.border),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    visualDensity: VisualDensity.compact,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  ),
+                  icon: const Icon(Icons.auto_awesome_rounded, size: 13),
+                  label: const Text('Auto-Gen', style: TextStyle(fontSize: 11)),
+                  onPressed: () => _showAutoGenerateSlotsDialog(context, date, hours),
                 ),
-                icon: const Icon(Icons.lock_open_rounded, size: 13),
-                label: const Text('Unblock All', style: TextStyle(fontSize: 11)),
-                onPressed: () {
-                  widget.repository.clearBlockedSlotsForDate(
-                    date,
-                    detailerId: user.id,
-                    teamMemberId: isViewingAll ? null : _selectedCalendarTeamMemberId,
-                  );
-                  setState(() {});
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Unblocked all slots for ${DateFormat('MMM d').format(date)}'),
-                      behavior: SnackBarBehavior.floating,
+                if (daySlots.isNotEmpty) ...[
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.redAccent,
+                      side: BorderSide(color: Colors.redAccent.withAlpha(120)),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                     ),
-                  );
-                },
-              ),
-            ],
+                    icon: const Icon(Icons.delete_sweep_rounded, size: 13),
+                    label: const Text('Clear Slots', style: TextStyle(fontSize: 11)),
+                    onPressed: () => _confirmClearAllSlots(context, date),
+                  ),
+                ],
+                if (dayBlocks.any((b) => b.blockedSlots.isNotEmpty || b.isAllDay)) ...[
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.greenAccent,
+                      side: BorderSide(color: Colors.greenAccent.withAlpha(120)),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    ),
+                    icon: const Icon(Icons.lock_open_rounded, size: 13),
+                    label: const Text('Unblock All', style: TextStyle(fontSize: 11)),
+                    onPressed: () {
+                      widget.repository.clearBlockedSlotsForDate(
+                        date,
+                        detailerId: user.id,
+                        teamMemberId: isViewingAll ? null : _selectedCalendarTeamMemberId,
+                      );
+                      setState(() {});
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Unblocked all slots for ${DateFormat('MMM d').format(date)}'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ],
+            ),
           ],
         ),
         const SizedBox(height: 10),
 
-        if (daySlots.isEmpty)
+
+        if (daySlots.isEmpty && dayBookings.isEmpty && visibleBlockedSlots.isEmpty && !isAllDayBlocked)
+          _buildNoSlotsCard(context, date, hours, user.id)
+        else if (isExplicitlyBlocked || (!isViewingAll && !isMemberOnDuty)) ...[
+          // If there are existing confirmed bookings on a blocked day, show them so detailer can manage/cancel
+          if (dayBookings.isNotEmpty) ...[
+            ...dayBookings.map((b) => _buildBookingAppointmentCard(b)),
+            const SizedBox(height: 10),
+          ],
+          // Day Blocked
           Container(
-            padding: const EdgeInsets.all(20),
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppTheme.surface,
+              color: Colors.redAccent.withAlpha(15),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppTheme.border),
+              border: Border.all(color: Colors.redAccent.withAlpha(100)),
             ),
-            child: Center(
-              child: Column(
-                children: [
-                  const Icon(Icons.calendar_today_rounded, size: 28, color: AppTheme.textMuted),
-                  const SizedBox(height: 8),
-                  const Text('No slots defined for this day.', style: TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.center,
+            child: Row(
+              children: [
+                const Icon(Icons.block_rounded, size: 22, color: Colors.redAccent),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.primary,
-                          foregroundColor: Colors.black,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        icon: const Icon(Icons.add_rounded, size: 14),
-                        label: const Text('Add Time Slot'),
-                        onPressed: () => _showAddSlotDialog(context, date),
+                      const Text(
+                        'Day Blocked by Detailer',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.redAccent),
                       ),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.textSecondary,
-                          side: const BorderSide(color: AppTheme.border),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        icon: const Icon(Icons.auto_awesome_rounded, size: 13),
-                        label: const Text('Auto-Gen Slots'),
-                        onPressed: () => _showAutoGenerateSlotsDialog(context, date, hours),
-                      ),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.primary,
-                          side: BorderSide(color: AppTheme.primary.withAlpha(120)),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        icon: const Icon(Icons.refresh_rounded, size: 13),
-                        label: const Text('Reset to Schedule Defaults'),
-                        onPressed: () {
-                          widget.repository.resetTimeSlotsForDateToDefaults(date, detailerId: user.id);
-                          setState(() {});
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Reset ${DateFormat('MMM d').format(date)} to operating hours slots'),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
+                      const SizedBox(height: 2),
+                      Text(
+                        isViewingAll
+                            ? 'Full day is blocked from client bookings on ${DateFormat("MMM d").format(date)}.'
+                            : '${currentMember.name} is off or blocked on ${DateFormat("MMM d").format(date)}.',
+                        style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                       ),
                     ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          )
-        else
-          // Slot Matrix
-          ...daySlots.map((slot) {
-            if (isViewingAll) {
-              final status = widget.repository.getSlotStaffingStatus(date, slot, detailerId: user.id);
-              final conflictingAppt = widget.repository.getConflictingBookingForSlot(date, slot, detailerId: user.id);
-              final isBooked = conflictingAppt != null;
-              final isExactMatch = isBooked && conflictingAppt.scheduledTimeSlot == slot;
-              final isDayOff = !hours.isOpen || isRecurringOff;
-              final isDayExplicitlyBlocked = widget.repository.isDateExplicitlyBlocked(user.id, date);
-              final isStudioSlotBlocked = widget.repository.isSlotExplicitlyBlocked(user.id, date, slot);
-              final inOperatingHours = widget.repository.isSlotWithinOperatingHours(date, slot, detailerId: user.id);
-              final hasDayConflict = isBooked && (isDayOff || isDayExplicitlyBlocked);
-
-              Color borderColor = AppTheme.border;
-              Color bgColor = AppTheme.surface;
-              String statusTitle = 'Available for Booking';
-              Color statusColor = Colors.greenAccent;
-              IconData iconData = Icons.check_circle_outline_rounded;
-              bool isStruck = false;
-
-              if (staff.length <= 1) {
-                if (isBooked) {
-                  borderColor = hasDayConflict ? Colors.amber.withAlpha(140) : Colors.green.withAlpha(120);
-                  bgColor = hasDayConflict ? Colors.amber.withAlpha(20) : Colors.green.withAlpha(20);
-                  statusTitle = isExactMatch
-                      ? (hasDayConflict
-                          ? 'Booked by ${conflictingAppt.clientName} (Conflict: Day Closed/Blocked)'
-                          : 'Booked by ${conflictingAppt.clientName}')
-                      : (hasDayConflict
-                          ? 'Reserved • Overlaps with ${conflictingAppt.clientName} (Day Closed/Blocked)'
-                          : 'Reserved • Overlaps with ${conflictingAppt.clientName} (${conflictingAppt.scheduledTimeSlot})');
-                  statusColor = hasDayConflict ? Colors.amber : Colors.greenAccent;
-                  iconData = hasDayConflict ? Icons.warning_amber_rounded : Icons.directions_car_rounded;
-                  isStruck = false;
-                } else if (isDayExplicitlyBlocked) {
-                  borderColor = Colors.redAccent.withAlpha(100);
-                  bgColor = Colors.redAccent.withAlpha(15);
-                  statusTitle = 'Day Blocked by Detailer';
-                  statusColor = Colors.redAccent;
-                  iconData = Icons.block_rounded;
-                  isStruck = true;
-                } else if (isDayOff) {
-                  borderColor = AppTheme.border;
-                  bgColor = AppTheme.surfaceLight.withAlpha(45);
-                  statusTitle = 'Studio Closed (Day Off)';
-                  statusColor = AppTheme.textMuted;
-                  iconData = Icons.nightlife_rounded;
-                  isStruck = true;
-                } else if (isStudioSlotBlocked) {
-                  borderColor = Colors.redAccent.withAlpha(100);
-                  bgColor = Colors.redAccent.withAlpha(15);
-                  statusTitle = 'Blocked by Detailer';
-                  statusColor = Colors.redAccent;
-                  iconData = Icons.block_rounded;
-                  isStruck = true;
-                } else if (!inOperatingHours && hours.isOpen) {
-                  borderColor = AppTheme.border;
-                  bgColor = AppTheme.surfaceLight.withAlpha(60);
-                  statusTitle = 'Outside Operating Hours';
-                  statusColor = AppTheme.textMuted;
-                  iconData = Icons.access_time_rounded;
-                  isStruck = true;
-                } else {
-                  borderColor = AppTheme.border;
-                  bgColor = AppTheme.surface;
-                  statusTitle = 'Available for Booking';
-                  statusColor = Colors.greenAccent;
-                  iconData = Icons.check_circle_outline_rounded;
-                  isStruck = false;
-                }
-              } else {
-                // Multi-technician studio (staff.length > 1)
-                if (isDayExplicitlyBlocked) {
-                  borderColor = Colors.redAccent.withAlpha(100);
-                  bgColor = Colors.redAccent.withAlpha(15);
-                  statusTitle = 'Day Blocked by Detailer';
-                  statusColor = Colors.redAccent;
-                  iconData = Icons.block_rounded;
-                  isStruck = true;
-                } else if (isStudioSlotBlocked) {
-                  borderColor = Colors.redAccent.withAlpha(100);
-                  bgColor = Colors.redAccent.withAlpha(15);
-                  statusTitle = 'Blocked by Detailer';
-                  statusColor = Colors.redAccent;
-                  iconData = Icons.block_rounded;
-                  isStruck = true;
-                } else if (isDayOff) {
-                  borderColor = AppTheme.border;
-                  bgColor = AppTheme.surfaceLight.withAlpha(45);
-                  statusTitle = 'Studio Closed (Day Off)';
-                  statusColor = AppTheme.textMuted;
-                  iconData = Icons.nightlife_rounded;
-                  isStruck = true;
-                } else if (!inOperatingHours && hours.isOpen) {
-                  borderColor = AppTheme.border;
-                  bgColor = AppTheme.surfaceLight.withAlpha(60);
-                  statusTitle = 'Outside Operating Hours';
-                  statusColor = AppTheme.textMuted;
-                  iconData = Icons.access_time_rounded;
-                  isStruck = true;
-                } else if (status.isFullyBooked) {
-                  borderColor = Colors.green.withAlpha(120);
-                  bgColor = Colors.green.withAlpha(20);
-                  statusTitle = 'Fully Booked (${status.activeBookingsCount} of ${status.onDutyCount} Reserved)';
-                  statusColor = Colors.greenAccent;
-                  iconData = Icons.directions_car_rounded;
-                  isStruck = false;
-                } else if (status.activeBookingsCount > 0) {
-                  borderColor = Colors.cyanAccent.withAlpha(120);
-                  bgColor = Colors.cyanAccent.withAlpha(15);
-                  statusTitle = '${status.availableCapacity} Techs Available (${status.activeBookingsCount} Booked)';
-                  statusColor = Colors.cyanAccent;
-                  iconData = Icons.groups_rounded;
-                  isStruck = false;
-                } else {
-                  borderColor = AppTheme.border;
-                  bgColor = AppTheme.surface;
-                  statusTitle = 'Available for Booking';
-                  statusColor = Colors.greenAccent;
-                  iconData = Icons.check_circle_outline_rounded;
-                  isStruck = false;
-                }
-              }
-
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: bgColor,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: borderColor),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(iconData, size: 18, color: statusColor),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                slot,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: isStruck ? Colors.grey.shade400 : Colors.white,
-                                  decoration: isStruck ? TextDecoration.lineThrough : null,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                statusTitle,
-                                style: TextStyle(fontSize: 11, color: statusColor, fontWeight: FontWeight.w600),
-                              ),
-                              if (conflictingAppt != null) ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  isExactMatch
-                                      ? ((isDayOff || isDayExplicitlyBlocked)
-                                          ? '⚠️ Day is closed/blocked • ${conflictingAppt.vehicleYearMakeModel}'
-                                          : '${conflictingAppt.vehicleYearMakeModel} • ${conflictingAppt.package.title}')
-                                      : 'Conflict shield: ${conflictingAppt.package.title} (${conflictingAppt.package.estimatedDuration})',
-                                  style: TextStyle(
-                                    fontSize: 10.5,
-                                    color: (isDayOff || isDayExplicitlyBlocked) ? Colors.amber : AppTheme.textSecondary,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        if (!status.isFullyBooked && !isBooked) ...[
-                          if (isDayOff && !isDayExplicitlyBlocked && !isStudioSlotBlocked) ...[
-                            OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppTheme.textMuted,
-                                side: const BorderSide(color: AppTheme.border),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                visualDensity: VisualDensity.compact,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                              ),
-                              onPressed: () => CalendarPreferencesDialog.show(context, repository: widget.repository),
-                              child: const Text('Day Off', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                            ),
-                          ] else ...[
-                            OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: (isStudioSlotBlocked || isDayExplicitlyBlocked) ? Colors.greenAccent : Colors.redAccent,
-                                side: BorderSide(
-                                  color: (isStudioSlotBlocked || isDayExplicitlyBlocked)
-                                      ? Colors.greenAccent.withAlpha(120)
-                                      : Colors.redAccent.withAlpha(100),
-                                ),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                visualDensity: VisualDensity.compact,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                              ),
-                              onPressed: () {
-                                if (isStudioSlotBlocked || isDayExplicitlyBlocked) {
-                                  widget.repository.toggleBlockSlot(date, slot, detailerId: user.id);
-                                  setState(() {});
-                                } else if (staff.length > 1) {
-                                  _showBlockSlotScopeDialog(context, date, slot, user.id);
-                                } else {
-                                  widget.repository.toggleBlockSlot(date, slot, detailerId: user.id);
-                                  setState(() {});
-                                }
-                              },
-                              child: Text(
-                                (isStudioSlotBlocked || isDayExplicitlyBlocked) ? 'Reopen' : 'Block Slot',
-                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ],
-                        ] else if ((status.isFullyBooked || isBooked) && conflictingAppt != null) ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.greenAccent.withAlpha(25),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Text(
-                              'FULL',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.greenAccent),
-                            ),
-                          ),
-                        ],
-                        if (staff.length > 1 && conflictingAppt != null)
-                          IconButton(
-                            icon: const Icon(Icons.person_add_alt_1_rounded, size: 16, color: AppTheme.primary),
-                            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                            padding: const EdgeInsets.all(4),
-                            tooltip: 'Assign Technician',
-                            onPressed: () => _showAssignTechnicianDialog(context, conflictingAppt),
-                          ),
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined, size: 16, color: AppTheme.textSecondary),
-                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                          padding: const EdgeInsets.all(4),
-                          tooltip: 'Edit Slot',
-                          onPressed: () => _showEditSlotDialog(context, date, slot),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent),
-                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                          padding: const EdgeInsets.all(4),
-                          tooltip: 'Delete Slot',
-                          onPressed: () => _confirmDeleteTimeSlot(context, date, slot),
-                        ),
-                      ],
-                    ),
-                    if (staff.length > 1) ...[
-                      const SizedBox(height: 8),
-                      const Divider(color: AppTheme.border, height: 1),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        children: staff.map((m) {
-                          final isOff = status.offMemberIds.contains(m.id);
-                          final booking = allDayBookings.where((b) =>
-                            b.assignedTeamMemberId == m.id &&
-                            widget.repository.isBookingConflictingWithSlot(b, date, slot),
-                          ).firstOrNull;
-
-                          Color chipBg = Colors.greenAccent.withAlpha(20);
-                          Color chipBorder = Colors.greenAccent.withAlpha(80);
-                          Color chipText = Colors.greenAccent;
-                          String chipLabel = '${m.name.split(' ').first}: Available';
-
-                          if (isOff) {
-                            chipBg = AppTheme.surfaceLight.withAlpha(40);
-                            chipBorder = AppTheme.border;
-                            chipText = AppTheme.textMuted;
-                            chipLabel = '${m.name.split(' ').first}: Off';
-                          } else if (booking != null) {
-                            chipBg = Colors.amber.withAlpha(25);
-                            chipBorder = Colors.amber.withAlpha(100);
-                            chipText = Colors.amber;
-                            chipLabel = '${m.name.split(' ').first}: Booked (${booking.clientName.split(' ').first})';
-                          }
-
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: chipBg,
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: chipBorder),
-                            ),
-                            child: Text(
-                              chipLabel,
-                              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: chipText),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ],
-                  ],
-                ),
-              );
-            } else {
-              // Individual Technician View for this slot
-              final isSlotBooked = widget.repository.isMemberBookedForSlot(_selectedCalendarTeamMemberId, date, slot, detailerId: user.id);
-              final isSlotBlocked = widget.repository.isSlotExplicitlyBlocked(user.id, date, slot, teamMemberId: _selectedCalendarTeamMemberId);
-              final isMemberOff = !isMemberOnDuty;
-              final conflictingAppt = widget.repository.getConflictingBookingForSlot(
-                date,
-                slot,
-                detailerId: user.id,
-                teamMemberId: _selectedCalendarTeamMemberId,
-              );
-              final inOperatingHours = widget.repository.isSlotWithinOperatingHours(date, slot, detailerId: user.id);
-
-              Color borderColor = AppTheme.border;
-              Color bgColor = AppTheme.surface;
-              String statusTitle = 'Available for Booking';
-              Color statusColor = Colors.greenAccent;
-              IconData iconData = Icons.check_circle_outline_rounded;
-              bool isStruck = false;
-
-              if (isSlotBooked) {
-                borderColor = Colors.green.withAlpha(120);
-                bgColor = Colors.green.withAlpha(20);
-                statusTitle = conflictingAppt != null
-                    ? 'Booked: ${conflictingAppt.vehicleYearMakeModel} (${conflictingAppt.clientName})'
-                    : 'Booked by Client';
-                statusColor = Colors.greenAccent;
-                iconData = Icons.directions_car_rounded;
-                isStruck = false;
-              } else if (isSlotBlocked || isMemberOff) {
-                borderColor = Colors.redAccent.withAlpha(100);
-                bgColor = Colors.redAccent.withAlpha(15);
-                statusTitle = isMemberOff ? 'Tech Off Today' : 'Slot Blocked for ${currentMember.name.split(" ").first}';
-                statusColor = Colors.redAccent;
-                iconData = Icons.block_rounded;
-                isStruck = true;
-              } else if (!inOperatingHours) {
-                borderColor = AppTheme.border;
-                bgColor = AppTheme.surfaceLight.withAlpha(60);
-                statusTitle = 'Outside Operating Hours';
-                statusColor = AppTheme.textMuted;
-                iconData = Icons.access_time_rounded;
-                isStruck = true;
-              }
-
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: bgColor,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: borderColor),
-                ),
-                child: Row(
-                  children: [
-                    Icon(iconData, size: 18, color: statusColor),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            slot,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: isStruck ? Colors.grey.shade400 : Colors.white,
-                              decoration: isStruck ? TextDecoration.lineThrough : null,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            statusTitle,
-                            style: TextStyle(fontSize: 11, color: statusColor, fontWeight: FontWeight.w600),
-                          ),
-                          if (conflictingAppt != null) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              '${conflictingAppt.package.title} • \$${conflictingAppt.totalPrice.toStringAsFixed(0)}',
-                              style: const TextStyle(fontSize: 10.5, color: AppTheme.textSecondary),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    if (!isSlotBooked) ...[
-                      OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: isSlotBlocked ? Colors.greenAccent : Colors.redAccent,
-                          side: BorderSide(
-                            color: isSlotBlocked
-                                ? Colors.greenAccent.withAlpha(120)
-                                : Colors.redAccent.withAlpha(100),
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          visualDensity: VisualDensity.compact,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                        ),
-                        onPressed: () {
-                          widget.repository.toggleBlockSlot(
-                            date,
-                            slot,
-                            teamMemberId: _selectedCalendarTeamMemberId,
-                            detailerId: user.id,
-                          );
-                          setState(() {});
-                        },
-                        child: Text(
-                          isSlotBlocked ? 'Reopen' : 'Block Slot',
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              );
-            }
-          }),
-
-        const SizedBox(height: 20),
-
-        // Section 2: Confirmed Bookings List
-        Text(
-          isViewingAll ? 'CONFIRMED APPOINTMENTS (${dayBookings.length})' : '${currentMember.name.toUpperCase()}\'S APPOINTMENTS (${dayBookings.length})',
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.5),
-        ),
-        const SizedBox(height: 8),
-
-        if (dayBookings.isEmpty) ...[
+          ),
+        ] else if (!hours.isOpen || isRecurringOff) ...[
+          // If there are existing confirmed bookings on a scheduled day off, show them
+          if (dayBookings.isNotEmpty) ...[
+            ...dayBookings.map((b) => _buildBookingAppointmentCard(b)),
+            const SizedBox(height: 10),
+          ],
+          // Studio Closed (Day Off)
           Container(
+            margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppTheme.surface,
+              color: AppTheme.surfaceLight.withAlpha(45),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: AppTheme.border),
             ),
             child: Row(
               children: [
-                const Icon(Icons.event_available_rounded, size: 20, color: AppTheme.textMuted),
-                const SizedBox(width: 10),
+                const Icon(Icons.nightlife_rounded, size: 22, color: AppTheme.textMuted),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    isViewingAll
-                        ? 'No client bookings scheduled for this date.'
-                        : 'No appointments assigned to ${currentMember.name} for this date.',
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Studio Closed (Day Off)',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textMuted),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${DateFormat("EEEE").format(date)} is a scheduled day off in studio preferences.',
+                        style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
         ] else ...[
+          // Open Day: Dynamic Schedule Timeline
+          // 1. Booked Appointments
           ...dayBookings.map((b) => _buildBookingAppointmentCard(b)),
+
+          // 2. Blocked Windows
+          ...visibleBlockedSlots.map((item) => _buildBlockedSlotCard(
+            context,
+            date,
+            item.slot,
+            item.reason,
+            item.teamMemberId,
+            item.teamMemberName,
+            user.id,
+          )),
+
+          // 3. Open / Available Status Card
+          _buildAvailableStatusCard(
+            context,
+            date,
+            hours,
+            daySlots,
+            dayBookings.isNotEmpty || visibleBlockedSlots.isNotEmpty,
+          ),
         ],
 
         const SizedBox(height: 20),
@@ -8964,100 +8598,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     );
   }
 
-  void _showBlockSlotScopeDialog(BuildContext context, DateTime date, String slot, String detailerId) {
-    final staff = widget.repository.getStudioStaff(detailerId: detailerId);
-    final isStudioSlotBlocked = widget.repository.isSlotExplicitlyBlocked(detailerId, date, slot);
 
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          return AlertDialog(
-            backgroundColor: AppTheme.surface,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: AppTheme.border)),
-            title: Text('Manage Slot: $slot', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Select whether to block this time window for the whole shop or a specific technician:', style: TextStyle(fontSize: 12.5, color: AppTheme.textSecondary)),
-                  const SizedBox(height: 16),
-
-                  ListTile(
-                    tileColor: AppTheme.surfaceLight,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: isStudioSlotBlocked ? Colors.redAccent.withAlpha(120) : AppTheme.border)),
-                    leading: Icon(isStudioSlotBlocked ? Icons.lock_rounded : Icons.storefront_rounded, color: isStudioSlotBlocked ? Colors.redAccent : AppTheme.primary),
-                    title: const Text('Entire Studio (All Team)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                    subtitle: Text(isStudioSlotBlocked ? 'Window currently blocked for all' : 'Block this window for all clients', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-                    trailing: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isStudioSlotBlocked ? Colors.green : Colors.redAccent,
-                        foregroundColor: Colors.white,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      onPressed: () {
-                        widget.repository.toggleBlockSlot(date, slot, detailerId: detailerId);
-                        Navigator.pop(ctx);
-                        setState(() {});
-                      },
-                      child: Text(isStudioSlotBlocked ? 'Unblock' : 'Block Slot'),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-                  const Text('OR BLOCK FOR INDIVIDUAL TECHNICIAN:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary)),
-                  const SizedBox(height: 8),
-
-                  ...staff.map((m) {
-                    final isMemberSlotBlocked = widget.repository.isSlotExplicitlyBlocked(detailerId, date, slot, teamMemberId: m.id);
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      decoration: BoxDecoration(
-                        color: AppTheme.surfaceLight.withAlpha(80),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppTheme.border),
-                      ),
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                        leading: CircleAvatar(
-                          radius: 14,
-                          backgroundImage: m.avatarUrl.isNotEmpty ? NetworkImage(m.avatarUrl) : null,
-                          child: m.avatarUrl.isEmpty ? const Icon(Icons.person, size: 14) : null,
-                        ),
-                        title: Text(m.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                        subtitle: Text(isMemberSlotBlocked ? 'Window Blocked' : 'Window Open', style: TextStyle(fontSize: 10.5, color: isMemberSlotBlocked ? Colors.redAccent : Colors.greenAccent)),
-                        trailing: OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: isMemberSlotBlocked ? Colors.greenAccent : Colors.redAccent,
-                            side: BorderSide(color: isMemberSlotBlocked ? Colors.greenAccent.withAlpha(120) : Colors.redAccent.withAlpha(120)),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          onPressed: () {
-                            widget.repository.toggleBlockSlot(date, slot, teamMemberId: m.id, detailerId: detailerId);
-                            setDialogState(() {});
-                            setState(() {});
-                          },
-                          child: Text(isMemberSlotBlocked ? 'Open' : 'Block', style: const TextStyle(fontSize: 10.5)),
-                        ),
-                      ),
-                    );
-                  }),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Close'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
 
   void _showAssignTechnicianDialog(BuildContext context, BookingAppointment b) {
     final user = widget.repository.currentUser;
@@ -9135,26 +8676,27 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   Widget _buildBookingAppointmentCard(BookingAppointment b) {
     final user = widget.repository.currentUser;
     final staff = widget.repository.getStudioStaff(detailerId: user.id);
+    final isViewingAll = _selectedCalendarTeamMemberId == 'all';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
+        color: Colors.green.withAlpha(20),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.primary.withAlpha(80)),
+        border: Border.all(color: Colors.green.withAlpha(120)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              const Icon(Icons.directions_car_rounded, size: 18, color: Colors.greenAccent),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  b.vehicleYearMakeModel,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
-                  overflow: TextOverflow.ellipsis,
+                  b.scheduledTimeSlot,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
                 ),
               ),
               Container(
@@ -9168,31 +8710,45 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
                 ),
               ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.redAccent,
+                  side: BorderSide(color: Colors.redAccent.withAlpha(120)),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  visualDensity: VisualDensity.compact,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                icon: const Icon(Icons.cancel_outlined, size: 13),
+                label: const Text('Cancel Booking', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                onPressed: () => _confirmCancelBooking(context, b),
+              ),
             ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Booked by ${b.clientName}',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.greenAccent),
           ),
           const SizedBox(height: 4),
           Text(
-            '${b.package.title} • ${b.scheduledTimeSlot}',
-            style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+            '${b.vehicleYearMakeModel} • ${b.package.title} • \$${b.totalPrice.toStringAsFixed(0)}',
+            style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
           ),
-          const SizedBox(height: 8),
-          const Divider(color: AppTheme.border, height: 1),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(Icons.person_outline_rounded, size: 14, color: AppTheme.textMuted),
-              const SizedBox(width: 4),
-              Text(b.clientName, style: const TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.w600)),
-              const Spacer(),
-              if (b.clientPhone.isNotEmpty) ...[
-                const Icon(Icons.phone_outlined, size: 13, color: AppTheme.textMuted),
+          if (b.clientPhone.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.phone_outlined, size: 12, color: AppTheme.textMuted),
                 const SizedBox(width: 4),
-                Text(b.clientPhone, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                Text(b.clientPhone, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
               ],
-            ],
-          ),
-          if (staff.length > 1) ...[
+            ),
+          ],
+          if (staff.length > 1 && isViewingAll) ...[
             const SizedBox(height: 8),
+            const Divider(color: AppTheme.border, height: 1),
+            const SizedBox(height: 6),
             Row(
               children: [
                 const Icon(Icons.badge_outlined, size: 13, color: AppTheme.primary),
@@ -9233,6 +8789,568 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildBlockedSlotCard(
+    BuildContext context,
+    DateTime date,
+    String slot,
+    String? reason,
+    String? teamMemberId,
+    String? teamMemberName,
+    String detailerId,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.redAccent.withAlpha(15),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.redAccent.withAlpha(100)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.block_rounded, size: 18, color: Colors.redAccent),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  slot,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey.shade400,
+                    decoration: TextDecoration.lineThrough,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  reason != null && reason.isNotEmpty
+                      ? 'Blocked by Detailer ($reason)'
+                      : 'Blocked by Detailer',
+                  style: const TextStyle(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.w600),
+                ),
+                if (teamMemberName != null && teamMemberName.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Assigned Tech: $teamMemberName',
+                    style: const TextStyle(fontSize: 10.5, color: AppTheme.textSecondary),
+                  ),
+                ] else if (widget.repository.getStudioStaff(detailerId: detailerId).length > 1 && _selectedCalendarTeamMemberId == 'all') ...[
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Scope: Entire Studio (All Team)',
+                    style: TextStyle(fontSize: 10.5, color: AppTheme.textSecondary),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.greenAccent,
+              side: BorderSide(color: Colors.greenAccent.withAlpha(120)),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              visualDensity: VisualDensity.compact,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            ),
+            onPressed: () {
+              widget.repository.toggleBlockSlot(
+                date,
+                slot,
+                teamMemberId: teamMemberId,
+                detailerId: detailerId,
+              );
+              setState(() {});
+            },
+            child: const Text('Reopen', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvailableStatusCard(
+    BuildContext context,
+    DateTime date,
+    DayBusinessHours hours,
+    List<String> daySlots,
+    bool hasActiveBookingsOrBlocks,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.check_circle_outline_rounded, size: 20, color: Colors.greenAccent),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Available for Booking',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.greenAccent),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      hasActiveBookingsOrBlocks
+                          ? 'Remaining operating hours (${hours.openTime} - ${hours.closeTime}) open for client bookings.'
+                          : 'All slots from ${hours.openTime} to ${hours.closeTime} are open for client bookings.',
+                      style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  visualDensity: VisualDensity.compact,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                icon: const Icon(Icons.block_rounded, size: 14),
+                label: const Text('Block Slot', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                onPressed: () => _showBlock30MinSlotDialog(context, date),
+              ),
+            ],
+          ),
+          if (daySlots.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            const Divider(color: AppTheme.border, height: 1),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Text('Arrival Windows:', style: TextStyle(fontSize: 10.5, color: AppTheme.textMuted, fontWeight: FontWeight.bold)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: daySlots.map((s) => Container(
+                        margin: const EdgeInsets.only(right: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceLight.withAlpha(60),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: AppTheme.border),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(s, style: const TextStyle(fontSize: 10, color: Colors.white)),
+                            const SizedBox(width: 2),
+                            InkWell(
+                              onTap: () => _confirmDeleteTimeSlot(context, date, s),
+                              child: const Icon(Icons.delete_outline_rounded, size: 12, color: Colors.redAccent),
+                            ),
+                          ],
+                        ),
+                      )).toList(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+
+
+  Widget _buildNoSlotsCard(BuildContext context, DateTime date, DayBusinessHours hours, String detailerId) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Center(
+        child: Column(
+          children: [
+            const Icon(Icons.calendar_today_rounded, size: 28, color: AppTheme.textMuted),
+            const SizedBox(height: 8),
+            const Text('No slots defined for this day.', style: TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.black,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: const Icon(Icons.add_rounded, size: 14),
+                  label: const Text('Add Time Slot'),
+                  onPressed: () => _showAddSlotDialog(context, date),
+                ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.textSecondary,
+                    side: const BorderSide(color: AppTheme.border),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: const Icon(Icons.auto_awesome_rounded, size: 13),
+                  label: const Text('Auto-Gen Slots'),
+                  onPressed: () => _showAutoGenerateSlotsDialog(context, date, hours),
+                ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.primary,
+                    side: BorderSide(color: AppTheme.primary.withAlpha(120)),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: const Icon(Icons.refresh_rounded, size: 13),
+                  label: const Text('Reset to Schedule Defaults'),
+                  onPressed: () {
+                    widget.repository.resetTimeSlotsForDateToDefaults(date, detailerId: detailerId);
+                    setState(() {});
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Reset ${DateFormat('MMM d').format(date)} to operating hours slots'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBlock30MinSlotDialog(BuildContext context, DateTime date) {
+    final user = widget.repository.currentUser;
+    final staff = widget.repository.getStudioStaff(detailerId: user.id);
+    final hours = widget.repository.getHoursForDate(date, detailerId: user.id);
+
+    final int openMin = hours.isOpen ? JobRepository.timeStringToMinutes(hours.openTime) : 0;
+    int closeMin = hours.isOpen ? JobRepository.closeTimeToMinutes(hours.closeTime) : 1440;
+    if (closeMin <= openMin) closeMin = openMin + 600;
+
+    // Generate 30-minute intervals within operating hours
+    final Map<int, String> timeMap = {};
+    for (int m = openMin; m <= closeMin; m += 30) {
+      timeMap[m] = JobRepository.formatMinutesToTime(m);
+    }
+    timeMap[openMin] = JobRepository.formatMinutesToTime(openMin);
+    timeMap[closeMin] = JobRepository.formatMinutesToTime(closeMin);
+    final sortedMins = timeMap.keys.toList()..sort();
+
+    // Start time must have at least one valid end time after it
+    final startMins = sortedMins.where((m) => m < closeMin).toList();
+    if (startMins.isEmpty) {
+      startMins.add(openMin);
+    }
+    final startTimeOptions = startMins.map((m) => timeMap[m]!).toList();
+
+    int selectedStartMin = startMins.first;
+    String startTime = timeMap[selectedStartMin]!;
+
+    int selectedDuration = 30; // 30 mins default
+    int selectedEndMin = (selectedStartMin + selectedDuration).clamp(selectedStartMin + 30, closeMin);
+    if (!sortedMins.contains(selectedEndMin)) {
+      selectedEndMin = sortedMins.firstWhere((m) => m >= selectedEndMin, orElse: () => sortedMins.last);
+    }
+    String endTime = timeMap[selectedEndMin] ?? JobRepository.formatMinutesToTime(selectedEndMin);
+
+    final reasonController = TextEditingController();
+    String targetMemberId = _selectedCalendarTeamMemberId == 'all' ? 'all' : _selectedCalendarTeamMemberId;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            final currentStartMin = timeMap.entries.firstWhere((e) => e.value == startTime, orElse: () => MapEntry(openMin, startTime)).key;
+            final validEndMins = sortedMins.where((m) => m > currentStartMin).toList();
+            if (validEndMins.isEmpty) {
+              validEndMins.add(closeMin);
+            }
+            final endTimeOptions = validEndMins.map((m) => timeMap[m]!).toList();
+
+            return AlertDialog(
+              backgroundColor: AppTheme.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: AppTheme.border),
+              ),
+              title: const Row(
+                children: [
+                  Icon(Icons.block_rounded, color: Colors.redAccent, size: 20),
+                  SizedBox(width: 8),
+                  Text('Block Time Window', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                ],
+              ),
+              content: SizedBox(
+                width: 440,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Block a specific 30-minute interval or duration to prevent client bookings.',
+                        style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Time range selectors
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Start Time', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.surfaceLight,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: AppTheme.border),
+                                  ),
+                                  child: DropdownButtonHideUnderline(
+                                    child: DropdownButton<String>(
+                                      value: startTimeOptions.contains(startTime) ? startTime : startTimeOptions.first,
+                                      isExpanded: true,
+                                      dropdownColor: AppTheme.surface,
+                                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                                      items: startTimeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                                      onChanged: (val) {
+                                        if (val != null) {
+                                          setDialogState(() {
+                                            startTime = val;
+                                            final newStartMin = timeMap.entries.firstWhere((e) => e.value == val, orElse: () => MapEntry(openMin, val)).key;
+                                            final possibleEndMins = sortedMins.where((m) => m > newStartMin).toList();
+                                            int targetEnd = (newStartMin + selectedDuration).clamp(newStartMin + 30, closeMin);
+                                            final matchedEndMin = possibleEndMins.firstWhere(
+                                              (m) => m >= targetEnd,
+                                              orElse: () => possibleEndMins.last,
+                                            );
+                                            endTime = timeMap[matchedEndMin]!;
+                                          });
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+                            child: Text('to', style: TextStyle(color: AppTheme.textMuted)),
+                          ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('End Time', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.surfaceLight,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: AppTheme.border),
+                                  ),
+                                  child: DropdownButtonHideUnderline(
+                                    child: DropdownButton<String>(
+                                      value: endTimeOptions.contains(endTime) ? endTime : endTimeOptions.first,
+                                      isExpanded: true,
+                                      dropdownColor: AppTheme.surface,
+                                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                                      items: endTimeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                                      onChanged: (val) {
+                                        if (val != null) {
+                                          setDialogState(() {
+                                            endTime = val;
+                                            final eMin = timeMap.entries.firstWhere((e) => e.value == val, orElse: () => MapEntry(closeMin, val)).key;
+                                            final sMin = timeMap.entries.firstWhere((e) => e.value == startTime, orElse: () => MapEntry(openMin, startTime)).key;
+                                            if (eMin > sMin) {
+                                              selectedDuration = eMin - sMin;
+                                            }
+                                          });
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Quick duration chips: 30 mins, 1 hour, 2 hours, 3 hours
+                      const Text('Quick Duration', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          (label: '30 mins', mins: 30),
+                          (label: '1 hour', mins: 60),
+                          (label: '2 hours', mins: 120),
+                          (label: '3 hours', mins: 180),
+                        ].map((d) {
+                          final isSel = selectedDuration == d.mins;
+                          return ChoiceChip(
+                            label: Text(d.label),
+                            selected: isSel,
+                            selectedColor: AppTheme.primary,
+                            backgroundColor: AppTheme.surfaceLight,
+                            labelStyle: TextStyle(
+                              color: isSel ? Colors.black : Colors.white,
+                              fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
+                              fontSize: 11,
+                            ),
+                            onSelected: (val) {
+                              if (val) {
+                                setDialogState(() {
+                                  selectedDuration = d.mins;
+                                  final sMin = timeMap.entries.firstWhere((e) => e.value == startTime, orElse: () => MapEntry(openMin, startTime)).key;
+                                  final possibleEndMins = sortedMins.where((m) => m > sMin).toList();
+                                  if (possibleEndMins.isNotEmpty) {
+                                    int targetEnd = (sMin + d.mins).clamp(sMin + 30, closeMin);
+                                    final matchedEndMin = possibleEndMins.firstWhere(
+                                      (m) => m >= targetEnd,
+                                      orElse: () => possibleEndMins.last,
+                                    );
+                                    endTime = timeMap[matchedEndMin]!;
+                                    selectedDuration = matchedEndMin - sMin;
+                                  }
+                                });
+                              }
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Optional reason text field
+                      const Text('Reason (Optional)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: reasonController,
+                        style: const TextStyle(fontSize: 12.5, color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'e.g. Lunch, Personal break, Maintenance',
+                          hintStyle: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                          filled: true,
+                          fillColor: AppTheme.surfaceLight,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.border)),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.border)),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.primary)),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Multi-staff selector
+                      if (staff.length > 1) ...[
+                        const Text('Block Scope / Technician', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceLight,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppTheme.border),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: targetMemberId,
+                              isExpanded: true,
+                              dropdownColor: AppTheme.surface,
+                              style: const TextStyle(color: Colors.white, fontSize: 13),
+                              items: [
+                                const DropdownMenuItem(value: 'all', child: Text('Entire Studio (All Team)')),
+                                ...staff.map((m) => DropdownMenuItem(value: m.id, child: Text(m.name))),
+                              ],
+                              onChanged: (val) {
+                                if (val != null) {
+                                  setDialogState(() => targetMemberId = val);
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () {
+                    final sMin = timeMap.entries.firstWhere((e) => e.value == startTime, orElse: () => MapEntry(openMin, startTime)).key;
+                    final eMin = timeMap.entries.firstWhere((e) => e.value == endTime, orElse: () => MapEntry(closeMin, endTime)).key;
+                    if (eMin <= sMin) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('End time must be after start time.'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                      return;
+                    }
+                    final slotStr = '$startTime - $endTime';
+                    final reason = reasonController.text.trim().isEmpty ? null : reasonController.text.trim();
+                    final memberId = targetMemberId == 'all' ? null : targetMemberId;
+                    widget.repository.toggleBlockSlot(
+                      date,
+                      slotStr,
+                      reason: reason,
+                      teamMemberId: memberId,
+                      detailerId: user.id,
+                    );
+                    Navigator.of(ctx).pop();
+                    setState(() {});
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Blocked "$slotStr"${reason != null ? " ($reason)" : ""} for ${DateFormat("MMM d").format(date)}'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                  child: const Text('Block Slot', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -9405,171 +9523,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     );
   }
 
-  void _showEditSlotDialog(BuildContext context, DateTime date, String currentSlot) {
-    String startTime = '08:00 AM';
-    String endTime = '11:00 AM';
-    if (currentSlot.contains('-')) {
-      final parts = currentSlot.split('-');
-      startTime = parts.first.trim();
-      endTime = parts.last.trim();
-    }
-    final sMin = JobRepository.timeStringToMinutes(startTime);
-    final eMin = JobRepository.timeStringToMinutes(endTime);
-    startTime = JobRepository.formatMinutesToTime(sMin);
-    endTime = JobRepository.formatMinutesToTime(eMin);
-    bool applyAllDays = true;
 
-    final timeOptions = [
-      for (int m = 300; m <= 1380; m += 30) JobRepository.formatMinutesToTime(m)
-    ];
-
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (dialogCtx, setDialogState) {
-            return AlertDialog(
-              backgroundColor: AppTheme.surface,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: const BorderSide(color: AppTheme.border),
-              ),
-              title: const Row(
-                children: [
-                  Icon(Icons.edit_calendar_rounded, color: AppTheme.primary, size: 20),
-                  SizedBox(width: 8),
-                  Text('Edit Booking Slot', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Editing slot: $currentSlot', style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Start Time', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                            const SizedBox(height: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                              decoration: BoxDecoration(
-                                color: AppTheme.surfaceLight,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: AppTheme.border),
-                              ),
-                              child: DropdownButtonHideUnderline(
-                                child: DropdownButton<String>(
-                                  value: timeOptions.contains(startTime) ? startTime : timeOptions.first,
-                                  isExpanded: true,
-                                  dropdownColor: AppTheme.surface,
-                                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                                  items: timeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-                                  onChanged: (val) {
-                                    if (val != null) setDialogState(() => startTime = val);
-                                  },
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 14),
-                        child: Text('to', style: TextStyle(color: AppTheme.textMuted)),
-                      ),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('End Time', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-                            const SizedBox(height: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                              decoration: BoxDecoration(
-                                color: AppTheme.surfaceLight,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: AppTheme.border),
-                              ),
-                              child: DropdownButtonHideUnderline(
-                                child: DropdownButton<String>(
-                                  value: timeOptions.contains(endTime) ? endTime : timeOptions.last,
-                                  isExpanded: true,
-                                  dropdownColor: AppTheme.surface,
-                                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                                  items: timeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-                                  onChanged: (val) {
-                                    if (val != null) setDialogState(() => endTime = val);
-                                  },
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppTheme.surfaceLight.withAlpha(40),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppTheme.border),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Apply to all operating days', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
-                            Text('Update this slot across schedule', style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
-                          ],
-                        ),
-                        Switch(
-                          value: applyAllDays,
-                          activeThumbColor: AppTheme.primary,
-                          onChanged: (val) => setDialogState(() => applyAllDays = val),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    foregroundColor: Colors.black,
-                  ),
-                  onPressed: () {
-                    final newSlotStr = '$startTime - $endTime';
-                    widget.repository.updateCustomTimeSlot(
-                      currentSlot,
-                      newSlotStr,
-                      specificDate: applyAllDays ? null : date,
-                    );
-                    Navigator.of(ctx).pop();
-                    setState(() {});
-                  },
-                  child: const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
 
   void _showAutoGenerateSlotsDialog(BuildContext context, DateTime date, DayBusinessHours hours) {
     final prefs = widget.repository.getCalendarPreferences(detailerId: widget.repository.currentUser.id);

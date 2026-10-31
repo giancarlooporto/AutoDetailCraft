@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:detail_craft/core/theme/app_theme.dart';
 import 'package:detail_craft/models/booking_models.dart';
 import 'package:detail_craft/models/calendar_availability_block.dart';
+import 'package:detail_craft/models/team_member.dart';
 import 'package:detail_craft/models/user_profile.dart';
 import 'package:detail_craft/models/user_vehicle.dart';
 import 'package:detail_craft/screens/booking_flow_screen.dart';
@@ -1712,6 +1713,730 @@ void main() {
 
       // Verify new custom slot is saved in repository preferences
       expect(repo.calendarPreferences.customTimeSlots, contains('8:30 AM - 10:30 AM'));
+    });
+
+    testWidgets('UI 12: DetailerWorkbenchView Pane 3 Day Inspector renders exact booked appointment details and no fake overlap cards', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      setupMockImageHttpClient();
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      try {
+        final repo = JobRepository();
+        await repo.init();
+        if (repo.currentUser.role != UserRole.detailer) {
+          repo.toggleHostMode();
+        }
+        final openSchedule = repo.calendarPreferences.weeklySchedule.map((d) => d.copyWith(isOpen: true, openTime: '08:00 AM', closeTime: '06:00 PM')).toList();
+        repo.updateCalendarPreferences(repo.calendarPreferences.copyWith(weeklySchedule: openSchedule));
+
+        final testDate = DateTime(2026, 11, 2);
+        final booking = BookingAppointment(
+          id: 'bk_ui_exact_01',
+          detailerId: repo.currentUser.id,
+          detailerName: repo.currentUser.displayName,
+          detailerBusinessName: repo.currentUser.businessName,
+          detailerAvatar: '',
+          clientName: 'Sarah Jenkins',
+          clientPhone: '555-0199',
+          clientEmail: 'sarah@example.com',
+          vehicleYearMakeModel: '2024 BMW M4',
+          vehicleSize: VehicleSize.coupeSedan,
+          package: const ServicePackage(
+            id: 'pkg_paint_corr',
+            title: 'Full Paint Correction & Ceramic',
+            description: 'Paint correction',
+            basePrice: 850,
+            estimatedDuration: '2 hours',
+            durationValue: 2,
+            durationUnit: 'hours',
+            includes: ['Wash', 'Correction', 'Ceramic'],
+          ),
+          locationType: ServiceLocationType.shop,
+          clientAddress: '123 Main St',
+          scheduledDate: testDate,
+          scheduledTimeSlot: '8:00 AM - 10:00 AM',
+          startTime: '8:00 AM',
+          endTime: '10:00 AM',
+          durationMinutes: 120,
+          totalPrice: 850,
+          depositAmount: 170,
+        );
+        repo.addBooking(booking);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: Scaffold(
+              body: DetailerWorkbenchView(
+                repository: repo,
+                initialCalendarDate: testDate,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Navigate to Calendar
+        await tester.tap(find.text('Calendar'));
+        await tester.pumpAndSettle();
+
+        // Verify exact booking details are rendered in Pane 3
+        expect(find.text('8:00 AM - 10:00 AM'), findsWidgets);
+        expect(find.text('Booked by Sarah Jenkins'), findsOneWidget);
+        expect(find.textContaining('2024 BMW M4 • Full Paint Correction & Ceramic • \$850'), findsOneWidget);
+        expect(find.widgetWithText(OutlinedButton, 'Cancel Booking'), findsOneWidget);
+
+        // Verify absence of obsolete 3-hour template grid overlap warnings
+        expect(find.textContaining('Overlaps with'), findsNothing);
+        expect(find.textContaining('Reserved •'), findsNothing);
+
+        // Verify Available for Booking card is also visible
+        expect(find.text('Available for Booking'), findsWidgets);
+      } finally {
+        tearDownMockImageHttpClient();
+      }
+    });
+
+    testWidgets('UI 13: Cancelling an appointment from Workbench releases slot immediately in calendar and repository', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      setupMockImageHttpClient();
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      try {
+        final repo = JobRepository();
+        await repo.init();
+        if (repo.currentUser.role != UserRole.detailer) {
+          repo.toggleHostMode();
+        }
+        final openSchedule = repo.calendarPreferences.weeklySchedule.map((d) => d.copyWith(isOpen: true, openTime: '08:00 AM', closeTime: '06:00 PM')).toList();
+        repo.updateCalendarPreferences(repo.calendarPreferences.copyWith(weeklySchedule: openSchedule));
+
+        final testDate = DateTime(2026, 11, 2);
+        final booking = BookingAppointment(
+          id: 'bk_ui_cancel_01',
+          detailerId: repo.currentUser.id,
+          detailerName: repo.currentUser.displayName,
+          detailerBusinessName: repo.currentUser.businessName,
+          detailerAvatar: '',
+          clientName: 'Sarah Jenkins',
+          clientPhone: '555-0199',
+          clientEmail: 'sarah@example.com',
+          vehicleYearMakeModel: '2024 BMW M4',
+          vehicleSize: VehicleSize.coupeSedan,
+          package: const ServicePackage(
+            id: 'pkg_paint_corr',
+            title: 'Full Paint Correction & Ceramic',
+            description: 'Paint correction',
+            basePrice: 850,
+            estimatedDuration: '2 hours',
+            durationValue: 2,
+            durationUnit: 'hours',
+            includes: ['Wash', 'Correction', 'Ceramic'],
+          ),
+          locationType: ServiceLocationType.shop,
+          clientAddress: '123 Main St',
+          scheduledDate: testDate,
+          scheduledTimeSlot: '8:00 AM - 10:00 AM',
+          startTime: '8:00 AM',
+          endTime: '10:00 AM',
+          durationMinutes: 120,
+          totalPrice: 850,
+          depositAmount: 170,
+        );
+        repo.addBooking(booking);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: Scaffold(
+              body: DetailerWorkbenchView(
+                repository: repo,
+                initialCalendarDate: testDate,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Calendar'));
+        await tester.pumpAndSettle();
+
+        // Ensure booking is initially visible
+        expect(find.text('Booked by Sarah Jenkins'), findsOneWidget);
+        expect(repo.isBookingConflictingWithSlot(booking, testDate, '8:00 AM - 10:00 AM'), isTrue);
+
+        // Tap Cancel Booking button
+        final cancelBtn = find.widgetWithText(OutlinedButton, 'Cancel Booking');
+        expect(cancelBtn, findsOneWidget);
+        await tester.tap(cancelBtn);
+        await tester.pumpAndSettle();
+
+        // Confirmation dialog appears
+        expect(find.text('Cancel Booking?'), findsOneWidget);
+        final confirmBtn = find.widgetWithText(ElevatedButton, 'Confirm Cancellation');
+        expect(confirmBtn, findsOneWidget);
+        await tester.tap(confirmBtn);
+        await tester.pumpAndSettle();
+
+        // Booking is removed from Calendar Inspector
+        expect(find.text('Booked by Sarah Jenkins'), findsNothing);
+
+        // Slot is immediately released in repository
+        final updatedBooking = repo.bookings.firstWhere((b) => b.id == 'bk_ui_cancel_01');
+        expect(updatedBooking.status, BookingStatus.cancelled);
+        expect(repo.isBookingConflictingWithSlot(updatedBooking, testDate, '8:00 AM - 10:00 AM'), isFalse);
+        expect(repo.getBookingsForDate(testDate).where((b) => b.id == 'bk_ui_cancel_01'), isEmpty);
+
+        // Available status card remains available for new bookings
+        expect(find.text('Available for Booking'), findsWidgets);
+      } finally {
+        tearDownMockImageHttpClient();
+      }
+    });
+
+    testWidgets('UI 14: DetailerWorkbenchView blocks 30-minute interval with custom reason and reopens slot', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      setupMockImageHttpClient();
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      try {
+        final repo = JobRepository();
+        await repo.init();
+        if (repo.currentUser.role != UserRole.detailer) {
+          repo.toggleHostMode();
+        }
+        final openSchedule = repo.calendarPreferences.weeklySchedule.map((d) => d.copyWith(isOpen: true, openTime: '08:00 AM', closeTime: '06:00 PM')).toList();
+        repo.updateCalendarPreferences(repo.calendarPreferences.copyWith(weeklySchedule: openSchedule));
+
+        final testDate = DateTime(2026, 11, 3);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: Scaffold(
+              body: DetailerWorkbenchView(
+                repository: repo,
+                initialCalendarDate: testDate,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Calendar'));
+        await tester.pumpAndSettle();
+
+        // Tap Block Slot button
+        final blockSlotBtn = find.widgetWithText(ElevatedButton, 'Block Slot').first;
+        expect(blockSlotBtn, findsOneWidget);
+        await tester.tap(blockSlotBtn);
+        await tester.pumpAndSettle();
+
+        // Block Time Window dialog opens
+        expect(find.text('Block Time Window'), findsOneWidget);
+        expect(find.text('30 mins'), findsWidgets);
+
+        // Enter custom reason
+        final reasonField = find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(TextField),
+        );
+        expect(reasonField, findsOneWidget);
+        await tester.enterText(reasonField, 'Equipment maintenance');
+        await tester.pumpAndSettle();
+
+        // Tap Block Slot in dialog
+        final confirmBlockBtn = find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.widgetWithText(ElevatedButton, 'Block Slot'),
+        );
+        await tester.tap(confirmBlockBtn);
+        await tester.pumpAndSettle();
+
+        // Blocked slot card is displayed in Pane 3
+        expect(find.text('Blocked by Detailer (Equipment maintenance)'), findsOneWidget);
+        expect(find.text('8:00 AM - 8:30 AM'), findsWidgets);
+        final reopenBtn = find.widgetWithText(OutlinedButton, 'Reopen');
+        expect(reopenBtn, findsOneWidget);
+
+        // Verify slot is blocked in repository
+        expect(repo.isSlotBlocked(repo.currentUser.id, testDate, '8:00 AM - 8:30 AM'), isTrue);
+
+        // Tap Reopen to unblock
+        await tester.tap(reopenBtn);
+        await tester.pumpAndSettle();
+
+        // Blocked card is removed and slot is reopened
+        expect(find.text('Blocked by Detailer (Equipment maintenance)'), findsNothing);
+        expect(repo.isSlotBlocked(repo.currentUser.id, testDate, '8:00 AM - 8:30 AM'), isFalse);
+        expect(find.text('Available for Booking'), findsWidgets);
+      } finally {
+        tearDownMockImageHttpClient();
+      }
+    });
+
+    testWidgets('UI 15: DetailerWorkbenchView team member filtering isolates tech schedule while studio owner sees all', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      setupMockImageHttpClient();
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      try {
+        final repo = JobRepository();
+        await repo.init();
+        if (repo.currentUser.role != UserRole.detailer) {
+          repo.toggleHostMode();
+        }
+        final openSchedule = repo.calendarPreferences.weeklySchedule.map((d) => d.copyWith(isOpen: true, openTime: '08:00 AM', closeTime: '06:00 PM')).toList();
+        repo.updateCalendarPreferences(repo.calendarPreferences.copyWith(weeklySchedule: openSchedule));
+
+        const tech1 = TeamMember(
+          id: 'tech_dave',
+          name: 'Dave Miller',
+          roleTitle: 'PPF Specialist',
+          avatarUrl: '',
+        );
+        const tech2 = TeamMember(
+          id: 'tech_elena',
+          name: 'Elena Rostova',
+          roleTitle: 'Ceramic Specialist',
+          avatarUrl: '',
+        );
+        repo.addTeamMember(tech1);
+        repo.addTeamMember(tech2);
+
+        final testDate = DateTime(2026, 11, 4);
+
+        // Dave's booking: 8:00 AM - 10:00 AM
+        final daveBooking = BookingAppointment(
+          id: 'bk_dave_01',
+          detailerId: repo.currentUser.id,
+          detailerName: repo.currentUser.displayName,
+          detailerBusinessName: repo.currentUser.businessName,
+          detailerAvatar: '',
+          clientName: 'Dave Client',
+          clientPhone: '555-1111',
+          clientEmail: 'daveclient@test.com',
+          vehicleYearMakeModel: '2023 Tesla Model S',
+          vehicleSize: VehicleSize.coupeSedan,
+          package: const ServicePackage(
+            id: 'pkg_ppf',
+            title: 'Full Front PPF',
+            description: 'PPF',
+            basePrice: 600,
+            estimatedDuration: '2 hours',
+            durationValue: 2,
+            durationUnit: 'hours',
+            includes: [],
+          ),
+          locationType: ServiceLocationType.shop,
+          clientAddress: 'Studio',
+          scheduledDate: testDate,
+          scheduledTimeSlot: '8:00 AM - 10:00 AM',
+          startTime: '8:00 AM',
+          endTime: '10:00 AM',
+          durationMinutes: 120,
+          totalPrice: 600,
+          depositAmount: 120,
+          assignedTeamMemberId: tech1.id,
+          assignedTeamMemberName: tech1.name,
+        );
+        repo.addBooking(daveBooking);
+
+        // Elena's booking: 11:00 AM - 1:00 PM
+        final elenaBooking = BookingAppointment(
+          id: 'bk_elena_01',
+          detailerId: repo.currentUser.id,
+          detailerName: repo.currentUser.displayName,
+          detailerBusinessName: repo.currentUser.businessName,
+          detailerAvatar: '',
+          clientName: 'Elena Client',
+          clientPhone: '555-2222',
+          clientEmail: 'elenaclient@test.com',
+          vehicleYearMakeModel: '2024 Porsche 911',
+          vehicleSize: VehicleSize.coupeSedan,
+          package: const ServicePackage(
+            id: 'pkg_cer',
+            title: 'Ceramic Pro',
+            description: 'Ceramic',
+            basePrice: 900,
+            estimatedDuration: '2 hours',
+            durationValue: 2,
+            durationUnit: 'hours',
+            includes: [],
+          ),
+          locationType: ServiceLocationType.shop,
+          clientAddress: 'Studio',
+          scheduledDate: testDate,
+          scheduledTimeSlot: '11:00 AM - 1:00 PM',
+          startTime: '11:00 AM',
+          endTime: '1:00 PM',
+          durationMinutes: 120,
+          totalPrice: 900,
+          depositAmount: 180,
+          assignedTeamMemberId: tech2.id,
+          assignedTeamMemberName: tech2.name,
+        );
+        repo.addBooking(elenaBooking);
+
+        // Elena's blocked window: 2:00 PM - 3:00 PM
+        repo.toggleBlockSlot(
+          testDate,
+          '2:00 PM - 3:00 PM',
+          reason: 'Elena Training',
+          teamMemberId: tech2.id,
+          detailerId: repo.currentUser.id,
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: Scaffold(
+              body: DetailerWorkbenchView(
+                repository: repo,
+                initialCalendarDate: testDate,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Calendar'));
+        await tester.pumpAndSettle();
+
+        // 1. Studio Owner Master View ('all'):
+        // Shows general title
+        expect(find.text('HOURLY SLOT AVAILABILITY'), findsOneWidget);
+
+        // Sees both Dave's and Elena's appointments with assigned tech badges
+        expect(find.text('Booked by Dave Client'), findsOneWidget);
+        expect(find.text('Assigned: Dave Miller'), findsOneWidget);
+        expect(find.text('Booked by Elena Client'), findsOneWidget);
+        expect(find.text('Assigned: Elena Rostova'), findsOneWidget);
+
+        // Sees Elena's blocked slot with tech badge
+        expect(find.text('Blocked by Detailer (Elena Training)'), findsOneWidget);
+        expect(find.text('Assigned Tech: Elena Rostova'), findsOneWidget);
+
+        // 2. Switch calendar filter to Elena Rostova
+        final dropdownFinder = find.byKey(const Key('calendar_team_dropdown_pane3'));
+        expect(dropdownFinder, findsOneWidget);
+        await tester.tap(dropdownFinder);
+        await tester.pumpAndSettle();
+
+        // Select Elena from dropdown items
+        final elenaOption = find.descendant(of: find.byType(DropdownMenuItem<String>), matching: find.text('Elena Rostova')).first;
+        await tester.tap(elenaOption);
+        await tester.pumpAndSettle();
+
+        // Section 1 title now isolates Elena's availability
+        expect(find.text("ELENA ROSTOVA'S AVAILABILITY"), findsOneWidget);
+
+        // Only Elena's schedule is shown; Dave's booking is filtered out
+        expect(find.text('Booked by Elena Client'), findsOneWidget);
+        expect(find.text('Booked by Dave Client'), findsNothing);
+        expect(find.text('Blocked by Detailer (Elena Training)'), findsOneWidget);
+
+        // Personal Schedule banner is present with Back to All Team button
+        expect(find.text('Back to All Team'), findsOneWidget);
+
+        // Tap 'Back to All Team' to return to Owner Master View
+        await tester.tap(find.text('Back to All Team'));
+        await tester.pumpAndSettle();
+
+        // Master studio view restored
+        expect(find.text('HOURLY SLOT AVAILABILITY'), findsOneWidget);
+        expect(find.text('Booked by Dave Client'), findsOneWidget);
+        expect(find.text('Booked by Elena Client'), findsOneWidget);
+      } finally {
+        tearDownMockImageHttpClient();
+      }
+    });
+
+    testWidgets('UI 16: DetailerWorkbenchView displays smart bookings and blocked windows even when daySlots is empty', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      setupMockImageHttpClient();
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      try {
+        final repo = JobRepository();
+        await repo.init();
+        if (repo.currentUser.role != UserRole.detailer) {
+          repo.toggleHostMode();
+        }
+        final openSchedule = repo.calendarPreferences.weeklySchedule.map((d) => d.copyWith(isOpen: true, openTime: '08:00 AM', closeTime: '06:00 PM')).toList();
+        repo.updateCalendarPreferences(repo.calendarPreferences.copyWith(weeklySchedule: openSchedule));
+
+        final testDate = DateTime(2026, 11, 5);
+
+        // Add a smart booking
+        final booking = BookingAppointment(
+          id: 'bk_smart_01',
+          detailerId: repo.currentUser.id,
+          detailerName: repo.currentUser.displayName,
+          detailerBusinessName: repo.currentUser.businessName,
+          detailerAvatar: '',
+          clientName: 'Smart Client',
+          clientPhone: '555-3333',
+          clientEmail: 'smart@test.com',
+          vehicleYearMakeModel: '2024 BMW M3',
+          vehicleSize: VehicleSize.coupeSedan,
+          package: const ServicePackage(
+            id: 'pkg_smart',
+            title: 'Express Detail',
+            description: 'Express',
+            basePrice: 150,
+            estimatedDuration: '2 hours',
+            durationValue: 2,
+            durationUnit: 'hours',
+            includes: [],
+          ),
+          locationType: ServiceLocationType.shop,
+          clientAddress: 'Studio',
+          scheduledDate: testDate,
+          scheduledTimeSlot: '8:00 AM - 10:00 AM',
+          startTime: '8:00 AM',
+          endTime: '10:00 AM',
+          durationMinutes: 120,
+          totalPrice: 150,
+          depositAmount: 30,
+        );
+        repo.addBooking(booking);
+
+        // Explicitly clear legacy arrival window slots for this day
+        repo.clearTimeSlotsForDate(testDate, detailerId: repo.currentUser.id);
+        expect(repo.getTimeSlotsForDate(testDate, detailerId: repo.currentUser.id).isEmpty, isTrue);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: Scaffold(
+              body: DetailerWorkbenchView(
+                repository: repo,
+                initialCalendarDate: testDate,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Calendar'));
+        await tester.pumpAndSettle();
+
+        // Booking is NOT swallowed or hidden by the empty template slots
+        expect(find.text('Booked by Smart Client'), findsOneWidget);
+        expect(find.text('8:00 AM - 10:00 AM'), findsOneWidget);
+        expect(find.text('Day Blocked by Detailer'), findsOneWidget);
+        expect(find.text('No slots defined for this day.'), findsNothing);
+      } finally {
+        tearDownMockImageHttpClient();
+      }
+    });
+
+    testWidgets('UI 17: 30-minute block dialog strictly clamps quick duration chips to closing time and restricts operating hours', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      setupMockImageHttpClient();
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      try {
+        final repo = JobRepository();
+        await repo.init();
+        if (repo.currentUser.role != UserRole.detailer) {
+          repo.toggleHostMode();
+        }
+        final openSchedule = repo.calendarPreferences.weeklySchedule.map((d) => d.copyWith(isOpen: true, openTime: '08:00 AM', closeTime: '06:00 PM')).toList();
+        repo.updateCalendarPreferences(repo.calendarPreferences.copyWith(weeklySchedule: openSchedule));
+
+        final testDate = DateTime(2026, 11, 6);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: Scaffold(
+              body: DetailerWorkbenchView(
+                repository: repo,
+                initialCalendarDate: testDate,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Calendar'));
+        await tester.pumpAndSettle();
+
+        // Tap Block Slot
+        final blockSlotBtn = find.widgetWithText(ElevatedButton, 'Block Slot').first;
+        await tester.tap(blockSlotBtn);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Block Time Window'), findsOneWidget);
+
+        // Select Start Time dropdown
+        final startTimeDropdown = find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(DropdownButton<String>),
+        ).first;
+        await tester.tap(startTimeDropdown);
+        await tester.pumpAndSettle();
+
+        // Select 5:00 PM as Start Time (shop closes at 6:00 PM)
+        final fivePmOption = find.descendant(of: find.byType(DropdownMenuItem<String>), matching: find.text('5:00 PM')).last;
+        await tester.tap(fivePmOption);
+        await tester.pumpAndSettle();
+
+        // Tap "2 hours" quick duration chip
+        final twoHoursChip = find.descendant(of: find.byType(AlertDialog), matching: find.text('2 hours'));
+        expect(twoHoursChip, findsOneWidget);
+        await tester.tap(twoHoursChip);
+        await tester.pumpAndSettle();
+
+        // Verify End Time dropdown clamped strictly to shop closing time (6:00 PM)
+        expect(find.descendant(of: find.byType(AlertDialog), matching: find.text('6:00 PM')), findsWidgets);
+
+        // Confirm Block Slot
+        final confirmBtn = find.descendant(of: find.byType(AlertDialog), matching: find.widgetWithText(ElevatedButton, 'Block Slot'));
+        await tester.tap(confirmBtn);
+        await tester.pumpAndSettle();
+
+        // Blocked slot rendered as 5:00 PM - 6:00 PM
+        expect(find.text('5:00 PM - 6:00 PM'), findsOneWidget);
+        expect(find.text('Blocked by Detailer'), findsOneWidget);
+        expect(repo.isSlotBlocked(repo.currentUser.id, testDate, '5:00 PM - 6:00 PM'), isTrue);
+
+        // Reopen slot
+        final reopenBtn = find.widgetWithText(OutlinedButton, 'Reopen');
+        await tester.tap(reopenBtn);
+        await tester.pumpAndSettle();
+        expect(find.text('5:00 PM - 6:00 PM'), findsNothing);
+      } finally {
+        tearDownMockImageHttpClient();
+      }
+    });
+
+    testWidgets('UI 18: Confirmed bookings remain visible and actionable on full-day blocked dates', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      setupMockImageHttpClient();
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      try {
+        final repo = JobRepository();
+        await repo.init();
+        if (repo.currentUser.role != UserRole.detailer) {
+          repo.toggleHostMode();
+        }
+        final openSchedule = repo.calendarPreferences.weeklySchedule.map((d) => d.copyWith(isOpen: true, openTime: '08:00 AM', closeTime: '06:00 PM')).toList();
+        repo.updateCalendarPreferences(repo.calendarPreferences.copyWith(weeklySchedule: openSchedule));
+
+        final testDate = DateTime(2026, 11, 7);
+
+        // Add confirmed booking: 1:00 PM - 3:00 PM
+        final booking = BookingAppointment(
+          id: 'bk_conflict_01',
+          detailerId: repo.currentUser.id,
+          detailerName: repo.currentUser.displayName,
+          detailerBusinessName: repo.currentUser.businessName,
+          detailerAvatar: '',
+          clientName: 'Reserved Client',
+          clientPhone: '555-4444',
+          clientEmail: 'reserved@test.com',
+          vehicleYearMakeModel: '2022 Audi RS6',
+          vehicleSize: VehicleSize.coupeSedan,
+          package: const ServicePackage(
+            id: 'pkg_res',
+            title: 'Maintenance Wash',
+            description: 'Wash',
+            basePrice: 120,
+            estimatedDuration: '2 hours',
+            durationValue: 2,
+            durationUnit: 'hours',
+            includes: [],
+          ),
+          locationType: ServiceLocationType.shop,
+          clientAddress: 'Studio',
+          scheduledDate: testDate,
+          scheduledTimeSlot: '1:00 PM - 3:00 PM',
+          startTime: '1:00 PM',
+          endTime: '3:00 PM',
+          durationMinutes: 120,
+          totalPrice: 120,
+          depositAmount: 24,
+        );
+        repo.addBooking(booking);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: Scaffold(
+              body: DetailerWorkbenchView(
+                repository: repo,
+                initialCalendarDate: testDate,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Calendar'));
+        await tester.pumpAndSettle();
+
+        // Tap Block Full Day
+        final blockFullDayBtn = find.text('Block Full Day');
+        expect(blockFullDayBtn, findsOneWidget);
+        await tester.tap(blockFullDayBtn);
+        await tester.pumpAndSettle();
+
+        // Both the Day Blocked banner AND the confirmed booking are visible!
+        expect(find.text('DAY BLOCKED'), findsOneWidget);
+        expect(find.text('Day Blocked by Detailer'), findsOneWidget);
+        expect(find.text('Booked by Reserved Client'), findsOneWidget);
+        expect(find.text('1:00 PM - 3:00 PM'), findsOneWidget);
+
+        // Cancel the booking directly from the blocked day view
+        final cancelBtn = find.widgetWithText(OutlinedButton, 'Cancel Booking');
+        expect(cancelBtn, findsOneWidget);
+        await tester.tap(cancelBtn);
+        await tester.pumpAndSettle();
+
+        // Confirm cancellation in dialog
+        final confirmCancelBtn = find.text('Confirm Cancellation');
+        expect(confirmCancelBtn, findsOneWidget);
+        await tester.tap(confirmCancelBtn);
+        await tester.pumpAndSettle();
+
+        // Booking is removed from schedule immediately
+        expect(find.text('Booked by Reserved Client'), findsNothing);
+        expect(repo.bookings.firstWhere((b) => b.id == 'bk_conflict_01').status, BookingStatus.cancelled);
+      } finally {
+        tearDownMockImageHttpClient();
+      }
     });
   });
 }

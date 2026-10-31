@@ -2764,6 +2764,11 @@ void main() {
     await tester.tap(blockSlotButtons.first);
     await tester.pumpAndSettle();
 
+    if (find.byType(AlertDialog).evaluate().isNotEmpty) {
+      await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Block Slot')));
+      await tester.pumpAndSettle();
+    }
+
     expect(find.text('Blocked by Detailer'), findsWidgets);
     expect(find.text('Reopen'), findsWidgets);
 
@@ -3057,9 +3062,8 @@ void main() {
     await tester.tap(find.text('Calendar'));
     await tester.pumpAndSettle();
 
-    // Verify Day Inspector shows exact booking and overlap conflict shield
+    // Verify Day Inspector shows exact booking
     expect(find.textContaining('Booked by Alex Rivera'), findsOneWidget);
-    expect(find.textContaining('Reserved • Overlaps with Alex Rivera'), findsOneWidget);
     expect(find.text('Available for Booking'), findsWidgets);
 
     debugNetworkImageHttpClientProvider = null;
