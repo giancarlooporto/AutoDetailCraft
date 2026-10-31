@@ -77,7 +77,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     final effectiveOpen = hours.openTime.isNotEmpty ? hours.openTime : '08:00 AM';
     final effectiveClose = hours.closeTime.isNotEmpty ? hours.closeTime : '06:00 PM';
     var openMin = JobRepository.timeStringToMinutes(effectiveOpen);
-    var closeMin = JobRepository.timeStringToMinutes(effectiveClose);
+    var closeMin = JobRepository.closeTimeToMinutes(effectiveClose);
     if (closeMin <= openMin) {
       openMin = 480;
       closeMin = 1080;
@@ -86,14 +86,6 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     final candidateStartMins = <int>{};
     for (int m = openMin; m < closeMin; m += 30) {
       candidateStartMins.add(m);
-    }
-
-    final baseSlots = widget.repository.getTimeSlotsForDate(_selectedDate, detailerId: widget.detailer.id);
-    for (final s in baseSlots) {
-      final sMin = JobRepository.parseSlotRange(s).$1;
-      if (sMin >= openMin && sMin < closeMin) {
-        candidateStartMins.add(sMin);
-      }
     }
 
     final sortedStarts = candidateStartMins.toList()..sort();
@@ -132,16 +124,16 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         detailerId: widget.detailer.id,
         earliestTime: comp.completionTime,
       );
-      final compMins = JobRepository.timeStringToMinutes(comp.completionTime);
-      final currentPickUpMins = JobRepository.timeStringToMinutes(_selectedPickUpTime);
+      final compMins = JobRepository.closeTimeToMinutes(comp.completionTime);
+      final currentPickUpMins = JobRepository.closeTimeToMinutes(_selectedPickUpTime);
       final hasSelected = pickUpTimes.any(
-        (t) => JobRepository.timeStringToMinutes(t) == currentPickUpMins,
+        (t) => JobRepository.closeTimeToMinutes(t) == currentPickUpMins,
       );
       final dateChanged = prevCompDate == null || !DateUtils.isSameDay(prevCompDate, comp.completionDate);
 
       if (pickUpTimes.isNotEmpty && (dateChanged || !hasSelected || currentPickUpMins < compMins)) {
         final matchingCompTime = pickUpTimes.firstWhere(
-          (t) => JobRepository.timeStringToMinutes(t) == compMins,
+          (t) => JobRepository.closeTimeToMinutes(t) == compMins,
           orElse: () => pickUpTimes.first,
         );
         _selectedPickUpTime = matchingCompTime;
@@ -279,7 +271,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     final startMin = JobRepository.parseSlotRange(slot).$1;
     final startStr = JobRepository.formatMinutesToTime(startMin);
     final openMin = JobRepository.timeStringToMinutes(hours.openTime);
-    final closeMin = JobRepository.timeStringToMinutes(hours.closeTime);
+    final closeMin = JobRepository.closeTimeToMinutes(hours.closeTime);
 
     if (startMin < openMin || startMin >= closeMin) {
       return 'Outside Business Operating Hours';
@@ -1612,7 +1604,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                     detailerId: widget.detailer.id,
                     earliestTime: _calculatedFinishTime,
                   ).map((pickUpTime) {
-                    final isSelected = JobRepository.timeStringToMinutes(_selectedPickUpTime) == JobRepository.timeStringToMinutes(pickUpTime);
+                    final isSelected = JobRepository.closeTimeToMinutes(_selectedPickUpTime) == JobRepository.closeTimeToMinutes(pickUpTime);
                     return FilterChip(
                       label: Text(
                         pickUpTime,

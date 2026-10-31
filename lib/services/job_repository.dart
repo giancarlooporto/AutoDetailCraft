@@ -2485,7 +2485,7 @@ class JobRepository extends ChangeNotifier {
     bool allowPartialTrailingSlot = false,
   }) {
     final openMin = timeStringToMinutes(openTime);
-    final closeMin = timeStringToMinutes(closeTime);
+    final closeMin = closeTimeToMinutes(closeTime);
     if (closeMin <= openMin) return [];
 
     final stepMin = (slotDurationHours <= 0 ? 3 : slotDurationHours) * 60;
@@ -3156,13 +3156,41 @@ class JobRepository extends ChangeNotifier {
     return hour * 60 + min;
   }
 
+  /// Parses closing time into minutes since midnight, mapping midnight / 12:00 AM / 24:00 to 1440.
+  static int closeTimeToMinutes(String closeTime) {
+    final lower = closeTime.trim().toLowerCase();
+    if (lower.isEmpty) return 0;
+    if (lower.contains('midnight') ||
+        lower == '12:00 am' ||
+        lower == '12:00am' ||
+        lower == '12 am' ||
+        lower == '12am' ||
+        lower == '24:00' ||
+        lower == '24:00:00' ||
+        lower.startsWith('12:00 am') ||
+        lower.startsWith('12:00am')) {
+      return 1440;
+    }
+    final mins = timeStringToMinutes(closeTime);
+    if (mins == 0 && (lower.contains('12') && lower.contains('am'))) {
+      return 1440;
+    }
+    return mins;
+  }
+
   /// Parses a time slot string into start and end minutes since midnight.
   static (int startMin, int endMin) parseSlotRange(String slot, {int defaultDurationHours = 3}) {
     final clean = slot.trim();
     if (clean.contains('•')) {
       final parts = clean.split('•');
       final start = timeStringToMinutes(parts[0]);
-      final end = timeStringToMinutes(parts[1]);
+      int end = closeTimeToMinutes(parts[1]);
+      if (end == 0 || parts[1].toLowerCase().contains('12:00 am') || parts[1].toLowerCase().contains('midnight')) {
+        end = 1440;
+      }
+      if (end <= start) {
+        end += 1440;
+      }
       return (start, end);
     }
     if (clean.toLowerCase().contains('drop-off')) {
@@ -3172,7 +3200,13 @@ class JobRepository extends ChangeNotifier {
     if (clean.contains('-')) {
       final parts = clean.split('-');
       final start = timeStringToMinutes(parts[0]);
-      final end = timeStringToMinutes(parts[1]);
+      int end = closeTimeToMinutes(parts[1]);
+      if (end == 0 || parts[1].toLowerCase().contains('12:00 am') || parts[1].toLowerCase().contains('midnight')) {
+        end = 1440;
+      }
+      if (end <= start) {
+        end += 1440;
+      }
       return (start, end);
     }
     final start = timeStringToMinutes(clean);
@@ -3240,7 +3274,10 @@ class JobRepository extends ChangeNotifier {
   }) {
     if (appointment.startTime != null && appointment.endTime != null) {
       final start = timeStringToMinutes(appointment.startTime!);
-      final end = timeStringToMinutes(appointment.endTime!);
+      int end = closeTimeToMinutes(appointment.endTime!);
+      if (end <= start) {
+        end += 1440;
+      }
       return (start, end + bufferMinutes);
     }
     final slotRange = parseSlotRange(appointment.scheduledTimeSlot);
@@ -3288,7 +3325,7 @@ class JobRepository extends ChangeNotifier {
 
     final startHours = getHoursForDate(curr, detailerId: targetId);
     final openMin = timeStringToMinutes(startHours.openTime);
-    final closeMin = timeStringToMinutes(startHours.closeTime);
+    final closeMin = closeTimeToMinutes(startHours.closeTime);
     final parsedStartMin = timeStringToMinutes(startTime);
     final effectiveStartMin = parsedStartMin.clamp(openMin, closeMin);
 
@@ -3338,7 +3375,7 @@ class JobRepository extends ChangeNotifier {
         final hours = getHoursForDate(curr, detailerId: targetId);
         if (!isOff && hours.isOpen) {
           final dayOpen = timeStringToMinutes(hours.openTime);
-          final dayClose = timeStringToMinutes(hours.closeTime);
+          final dayClose = closeTimeToMinutes(hours.closeTime);
           final dayCap = dayClose - dayOpen;
           if (dayCap <= 0) continue;
 
@@ -3376,7 +3413,7 @@ class JobRepository extends ChangeNotifier {
     if (!hours.isOpen) return [];
 
     final openMin = timeStringToMinutes(hours.openTime);
-    final closeMin = timeStringToMinutes(hours.closeTime);
+    final closeMin = closeTimeToMinutes(hours.closeTime);
     if (closeMin <= openMin) return [];
 
     final List<String> available = [];
@@ -3412,6 +3449,10 @@ class JobRepository extends ChangeNotifier {
       }
 
       final startTimeStr = formatMinutesToTime(startMin);
+      if (!isSlotWithinLeadTime(date, startTimeStr, detailerId: targetId)) {
+        continue;
+      }
+
       final slotStr = package.isMultiDay
           ? '$startTimeStr - ${formatMinutesToTime(startMin + 60)}'
           : '$startTimeStr - ${formatMinutesToTime(startMin + durationMin)}';
@@ -3440,7 +3481,7 @@ class JobRepository extends ChangeNotifier {
     if (!hours.isOpen) return [hours.closeTime.isNotEmpty ? hours.closeTime : '5:00 PM'];
 
     final openMin = timeStringToMinutes(hours.openTime);
-    final closeMin = timeStringToMinutes(hours.closeTime);
+    final closeMin = closeTimeToMinutes(hours.closeTime);
     if (closeMin <= openMin) {
       return [hours.closeTime.isNotEmpty ? hours.closeTime : '5:00 PM'];
     }
@@ -3455,8 +3496,8 @@ class JobRepository extends ChangeNotifier {
     final List<String> slots = [];
 
     void addSlot(String timeStr) {
-      final mins = timeStringToMinutes(timeStr);
-      if (!slots.any((s) => timeStringToMinutes(s) == mins)) {
+      final mins = closeTimeToMinutes(timeStr);
+      if (!slots.any((s) => closeTimeToMinutes(s) == mins)) {
         slots.add(timeStr);
       }
     }
@@ -3474,7 +3515,7 @@ class JobRepository extends ChangeNotifier {
       }
     }
 
-    final hasClose = slots.any((s) => timeStringToMinutes(s) == closeMin);
+    final hasClose = slots.any((s) => closeTimeToMinutes(s) == closeMin);
     if (!hasClose) {
       addSlot(hours.closeTime.isNotEmpty ? hours.closeTime : formatMinutesToTime(closeMin));
     }
@@ -4237,10 +4278,13 @@ class JobRepository extends ChangeNotifier {
     if (!dayHours.isOpen) return false;
     final slotMin = timeStringToMinutes(slot);
     final openMin = timeStringToMinutes(dayHours.openTime);
-    final closeMin = timeStringToMinutes(dayHours.closeTime);
+    final closeMin = closeTimeToMinutes(dayHours.closeTime);
     if (slotMin < openMin || slotMin >= closeMin) return false;
     if (slot.contains('-') && !slot.toLowerCase().contains('drop-off') && !slot.contains('•')) {
-      final endMin = timeStringToMinutes(slot.split('-').last);
+      int endMin = closeTimeToMinutes(slot.split('-').last);
+      if (endMin <= slotMin) {
+        endMin += 1440;
+      }
       if (endMin > closeMin) return false;
     }
     return true;
