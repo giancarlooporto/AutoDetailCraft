@@ -1788,16 +1788,58 @@ class SupabaseDbService {
     }
   }
 
+  /// Fetch calendar operating hours and preferences from profile
+  static Future<DetailerCalendarPreferences?> fetchCalendarPreferences(String detailerId) async {
+    final client = _client;
+    if (client == null) return null;
+
+    try {
+      final res = await client.from('profiles').select('calendar_preferences').eq('id', detailerId).maybeSingle();
+      if (res != null && res['calendar_preferences'] != null) {
+        final prefsData = res['calendar_preferences'];
+        if (prefsData is Map && prefsData.isNotEmpty) {
+          return DetailerCalendarPreferences.fromJson(Map<String, dynamic>.from(prefsData));
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error fetching calendar preferences: $e');
+    }
+    return null;
+  }
+
   /// Upsert a calendar availability block (Day or Slot block)
   static Future<void> saveAvailabilityBlock(CalendarAvailabilityBlock block) async {
     final client = _client;
     if (client == null) return;
 
     try {
-      await client.from('availability_blocks').upsert(block.toJson());
+      await client.from('availability_blocks').upsert(block.toSupabase());
       if (kDebugMode) print('[SupabaseDbService] Availability block saved: ${block.id}');
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Note: availability_blocks table not yet configured or offline: $e');
+    }
+  }
+
+  /// Fetch availability blocks for a specific detailer, or all blocks if detailerId is null
+  static Future<List<CalendarAvailabilityBlock>> fetchAvailabilityBlocks([String? detailerId]) async {
+    final client = _client;
+    if (client == null) return [];
+
+    try {
+      var query = client.from('availability_blocks').select();
+      if (detailerId != null && detailerId.isNotEmpty) {
+        query = query.eq('detailer_id', detailerId);
+      }
+      final res = await query;
+      final blocks = <CalendarAvailabilityBlock>[];
+      for (final row in res as List<dynamic>) {
+        final map = Map<String, dynamic>.from(row as Map);
+        blocks.add(CalendarAvailabilityBlock.fromJson(map));
+      }
+      return blocks;
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] Error fetching availability blocks: $e');
+      return [];
     }
   }
 

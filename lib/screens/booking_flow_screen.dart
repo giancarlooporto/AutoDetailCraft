@@ -212,6 +212,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     }
     _recalculateCompletionAndSlot();
     _adjustSelectedSlotIfBlocked();
+    widget.repository.refreshAvailabilityBlocks(detailerId: widget.detailer.id);
   }
 
   void _onRepoChanged() {

@@ -264,18 +264,31 @@ class CalendarAvailabilityBlock {
     'createdAt': createdAt.toIso8601String(),
   };
 
+  Map<String, dynamic> toSupabase() => {
+    'id': id,
+    'detailer_id': detailerId,
+    'team_member_id': teamMemberId,
+    'date': date.toIso8601String(),
+    'is_all_day': isAllDay,
+    'blocked_slots': blockedSlots,
+    'custom_slots': customSlots,
+    'has_custom_slots_override': hasCustomSlotsOverride,
+    'reason': reason,
+    'created_at': createdAt.toIso8601String(),
+  };
+
   factory CalendarAvailabilityBlock.fromJson(Map<String, dynamic> json) {
     return CalendarAvailabilityBlock(
       id: json['id'] as String? ?? 'block_${DateTime.now().millisecondsSinceEpoch}',
-      detailerId: json['detailerId'] as String? ?? '',
-      teamMemberId: json['teamMemberId'] as String?,
-      date: DateTime.tryParse(json['date'] as String? ?? '') ?? DateTime.now(),
-      isAllDay: json['isAllDay'] as bool? ?? true,
-      blockedSlots: (json['blockedSlots'] as List<dynamic>?)?.map((s) => s.toString()).toList() ?? [],
-      customSlots: (json['customSlots'] as List<dynamic>?)?.map((s) => s.toString()).toList() ?? [],
-      hasCustomSlotsOverride: json['hasCustomSlotsOverride'] as bool? ?? false,
+      detailerId: (json['detailerId'] ?? json['detailer_id']) as String? ?? '',
+      teamMemberId: (json['teamMemberId'] ?? json['team_member_id']) as String?,
+      date: DateTime.tryParse((json['date'] as String?) ?? '') ?? DateTime.now(),
+      isAllDay: (json['isAllDay'] ?? json['is_all_day']) as bool? ?? true,
+      blockedSlots: ((json['blockedSlots'] ?? json['blocked_slots']) as List<dynamic>?)?.map((s) => s.toString()).toList() ?? [],
+      customSlots: ((json['customSlots'] ?? json['custom_slots']) as List<dynamic>?)?.map((s) => s.toString()).toList() ?? [],
+      hasCustomSlotsOverride: (json['hasCustomSlotsOverride'] ?? json['has_custom_slots_override']) as bool? ?? false,
       reason: json['reason'] as String?,
-      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+      createdAt: DateTime.tryParse((json['createdAt'] ?? json['created_at']) as String? ?? '') ?? DateTime.now(),
     );
   }
 }

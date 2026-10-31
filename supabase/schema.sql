@@ -26,6 +26,7 @@ create table if not exists public.profiles (
   subscription_tier text default 'free',
   is_studio_paused boolean default false,
   service_packages jsonb default '[]'::jsonb,
+  calendar_preferences jsonb default '{}'::jsonb,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -334,7 +335,28 @@ create trigger on_auth_user_created
   for each row
   execute function public.handle_new_user();
 
--- 14. RELOAD POSTGREST SCHEMA CACHE
+-- 14. AVAILABILITY BLOCKS TABLE (Calendar Blocks & Custom Slots)
+create table if not exists public.availability_blocks (
+  id text primary key,
+  detailer_id text not null,
+  team_member_id text,
+  date timestamp with time zone not null,
+  is_all_day boolean default false,
+  blocked_slots jsonb default '[]'::jsonb,
+  custom_slots jsonb default '[]'::jsonb,
+  has_custom_slots_override boolean default false,
+  reason text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.availability_blocks enable row level security;
+
+create policy "Allow read on availability_blocks" on public.availability_blocks for select using (true);
+create policy "Allow insert on availability_blocks" on public.availability_blocks for insert with check (true);
+create policy "Allow update on availability_blocks" on public.availability_blocks for update using (true);
+create policy "Allow delete on availability_blocks" on public.availability_blocks for delete using (true);
+
+-- 15. RELOAD POSTGREST SCHEMA CACHE
 notify pgrst, 'reload schema';
 
 

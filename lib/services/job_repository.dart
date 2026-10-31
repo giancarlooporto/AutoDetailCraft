@@ -75,6 +75,7 @@ class JobRepository extends ChangeNotifier {
   RealtimeChannel? _interactionsChannel;
   RealtimeChannel? _profilesChannel;
   RealtimeChannel? _vehiclesChannel;
+  RealtimeChannel? _availabilityBlocksChannel;
 
   JobRepository({bool? seedSampleData}) {
     if (seedSampleData ?? debugSeedSampleData) {
@@ -388,6 +389,7 @@ class JobRepository extends ChangeNotifier {
             _refreshBookingsFromCloud(_currentUser.id),
             _refreshInteractionsFromCloud(_currentUser.id),
             _refreshPublicDetailersFromCloud(),
+            _refreshAvailabilityBlocksFromCloud(_currentUser.id),
           ]).timeout(const Duration(seconds: 4));
         } catch (_) {
           // Fallback to local cache if offline or slow network
@@ -598,6 +600,18 @@ class JobRepository extends ChangeNotifier {
           }
         } catch (_) {}
 
+        // Sync detailer calendar preferences and availability blocks from cloud
+        try {
+          final cloudPrefs = await SupabaseDbService.fetchCalendarPreferences(userId);
+          if (cloudPrefs != null) {
+            _calendarPreferences = cloudPrefs;
+            _detailerPreferencesMap[userId] = cloudPrefs;
+            await LocalStorageService.saveCalendarPreferences(cloudPrefs);
+            await LocalStorageService.saveDetailerCalendarPreferences(cloudPrefs, detailerId: userId);
+          }
+          await _refreshAvailabilityBlocksFromCloud(userId);
+        } catch (_) {}
+
         notifyListeners();
       }
     } catch (_) {}
@@ -699,6 +713,39 @@ class JobRepository extends ChangeNotifier {
 
   /// Public entry point to refresh all customer and studio bookings from Supabase Cloud
   Future<void> refreshBookings() => _refreshBookingsFromCloud(_currentUser.id);
+
+  Future<void> _refreshAvailabilityBlocksFromCloud([String? detailerId]) async {
+    try {
+      final targetId = detailerId ?? _currentUser.id;
+      final cloudBlocks = await SupabaseDbService.fetchAvailabilityBlocks(targetId);
+      if (cloudBlocks.isNotEmpty) {
+        final blockMap = <String, CalendarAvailabilityBlock>{};
+        for (final b in _availabilityBlocks) {
+          blockMap[b.id] = b;
+        }
+        bool hasChanges = false;
+        for (final b in cloudBlocks) {
+          final existing = blockMap[b.id];
+          if (existing == null ||
+              existing.isAllDay != b.isAllDay ||
+              existing.blockedSlots.length != b.blockedSlots.length ||
+              existing.reason != b.reason ||
+              existing.teamMemberId != b.teamMemberId) {
+            blockMap[b.id] = b;
+            hasChanges = true;
+          }
+        }
+        if (hasChanges) {
+          _availabilityBlocks = blockMap.values.toList();
+          await LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+          notifyListeners();
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Public entry point to refresh all studio availability blocks from Supabase Cloud
+  Future<void> refreshAvailabilityBlocks({String? detailerId}) => _refreshAvailabilityBlocksFromCloud(detailerId);
 
   Future<void> _refreshInteractionsFromCloud(String userId) async {
     try {
@@ -2335,19 +2382,24 @@ class JobRepository extends ChangeNotifier {
                  b.teamMemberId == mId,
         );
         if (idx != -1) {
-          _availabilityBlocks.removeAt(idx);
+          final removed = _availabilityBlocks.removeAt(idx);
+          if (_isLoggedIn) {
+            SupabaseDbService.deleteAvailabilityBlock(removed.id);
+          }
         } else {
-          _availabilityBlocks.add(
-            CalendarAvailabilityBlock(
-              id: 'block_${DateTime.now().millisecondsSinceEpoch}_$mId',
-              detailerId: targetDetailerId,
-              teamMemberId: mId,
-              date: normDate,
-              isAllDay: true,
-              reason: reason,
-              createdAt: DateTime.now(),
-            ),
+          final block = CalendarAvailabilityBlock(
+            id: 'block_${DateTime.now().millisecondsSinceEpoch}_$mId',
+            detailerId: targetDetailerId,
+            teamMemberId: mId,
+            date: normDate,
+            isAllDay: true,
+            reason: reason,
+            createdAt: DateTime.now(),
           );
+          _availabilityBlocks.add(block);
+          if (_isLoggedIn) {
+            SupabaseDbService.saveAvailabilityBlock(block);
+          }
         }
       }
       LocalStorageService.saveCalendarBlocks(_availabilityBlocks);
@@ -2370,22 +2422,31 @@ class JobRepository extends ChangeNotifier {
     if (idx != -1) {
       final existing = _availabilityBlocks[idx];
       if (existing.hasCustomSlotsOverride || existing.customSlots.isNotEmpty) {
-        _availabilityBlocks[idx] = existing.copyWith(isAllDay: false);
+        final updated = existing.copyWith(isAllDay: false);
+        _availabilityBlocks[idx] = updated;
+        if (_isLoggedIn) {
+          SupabaseDbService.saveAvailabilityBlock(updated);
+        }
       } else {
-        _availabilityBlocks.removeAt(idx);
+        final removed = _availabilityBlocks.removeAt(idx);
+        if (_isLoggedIn) {
+          SupabaseDbService.deleteAvailabilityBlock(removed.id);
+        }
       }
     } else {
-      _availabilityBlocks.add(
-        CalendarAvailabilityBlock(
-          id: 'block_${DateTime.now().millisecondsSinceEpoch}',
-          detailerId: targetDetailerId,
-          teamMemberId: isSpecificMember ? teamMemberId : null,
-          date: normDate,
-          isAllDay: true,
-          reason: reason,
-          createdAt: DateTime.now(),
-        ),
+      final block = CalendarAvailabilityBlock(
+        id: 'block_${DateTime.now().millisecondsSinceEpoch}',
+        detailerId: targetDetailerId,
+        teamMemberId: isSpecificMember ? teamMemberId : null,
+        date: normDate,
+        isAllDay: true,
+        reason: reason,
+        createdAt: DateTime.now(),
       );
+      _availabilityBlocks.add(block);
+      if (_isLoggedIn) {
+        SupabaseDbService.saveAvailabilityBlock(block);
+      }
     }
     LocalStorageService.saveCalendarBlocks(_availabilityBlocks);
     notifyListeners();
@@ -2432,10 +2493,14 @@ class JobRepository extends ChangeNotifier {
       if (existing.isAllDay) {
         final currentSlots = getTimeSlotsForDate(date, detailerId: targetDetailerId);
         final remaining = currentSlots.where((s) => s != slot).toList();
-        _availabilityBlocks[idx] = existing.copyWith(
+        final updated = existing.copyWith(
           isAllDay: false,
           blockedSlots: remaining,
         );
+        _availabilityBlocks[idx] = updated;
+        if (_isLoggedIn) {
+          SupabaseDbService.saveAvailabilityBlock(updated);
+        }
       } else {
         final currentSlots = List<String>.from(existing.blockedSlots);
         if (currentSlots.contains(slot)) {
@@ -2444,27 +2509,36 @@ class JobRepository extends ChangeNotifier {
           currentSlots.add(slot);
         }
         if (currentSlots.isEmpty && !existing.hasCustomSlotsOverride && existing.customSlots.isEmpty) {
-          _availabilityBlocks.removeAt(idx);
+          final removed = _availabilityBlocks.removeAt(idx);
+          if (_isLoggedIn) {
+            SupabaseDbService.deleteAvailabilityBlock(removed.id);
+          }
         } else {
-          _availabilityBlocks[idx] = existing.copyWith(
+          final updated = existing.copyWith(
             blockedSlots: currentSlots,
             reason: reason ?? existing.reason,
           );
+          _availabilityBlocks[idx] = updated;
+          if (_isLoggedIn) {
+            SupabaseDbService.saveAvailabilityBlock(updated);
+          }
         }
       }
     } else {
-      _availabilityBlocks.add(
-        CalendarAvailabilityBlock(
-          id: 'block_${DateTime.now().millisecondsSinceEpoch}_${mId ?? "all"}',
-          detailerId: targetDetailerId,
-          teamMemberId: mId,
-          date: normDate,
-          isAllDay: false,
-          blockedSlots: [slot],
-          reason: reason,
-          createdAt: DateTime.now(),
-        ),
+      final block = CalendarAvailabilityBlock(
+        id: 'block_${DateTime.now().millisecondsSinceEpoch}_${mId ?? "all"}',
+        detailerId: targetDetailerId,
+        teamMemberId: mId,
+        date: normDate,
+        isAllDay: false,
+        blockedSlots: [slot],
+        reason: reason,
+        createdAt: DateTime.now(),
       );
+      _availabilityBlocks.add(block);
+      if (_isLoggedIn) {
+        SupabaseDbService.saveAvailabilityBlock(block);
+      }
     }
   }
 
@@ -4998,6 +5072,43 @@ class JobRepository extends ChangeNotifier {
           },
         )
         .subscribe();
+
+    // 8. Availability blocks realtime channel (for cross-device calendar slot/day blocking)
+    _availabilityBlocksChannel = client
+        .channel('public:availability_blocks')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'availability_blocks',
+          callback: (payload) {
+            final targetUserId = (_currentUser.id != 'usr_you')
+                ? _currentUser.id
+                : (SupabaseAuthService.currentAuthUser?.id ?? _currentUser.id);
+            final newDetailerId = payload.newRecord['detailer_id'] as String?;
+            final oldDetailerId = payload.oldRecord['detailer_id'] as String?;
+            final isTargetDetailer = newDetailerId == targetUserId ||
+                oldDetailerId == targetUserId ||
+                newDetailerId == _currentUser.id ||
+                oldDetailerId == _currentUser.id;
+
+            if (payload.eventType == PostgresChangeEvent.delete) {
+              final deletedId = payload.oldRecord['id'] as String?;
+              if (deletedId != null && deletedId.isNotEmpty) {
+                final hadBlock = _availabilityBlocks.any((b) => b.id == deletedId);
+                if (hadBlock) {
+                  _availabilityBlocks.removeWhere((b) => b.id == deletedId);
+                  LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+                  notifyListeners();
+                  return;
+                }
+              }
+            }
+            if (isTargetDetailer || _availabilityBlocks.isNotEmpty) {
+              _refreshAvailabilityBlocksFromCloud(_currentUser.id);
+            }
+          },
+        )
+        .subscribe();
   }
 
   void _unsubscribeFromRealtime() {
@@ -5015,6 +5126,8 @@ class JobRepository extends ChangeNotifier {
     _profilesChannel = null;
     _vehiclesChannel?.unsubscribe();
     _vehiclesChannel = null;
+    _availabilityBlocksChannel?.unsubscribe();
+    _availabilityBlocksChannel = null;
   }
 
   @override

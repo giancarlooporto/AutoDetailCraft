@@ -2438,5 +2438,80 @@ void main() {
         tearDownMockImageHttpClient();
       }
     });
+
+    test('UI 19: CalendarAvailabilityBlock Supabase snake_case & camelCase bidirectional compatibility', () {
+      final block = CalendarAvailabilityBlock(
+        id: 'block_test_cloud',
+        detailerId: 'usr_det_99',
+        teamMemberId: 'tech_01',
+        date: DateTime(2026, 11, 15),
+        isAllDay: false,
+        blockedSlots: ['10:00 AM - 11:30 AM'],
+        customSlots: ['12:00 PM - 1:00 PM'],
+        hasCustomSlotsOverride: true,
+        reason: 'Staff Lunch',
+        createdAt: DateTime(2026, 10, 31, 12, 0, 0),
+      );
+
+      // Verify toSupabase() produces valid snake_case payload for Postgres
+      final supabaseMap = block.toSupabase();
+      expect(supabaseMap['id'], 'block_test_cloud');
+      expect(supabaseMap['detailer_id'], 'usr_det_99');
+      expect(supabaseMap['team_member_id'], 'tech_01');
+      expect(supabaseMap['is_all_day'], isFalse);
+      expect(supabaseMap['blocked_slots'], ['10:00 AM - 11:30 AM']);
+      expect(supabaseMap['custom_slots'], ['12:00 PM - 1:00 PM']);
+      expect(supabaseMap['has_custom_slots_override'], isTrue);
+      expect(supabaseMap['reason'], 'Staff Lunch');
+
+      // Verify fromJson() deserializes snake_case seamlessly
+      final fromSnake = CalendarAvailabilityBlock.fromJson(supabaseMap);
+      expect(fromSnake.id, 'block_test_cloud');
+      expect(fromSnake.detailerId, 'usr_det_99');
+      expect(fromSnake.teamMemberId, 'tech_01');
+      expect(fromSnake.isAllDay, isFalse);
+      expect(fromSnake.blockedSlots, ['10:00 AM - 11:30 AM']);
+      expect(fromSnake.customSlots, ['12:00 PM - 1:00 PM']);
+      expect(fromSnake.hasCustomSlotsOverride, isTrue);
+      expect(fromSnake.reason, 'Staff Lunch');
+
+      // Verify fromJson() deserializes camelCase local storage seamlessly
+      final localJson = block.toJson();
+      final fromCamel = CalendarAvailabilityBlock.fromJson(localJson);
+      expect(fromCamel.id, 'block_test_cloud');
+      expect(fromCamel.detailerId, 'usr_det_99');
+      expect(fromCamel.teamMemberId, 'tech_01');
+      expect(fromCamel.isAllDay, isFalse);
+      expect(fromCamel.blockedSlots, ['10:00 AM - 11:30 AM']);
+    });
+
+    test('UI 20: toggleBlockSlot and toggleBlockDay update memory and allow cloud sync trigger', () async {
+      final repo = JobRepository();
+      final date = DateTime(2026, 11, 20);
+
+      expect(repo.getBlocksForDate(date).isEmpty, isTrue);
+
+      // Block a 30-min slot
+      repo.toggleBlockSlot(date, '1:00 PM - 1:30 PM', reason: 'Oil Change Break');
+      final blocksAfterSlot = repo.getBlocksForDate(date);
+      expect(blocksAfterSlot.length, 1);
+      expect(blocksAfterSlot.first.blockedSlots, contains('1:00 PM - 1:30 PM'));
+      expect(blocksAfterSlot.first.reason, 'Oil Change Break');
+
+      // Toggle off the slot
+      repo.toggleBlockSlot(date, '1:00 PM - 1:30 PM');
+      expect(repo.getBlocksForDate(date).isEmpty, isTrue);
+
+      // Block entire day
+      repo.toggleBlockDay(date, reason: 'Holiday Closed');
+      final blocksAfterDay = repo.getBlocksForDate(date);
+      expect(blocksAfterDay.length, 1);
+      expect(blocksAfterDay.first.isAllDay, isTrue);
+      expect(blocksAfterDay.first.reason, 'Holiday Closed');
+
+      // Toggle off full day
+      repo.toggleBlockDay(date);
+      expect(repo.getBlocksForDate(date).isEmpty, isTrue);
+    });
   });
 }
