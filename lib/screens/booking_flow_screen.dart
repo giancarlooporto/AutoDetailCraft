@@ -4,7 +4,6 @@ import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
 import '../models/booking_models.dart';
 import '../models/user_vehicle.dart';
-import '../models/team_member.dart';
 import '../services/job_repository.dart';
 import '../services/supabase_auth_service.dart';
 import '../services/mock_data_service.dart';
@@ -44,7 +43,6 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   String _selectedPickUpTime = '5:00 PM';
   DateTime? _calculatedCompletionDate;
   String? _calculatedFinishTime;
-  TeamMember? _selectedTeamMember; // Delegated / preferred detailer
 
   // Input Controllers
   final _vehicleModelCtrl = TextEditingController();
@@ -142,7 +140,11 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       }
       _selectedTimeSlot = 'Drop-off: $_selectedStartTime • Ready: $_selectedPickUpTime';
     } else {
-      _selectedTimeSlot = '$_selectedStartTime - ${comp.completionTime}';
+      if (_calculatedCompletionDate != null && !DateUtils.isSameDay(_calculatedCompletionDate, _selectedDate)) {
+        _selectedTimeSlot = 'Drop-off: $_selectedStartTime • Ready Next Day: ${comp.completionTime}';
+      } else {
+        _selectedTimeSlot = '$_selectedStartTime - ${comp.completionTime}';
+      }
     }
   }
 
@@ -155,6 +157,8 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       }
     });
     widget.repository.addListener(_onRepoChanged);
+    widget.repository.activeStudioDetailerId = widget.detailer.id;
+    widget.repository.refreshStudioBookings(widget.detailer.id);
     if (widget.initialDate != null) {
       _selectedDate = widget.initialDate!;
     }
@@ -240,7 +244,6 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       _selectedDate,
       slot,
       detailerId: widget.detailer.id,
-      teamMemberId: _selectedTeamMember?.id,
     );
   }
 
@@ -278,28 +281,26 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       return 'Outside Business Operating Hours';
     }
 
-    // Same-day: closing time protection based on package duration
-    if (!_selectedPackage.isMultiDay) {
+    // Late drop-off check:
+    // When a slot is within 30 minutes of closing (e.g. 5:30 PM drop-off with a 6:00 PM close),
+    // it is accepted as a late drop-off and scheduled to start next open business day.
+    // For earlier same-day slots, normal closing time protection applies.
+    final isLateDropOff = (startMin >= closeMin - 30);
+    if (!_selectedPackage.isMultiDay && !isLateDropOff) {
       if (startMin + _selectedPackage.durationMinutes > closeMin) {
         return 'Finishes After Shop Closing (${hours.closeTime})';
       }
     }
 
+    final isRollover = !_selectedPackage.isMultiDay && isLateDropOff && (startMin + _selectedPackage.durationMinutes > closeMin);
     final slotToCheck = _selectedPackage.isMultiDay
         ? '$startStr - ${JobRepository.formatMinutesToTime(startMin + 60)}'
-        : '$startStr - ${JobRepository.formatMinutesToTime(startMin + _selectedPackage.durationMinutes)}';
+        : (isRollover
+            ? '$startStr - ${JobRepository.formatMinutesToTime(closeMin)}'
+            : '$startStr - ${JobRepository.formatMinutesToTime(startMin + _selectedPackage.durationMinutes)}');
 
-    if (_selectedTeamMember != null) {
-      if (!widget.repository.isMemberOnDutyOnDate(_selectedTeamMember!.id, _selectedDate, detailerId: widget.detailer.id)) {
-        return '${_selectedTeamMember!.name} is Off Duty on this Date';
-      }
-      if (widget.repository.isSlotExplicitlyBlocked(widget.detailer.id, _selectedDate, slotToCheck, teamMemberId: _selectedTeamMember!.id)) {
-        return '${_selectedTeamMember!.name} Unavailable for this Time Window';
-      }
-    } else {
-      if (widget.repository.isSlotBlocked(widget.detailer.id, _selectedDate, slotToCheck)) {
-        return 'Time Window Blocked by Detailer';
-      }
+    if (widget.repository.isSlotBlocked(widget.detailer.id, _selectedDate, slotToCheck)) {
+      return 'Time Window Blocked by Detailer';
     }
     if (!widget.repository.isSlotWithinOperatingHours(_selectedDate, slotToCheck, detailerId: widget.detailer.id)) {
       return 'Outside Business Operating Hours';
@@ -309,9 +310,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       return 'Requires ${leadHours}h Minimum Advance Notice';
     }
     if (_isSlotBookedByOtherAppointment(slotToCheck)) {
-      return _selectedTeamMember != null
-          ? '${_selectedTeamMember!.name} is Booked for this Window'
-          : 'Shop Fully Booked for this Time Window';
+      return 'Shop Fully Booked for this Time Window';
     }
     return null;
   }
@@ -329,7 +328,14 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       _recalculateCompletionAndSlot();
       return;
     }
-    if (_selectedTimeSlot.isEmpty || !_timeSlots.contains(_selectedTimeSlot) || _isSlotBooked(_selectedTimeSlot)) {
+    final selectedStartMin = _selectedStartTime.isNotEmpty
+        ? JobRepository.timeStringToMinutes(_selectedStartTime)
+        : (_selectedTimeSlot.isNotEmpty ? JobRepository.parseSlotRange(_selectedTimeSlot).$1 : null);
+    final slotMatches = selectedStartMin != null && _timeSlots.any(
+      (s) => JobRepository.parseSlotRange(s).$1 == selectedStartMin,
+    );
+
+    if (_selectedTimeSlot.isEmpty || !slotMatches || _isSlotBooked(_selectedTimeSlot)) {
       String? firstAvailable;
       for (final slot in _timeSlots) {
         if (!_isSlotBooked(slot)) {
@@ -347,6 +353,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
 
   @override
   void dispose() {
+    if (widget.repository.activeStudioDetailerId == widget.detailer.id) {
+      widget.repository.activeStudioDetailerId = null;
+    }
     widget.repository.removeListener(_onRepoChanged);
     _vehicleModelCtrl.dispose();
     _addressCtrl.dispose();
@@ -468,17 +477,15 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       id: 'book_${DateTime.now().millisecondsSinceEpoch}',
       clientId: widget.repository.isLoggedIn ? widget.repository.currentUser.id : null,
       detailerId: widget.detailer.id,
-      assignedTeamMemberId: _selectedTeamMember?.id,
-      assignedTeamMemberName: _selectedTeamMember?.name,
-      detailerName: _selectedTeamMember != null
-          ? '${widget.detailer.businessName.isNotEmpty ? widget.detailer.businessName : widget.detailer.displayName} (${_selectedTeamMember!.name})'
-          : (widget.detailer.displayName.isNotEmpty
-              ? widget.detailer.displayName
-              : (widget.detailer.businessName.isNotEmpty ? widget.detailer.businessName : 'Detailing Studio')),
+      assignedTeamMemberId: null,
+      assignedTeamMemberName: null,
+      detailerName: widget.detailer.displayName.isNotEmpty
+          ? widget.detailer.displayName
+          : (widget.detailer.businessName.isNotEmpty ? widget.detailer.businessName : 'Detailing Studio'),
       detailerBusinessName: widget.detailer.businessName.isNotEmpty
           ? widget.detailer.businessName
           : (widget.detailer.displayName.isNotEmpty ? widget.detailer.displayName : 'Detailing Studio'),
-      detailerAvatar: _selectedTeamMember?.avatarUrl ?? widget.detailer.avatarUrl,
+      detailerAvatar: widget.detailer.avatarUrl,
       clientName: _nameCtrl.text.trim(),
       clientPhone: _phoneCtrl.text.trim(),
       clientEmail: _emailCtrl.text.trim().toLowerCase(),
@@ -502,7 +509,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       startTime: _selectedStartTime,
       endTime: effectiveEndTime,
       durationMinutes: _selectedPackage.durationMinutes,
-      isMultiDay: _selectedPackage.isMultiDay,
+      isMultiDay: _selectedPackage.isMultiDay || effectiveCompletionDate.isAfter(_selectedDate),
     );
 
     final success = await widget.repository.addBookingAsync(booking);
@@ -555,13 +562,6 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
               'Your appointment with ${widget.detailer.businessName} has been reserved.',
               style: const TextStyle(color: AppTheme.textSecondary, fontSize: 14),
             ),
-            if (_selectedTeamMember != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                'Assigned Specialist: ${_selectedTeamMember!.name} (${_selectedTeamMember!.roleTitle})',
-                style: const TextStyle(color: AppTheme.primary, fontSize: 12, fontWeight: FontWeight.w600),
-              ),
-            ],
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
@@ -989,124 +989,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   }
 
   Widget _buildVehicleAndDateStep() {
-    final team = widget.detailer.teamMembers;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Select Hired Specialist if available under this company
-        if (team.isNotEmpty) ...[
-          const Text('Select Preferred Detail Specialist (Optional)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          const Text('Choose a dedicated team member from this shop:', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-          const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _selectedTeamMember = null;
-                      _adjustSelectedSlotIfBlocked();
-                    });
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: _selectedTeamMember == null ? AppTheme.primary.withAlpha(25) : AppTheme.surface,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _selectedTeamMember == null ? AppTheme.primary : AppTheme.border),
-                    ),
-                    child: Text(
-                      'First Available',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: _selectedTeamMember == null ? AppTheme.primary : AppTheme.textMuted,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ...team.map((m) {
-                  final isSelected = _selectedTeamMember?.id == m.id;
-                  final isOff = !widget.repository.isMemberOnDutyOnDate(m.id, _selectedDate, detailerId: widget.detailer.id);
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedTeamMember = m;
-                        _adjustSelectedSlotIfBlocked();
-                      });
-                    },
-                    child: Container(
-                      margin: const EdgeInsets.only(right: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? AppTheme.primary.withAlpha(25)
-                            : (isOff ? AppTheme.surfaceLight.withAlpha(80) : AppTheme.surface),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: isSelected
-                              ? AppTheme.primary
-                              : (isOff ? AppTheme.border.withAlpha(100) : AppTheme.border),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Opacity(
-                            opacity: isOff ? 0.5 : 1.0,
-                            child: CircleAvatar(
-                              radius: 12,
-                              backgroundColor: AppTheme.surfaceLight,
-                              backgroundImage: m.localAvatarBytes != null
-                                  ? MemoryImage(m.localAvatarBytes!) as ImageProvider
-                                  : (m.avatarUrl.trim().isNotEmpty
-                                      ? NetworkImage(m.avatarUrl.trim())
-                                      : null),
-                              child: (m.localAvatarBytes == null && m.avatarUrl.trim().isEmpty)
-                                  ? const Icon(Icons.person_rounded, size: 14, color: AppTheme.textMuted)
-                                  : null,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            m.name.split(' ').first,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: isSelected
-                                  ? AppTheme.primary
-                                  : (isOff ? AppTheme.textMuted : AppTheme.textPrimary),
-                            ),
-                          ),
-                          if (isOff) ...[
-                            const SizedBox(width: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                              decoration: BoxDecoration(
-                                color: AppTheme.border,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text(
-                                'OFF',
-                                style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppTheme.textMuted),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  );
-                }),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-        ],
-
         if (widget.repository.currentUser.myGarage.isNotEmpty) ...[
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1726,10 +1611,14 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                   final startStr = JobRepository.formatMinutesToTime(startMin);
                   final finishMin = startMin + _selectedPackage.durationMinutes;
                   final dynamicSlot = '$startStr - ${JobRepository.formatMinutesToTime(finishMin)}';
-                  final isSelected = (_selectedTimeSlot == slot || _selectedTimeSlot == dynamicSlot || _selectedStartTime == startStr) && !isUnavailable;
+                  final isSelected = (_selectedTimeSlot == slot ||
+                          _selectedTimeSlot == dynamicSlot ||
+                          _selectedStartTime == startStr ||
+                          _selectedTimeSlot.startsWith('Drop-off: $startStr')) &&
+                      !isUnavailable;
 
                   int? availableCapacity;
-                  if (!isUnavailable && widget.detailer.teamMembers.isNotEmpty && _selectedTeamMember == null) {
+                  if (!isUnavailable && widget.detailer.teamMembers.isNotEmpty) {
                     final status = widget.repository.getSlotStaffingStatus(_selectedDate, slot, detailerId: widget.detailer.id);
                     if (status.onDutyCount > 1 && status.availableCapacity < status.onDutyCount) {
                       availableCapacity = status.availableCapacity;
@@ -1897,7 +1786,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Drop-off: $_selectedStartTime • Estimated Finish: ${_calculatedFinishTime ?? ''} Today',
+                          (_calculatedCompletionDate != null && !DateUtils.isSameDay(_calculatedCompletionDate, _selectedDate))
+                              ? 'Drop-off: $_selectedStartTime • Ready Next Day: ${_calculatedFinishTime ?? ''}'
+                              : 'Drop-off: $_selectedStartTime • Estimated Finish: ${_calculatedFinishTime ?? ''} Today',
                           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
                         ),
                       ],

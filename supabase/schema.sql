@@ -213,6 +213,11 @@ create table if not exists public.bookings (
   warranty_passport_id text,
   assigned_team_member_id text,
   assigned_team_member_name text,
+  start_time text,
+  end_time text,
+  completion_date timestamp with time zone,
+  duration_minutes integer,
+  is_multi_day boolean default false,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );

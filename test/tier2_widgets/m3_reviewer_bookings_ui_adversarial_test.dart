@@ -67,7 +67,7 @@ void main() {
       }
     });
 
-    testWidgets('UI-2: BookingFlowScreen specialist selection scrolls horizontally without overflow on mobile (390px)', (tester) async {
+    testWidgets('UI-2: BookingFlowScreen does not expose specialist selection on client side (only detailer/owner assigns)', (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
       setupMockImageHttpClient();
@@ -121,29 +121,14 @@ void main() {
         await tester.tap(continueBtn);
         await tester.pumpAndSettle();
 
-        // Now on Step 1: Vehicle & Date Step where specialist selection is located
-        expect(find.text('Select Preferred Detail Specialist (Optional)'), findsOneWidget);
-        expect(find.text('First Available'), findsOneWidget);
-        expect(find.text('Alexander'), findsOneWidget);
-        expect(find.text('Benjamin'), findsOneWidget);
+        // Now on Step 1: Vehicle & Date Step. Specialist selection UI MUST be removed on client side.
+        expect(find.text('Select Preferred Detail Specialist (Optional)'), findsNothing);
+        expect(find.text('First Available'), findsNothing);
+        expect(find.text('Alexander'), findsNothing);
+        expect(find.text('Benjamin'), findsNothing);
+        expect(find.text('Elena'), findsNothing);
 
-        // Verify specialist selector has horizontal scroll
-        final specialistScroll = find.byWidgetPredicate(
-          (w) => w is SingleChildScrollView && w.scrollDirection == Axis.horizontal,
-        );
-        expect(specialistScroll, findsOneWidget);
-
-        final scroller = tester.widget<SingleChildScrollView>(specialistScroll);
-        expect(scroller.scrollDirection, equals(Axis.horizontal));
-
-        // Scroll horizontally to bring 'Elena' into view
-        await tester.drag(specialistScroll, const Offset(-300, 0));
-        await tester.pumpAndSettle();
-        expect(find.text('Elena'), findsOneWidget);
-
-        // Verify none of the caught errors come from the specialist selector Row
-        final specialistErrors = errors.where((e) => e.toString().contains('booking_flow_screen.dart:639'));
-        expect(specialistErrors, isEmpty, reason: 'Specialist selection Row must not overflow');
+        expect(errors, isEmpty, reason: 'Step 1 should render cleanly with no layout errors');
       } finally {
         FlutterError.onError = originalOnError;
         tearDownMockImageHttpClient();

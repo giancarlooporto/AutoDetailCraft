@@ -438,13 +438,64 @@ class BookingAppointment {
     'clientNotes': clientNotes,
     'preInspectionSummary': preInspectionSummary,
     'warrantyPassportId': warrantyPassportId,
-    if (assignedTeamMemberId != null) 'assignedTeamMemberId': assignedTeamMemberId,
-    if (assignedTeamMemberName != null) 'assignedTeamMemberName': assignedTeamMemberName,
-    if (completionDate != null) 'completionDate': completionDate!.toIso8601String(),
-    if (startTime != null) 'startTime': startTime,
-    if (endTime != null) 'endTime': endTime,
-    if (durationMinutes != null) 'durationMinutes': durationMinutes,
+    if (assignedTeamMemberId != null) ...{
+      'assignedTeamMemberId': assignedTeamMemberId,
+      'assigned_team_member_id': assignedTeamMemberId,
+    },
+    if (assignedTeamMemberName != null) ...{
+      'assignedTeamMemberName': assignedTeamMemberName,
+      'assigned_team_member_name': assignedTeamMemberName,
+    },
+    if (completionDate != null) ...{
+      'completionDate': completionDate!.toIso8601String(),
+      'completion_date': completionDate!.toIso8601String(),
+    },
+    if (startTime != null) ...{
+      'startTime': startTime,
+      'start_time': startTime,
+    },
+    if (endTime != null) ...{
+      'endTime': endTime,
+      'end_time': endTime,
+    },
+    if (durationMinutes != null) ...{
+      'durationMinutes': durationMinutes,
+      'duration_minutes': durationMinutes,
+    },
     'isMultiDay': isMultiDay,
+    'is_multi_day': isMultiDay,
+  };
+
+  Map<String, dynamic> toSupabase() => {
+    'id': id,
+    'client_id': clientId,
+    'detailer_id': detailerId,
+    'detailer_name': detailerName,
+    'detailer_business_name': detailerBusinessName,
+    'detailer_avatar': detailerAvatar,
+    'client_name': clientName,
+    'client_phone': clientPhone,
+    'client_email': clientEmail,
+    'vehicle_year_make_model': vehicleYearMakeModel,
+    'vehicle_size': vehicleSize.name,
+    'package_data': package.toJson(),
+    'service_location_type': locationType.name,
+    'client_address': clientAddress,
+    'scheduled_date': '${scheduledDate.year.toString().padLeft(4, '0')}-${scheduledDate.month.toString().padLeft(2, '0')}-${scheduledDate.day.toString().padLeft(2, '0')}',
+    'scheduled_time_slot': scheduledTimeSlot,
+    'total_price': totalPrice,
+    'deposit_amount': depositAmount,
+    'status': status.name,
+    'client_notes': clientNotes,
+    'pre_inspection_summary': preInspectionSummary,
+    'warranty_passport_id': warrantyPassportId,
+    if (assignedTeamMemberId != null) 'assigned_team_member_id': assignedTeamMemberId,
+    if (assignedTeamMemberName != null) 'assigned_team_member_name': assignedTeamMemberName,
+    if (startTime != null) 'start_time': startTime,
+    if (endTime != null) 'end_time': endTime,
+    if (completionDate != null) 'completion_date': completionDate!.toIso8601String(),
+    if (durationMinutes != null) 'duration_minutes': durationMinutes,
+    'is_multi_day': isMultiDay,
   };
 
   factory BookingAppointment.fromJson(Map<String, dynamic> json) {
@@ -457,7 +508,21 @@ class BookingAppointment {
     final vehicleSizeRaw = json['vehicleSize'] ?? json['vehicle_size'];
     final statusRaw = json['status'];
     final rawCompDate = json['completionDate'] ?? json['completion_date'];
-    final parsedCompDate = rawCompDate != null ? DateTime.tryParse(rawCompDate as String) : null;
+    DateTime? parsedCompDate;
+    if (rawCompDate is String && RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(rawCompDate.trim())) {
+      final parts = rawCompDate.trim().substring(0, 10).split('-');
+      final y = int.parse(parts[0]);
+      final m = int.parse(parts[1]);
+      final d = int.parse(parts[2]);
+      final dt = DateTime.tryParse(rawCompDate.trim());
+      if (dt != null && (dt.hour != 0 || dt.minute != 0)) {
+        parsedCompDate = DateTime(y, m, d, dt.hour, dt.minute);
+      } else {
+        parsedCompDate = DateTime(y, m, d);
+      }
+    } else if (rawCompDate is String) {
+      parsedCompDate = DateTime.tryParse(rawCompDate);
+    }
     final parsedPackage = packageMap.isNotEmpty
         ? ServicePackage.fromJson(packageMap)
         : ServicePackage(
@@ -474,6 +539,20 @@ class BookingAppointment {
         ? rawIsMulti
         : (rawIsMulti is String ? (rawIsMulti.toLowerCase() == 'true') : null);
     final resolvedIsMulti = parsedIsMulti ?? parsedPackage.isMultiDay;
+
+    final rawDate = (json['scheduledDate'] ?? json['scheduled_date']) as String?;
+    DateTime parsedScheduledDate;
+    if (rawDate != null && RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(rawDate.trim())) {
+      final parts = rawDate.trim().substring(0, 10).split('-');
+      parsedScheduledDate = DateTime(
+        int.parse(parts[0]),
+        int.parse(parts[1]),
+        int.parse(parts[2]),
+      );
+    } else {
+      final dt = rawDate != null ? DateTime.tryParse(rawDate) : null;
+      parsedScheduledDate = dt != null ? DateTime(dt.year, dt.month, dt.day) : DateTime.now();
+    }
 
     return BookingAppointment(
       id: (json['id'] as String?) ?? 'bk_${DateTime.now().millisecondsSinceEpoch}',
@@ -496,7 +575,7 @@ class BookingAppointment {
         orElse: () => ServiceLocationType.mobile,
       ),
       clientAddress: (json['clientAddress'] ?? json['client_address']) as String? ?? '',
-      scheduledDate: DateTime.tryParse((json['scheduledDate'] ?? json['scheduled_date']) as String? ?? '') ?? DateTime.now(),
+      scheduledDate: parsedScheduledDate,
       scheduledTimeSlot: (json['scheduledTimeSlot'] ?? json['scheduled_time_slot']) as String? ?? '9:00 AM',
       totalPrice: ((json['totalPrice'] ?? json['total_price']) as num?)?.toDouble() ?? 0.0,
       depositAmount: ((json['depositAmount'] ?? json['deposit_amount']) as num?)?.toDouble() ?? 0.0,

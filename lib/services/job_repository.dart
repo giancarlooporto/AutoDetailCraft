@@ -665,7 +665,8 @@ class JobRepository extends ChangeNotifier {
     } catch (_) {}
   }
 
-  Future<void> _refreshBookingsFromCloud(String userId) async {
+  Future<void> _refreshBookingsFromCloud(String userId, {String? targetDetailerId}) async {
+    if (SupabaseService.client == null) return;
     try {
       final authEmail = SupabaseAuthService.currentAuthUser?.email ??
           (_currentUser.username.contains('@') ? _currentUser.username : null);
@@ -680,39 +681,71 @@ class JobRepository extends ChangeNotifier {
         userEmail: authEmail,
         guestEmails: guestEmails,
         bookingIds: localIds,
+        targetDetailerId: targetDetailerId,
       );
 
-      if (cloudBookings.isNotEmpty) {
-        // Non-destructive union merge: merge cloud bookings with local bookings by id
-        final bookingMap = <String, BookingAppointment>{};
-        for (final b in _bookings) {
-          bookingMap[b.id] = b;
-        }
-        bool hasChanges = false;
-        for (final b in cloudBookings) {
-          final existing = bookingMap[b.id];
-          if (existing == null ||
-              existing.status != b.status ||
-              existing.scheduledDate != b.scheduledDate ||
-              existing.clientId != b.clientId ||
-              existing.scheduledTimeSlot != b.scheduledTimeSlot) {
-            bookingMap[b.id] = b;
-            hasChanges = true;
-          }
-        }
+      final cloudIds = cloudBookings.map((b) => b.id).toSet();
+      final targetScopeDetailerId = targetDetailerId ?? userId;
 
-        if (hasChanges) {
-          _bookings = bookingMap.values.toList()
-            ..sort((a, b) => b.scheduledDate.compareTo(a.scheduledDate));
-          LocalStorageService.saveBookings(_bookings);
-          notifyListeners();
+      // 1. Reconcile deleted bookings: if a local booking in scope was previously synced to Supabase (in localIds),
+      // but is no longer present in cloudBookings, it was deleted in the cloud.
+      bool hasChanges = false;
+      final remainingLocal = <BookingAppointment>[];
+      for (final b in _bookings) {
+        final inScope = (b.detailerId == targetScopeDetailerId ||
+                         (targetDetailerId == null && (b.detailerId == userId || b.clientId == userId)));
+        final wasInCloud = localIds.contains(b.id);
+        if (inScope && wasInCloud && !cloudIds.contains(b.id)) {
+          hasChanges = true;
+          continue; // dropped because deleted in cloud
         }
+        remainingLocal.add(b);
+      }
+
+      // 2. Upsert cloud bookings and merge changes
+      final bookingMap = <String, BookingAppointment>{};
+      for (final b in remainingLocal) {
+        bookingMap[b.id] = b;
+      }
+      for (final b in cloudBookings) {
+        final existing = bookingMap[b.id];
+        if (existing == null ||
+            existing.status != b.status ||
+            existing.scheduledDate != b.scheduledDate ||
+            existing.clientId != b.clientId ||
+            existing.scheduledTimeSlot != b.scheduledTimeSlot ||
+            existing.startTime != b.startTime ||
+            existing.endTime != b.endTime ||
+            existing.completionDate != b.completionDate ||
+            existing.assignedTeamMemberId != b.assignedTeamMemberId ||
+            existing.assignedTeamMemberName != b.assignedTeamMemberName ||
+            existing.totalPrice != b.totalPrice ||
+            existing.durationMinutes != b.durationMinutes ||
+            existing.isMultiDay != b.isMultiDay) {
+          bookingMap[b.id] = b;
+          hasChanges = true;
+        }
+      }
+
+      if (hasChanges) {
+        _bookings = bookingMap.values.toList()
+          ..sort((a, b) => b.scheduledDate.compareTo(a.scheduledDate));
+        LocalStorageService.saveBookings(_bookings);
+        notifyListeners();
       }
     } catch (_) {}
   }
 
+  String? activeStudioDetailerId;
+
   /// Public entry point to refresh all customer and studio bookings from Supabase Cloud
   Future<void> refreshBookings() => _refreshBookingsFromCloud(_currentUser.id);
+
+  /// Refresh bookings specifically for a studio / detailer across devices
+  Future<void> refreshStudioBookings(String detailerId) {
+    activeStudioDetailerId = detailerId;
+    return _refreshBookingsFromCloud(_currentUser.id, targetDetailerId: detailerId);
+  }
 
   Future<void> _refreshAvailabilityBlocksFromCloud([String? detailerId]) async {
     try {
@@ -3380,9 +3413,64 @@ class JobRepository extends ChangeNotifier {
     final targetId = detailerId ?? _currentUser.id;
     if (!package.isMultiDay) {
       final startMin = timeStringToMinutes(startTime);
-      final endMin = startMin + package.durationMinutes;
-      final compDate = DateTime(startDate.year, startDate.month, startDate.day);
-      return (completionDate: compDate, completionTime: formatMinutesToTime(endMin));
+      final dayHours = getHoursForDate(startDate, detailerId: targetId);
+      final closeMin = closeTimeToMinutes(dayHours.closeTime);
+
+      if (startMin + package.durationMinutes <= closeMin) {
+        final compDate = DateTime(startDate.year, startDate.month, startDate.day);
+        return (completionDate: compDate, completionTime: formatMinutesToTime(startMin + package.durationMinutes));
+      }
+
+      // Late drop-off rollover: vehicle is dropped off today, but work starts next open business day at opening time
+      DateTime nextDay = DateTime(startDate.year, startDate.month, startDate.day + 1);
+      int safety = 0;
+      while (safety < 365 &&
+          (isDateRecurringDayOff(nextDay, detailerId: targetId) ||
+           !getHoursForDate(nextDay, detailerId: targetId).isOpen)) {
+        safety++;
+        nextDay = DateTime(nextDay.year, nextDay.month, nextDay.day + 1);
+      }
+
+      int remainingWorkMin = package.durationMinutes;
+      DateTime compDate = nextDay;
+      String compTimeStr = '5:00 PM';
+
+      while (remainingWorkMin > 0 && safety < 365) {
+        final h = getHoursForDate(compDate, detailerId: targetId);
+        final dayOpen = timeStringToMinutes(h.openTime);
+        final dayClose = closeTimeToMinutes(h.closeTime);
+        final dayCap = dayClose - dayOpen;
+
+        if (dayCap <= 0) {
+          safety++;
+          compDate = DateTime(compDate.year, compDate.month, compDate.day + 1);
+          while (safety < 365 &&
+              (isDateRecurringDayOff(compDate, detailerId: targetId) ||
+               !getHoursForDate(compDate, detailerId: targetId).isOpen)) {
+            safety++;
+            compDate = DateTime(compDate.year, compDate.month, compDate.day + 1);
+          }
+          continue;
+        }
+
+        if (remainingWorkMin <= dayCap) {
+          final endWorkMin = dayOpen + remainingWorkMin;
+          compTimeStr = formatMinutesToTime(endWorkMin);
+          break;
+        } else {
+          remainingWorkMin -= dayCap;
+          safety++;
+          compDate = DateTime(compDate.year, compDate.month, compDate.day + 1);
+          while (safety < 365 &&
+              (isDateRecurringDayOff(compDate, detailerId: targetId) ||
+               !getHoursForDate(compDate, detailerId: targetId).isOpen)) {
+            safety++;
+            compDate = DateTime(compDate.year, compDate.month, compDate.day + 1);
+          }
+        }
+      }
+
+      return (completionDate: compDate, completionTime: compTimeStr);
     }
 
     final neededDays = package.turnaroundDays.clamp(1, 30);
@@ -3480,6 +3568,7 @@ class JobRepository extends ChangeNotifier {
     ServicePackage package, {
     String? detailerId,
     String? teamMemberId,
+    bool allowLateDropOff = false,
   }) {
     final targetId = detailerId ?? _currentUser.id;
     if (isDateRecurringDayOff(date, detailerId: targetId)) return [];
@@ -3517,8 +3606,8 @@ class JobRepository extends ChangeNotifier {
     for (final startMin in sortedStarts) {
       if (startMin < openMin || startMin >= closeMin) continue;
 
-      // Same-day closing time protection
-      if (!package.isMultiDay && (startMin + durationMin > closeMin)) {
+      // Same-day closing time protection (unless late drop-off with next-day rollover is permitted)
+      if (!package.isMultiDay && !allowLateDropOff && (startMin + durationMin > closeMin)) {
         continue;
       }
 
@@ -3529,7 +3618,9 @@ class JobRepository extends ChangeNotifier {
 
       final slotStr = package.isMultiDay
           ? '$startTimeStr - ${formatMinutesToTime(startMin + 60)}'
-          : '$startTimeStr - ${formatMinutesToTime(startMin + durationMin)}';
+          : ((startMin + durationMin > closeMin)
+              ? '$startTimeStr - ${formatMinutesToTime(closeMin)}'
+              : '$startTimeStr - ${formatMinutesToTime(startMin + durationMin)}');
 
       final isBlocked = isSlotExplicitlyBlocked(targetId, date, slotStr, teamMemberId: teamMemberId);
       if (isBlocked) continue;
@@ -3608,20 +3699,21 @@ class JobRepository extends ChangeNotifier {
     final normDate = DateTime(date.year, date.month, date.day);
     final apptDate = DateTime(b.scheduledDate.year, b.scheduledDate.month, b.scheduledDate.day);
     final isMulti = b.isMultiDay || b.package.isMultiDay || b.package.estimatedDuration.toLowerCase().contains('day');
+    final DateTime compDate;
+    if (b.completionDate != null) {
+      compDate = DateTime(b.completionDate!.year, b.completionDate!.month, b.completionDate!.day);
+    } else {
+      compDate = calculateCompletionDateTime(
+        b.scheduledDate,
+        b.startTime ?? (b.scheduledTimeSlot.isNotEmpty ? formatMinutesToTime(parseSlotRange(b.scheduledTimeSlot).$1) : '9:00 AM'),
+        b.package,
+        detailerId: b.detailerId,
+      ).completionDate;
+    }
 
-    if (isMulti) {
-      final DateTime compDate;
-      if (b.completionDate != null) {
-        compDate = DateTime(b.completionDate!.year, b.completionDate!.month, b.completionDate!.day);
-      } else {
-        compDate = calculateCompletionDateTime(
-          b.scheduledDate,
-          b.startTime ?? '9:00 AM',
-          b.package,
-          detailerId: b.detailerId,
-        ).completionDate;
-      }
+    final isRollover = compDate.isAfter(apptDate);
 
+    if (isMulti || isRollover) {
       if (normDate.isBefore(apptDate) || normDate.isAfter(compDate)) {
         return false;
       }
@@ -3649,7 +3741,10 @@ class JobRepository extends ChangeNotifier {
 
       if (isCompDay) {
         // Ready/pick-up day: overlaps if slot starts before appt end
-        final apptEnd = b.endTime != null ? timeStringToMinutes(b.endTime!) : parseSlotRange(b.scheduledTimeSlot).$2;
+        int apptEnd = b.endTime != null ? timeStringToMinutes(b.endTime!) : parseSlotRange(b.scheduledTimeSlot).$2;
+        if (apptEnd >= 1440) {
+          apptEnd = apptEnd % 1440;
+        }
         final slotRange = parseSlotRange(slot);
         return slotRange.$1 < apptEnd;
       }
@@ -4988,8 +5083,54 @@ class JobRepository extends ChangeNotifier {
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'bookings',
-          callback: (_) {
-            _refreshBookingsFromCloud(_currentUser.id);
+          callback: (payload) {
+            if (payload.eventType == PostgresChangeEvent.delete) {
+              final deletedId = (payload.oldRecord['id'] ?? payload.oldRecord['booking_id']) as String?;
+              if (deletedId != null && deletedId.isNotEmpty) {
+                final removed = _bookings.where((b) => b.id == deletedId).toList();
+                if (removed.isNotEmpty) {
+                  _bookings.removeWhere((b) => b.id == deletedId);
+                  LocalStorageService.saveBookings(_bookings);
+                  notifyListeners();
+                }
+              }
+            } else if (payload.newRecord.isNotEmpty) {
+              try {
+                final map = Map<String, dynamic>.from(payload.newRecord);
+                if (map['assignedTeamMemberId'] == null && map['assigned_team_member_id'] != null) {
+                  map['assignedTeamMemberId'] = map['assigned_team_member_id'];
+                }
+                if (map['assignedTeamMemberName'] == null && map['assigned_team_member_name'] != null) {
+                  map['assignedTeamMemberName'] = map['assigned_team_member_name'];
+                }
+                if (map['startTime'] == null && map['start_time'] != null) {
+                  map['startTime'] = map['start_time'];
+                }
+                if (map['endTime'] == null && map['end_time'] != null) {
+                  map['endTime'] = map['end_time'];
+                }
+                if (map['completionDate'] == null && map['completion_date'] != null) {
+                  map['completionDate'] = map['completion_date'];
+                }
+                if (map['durationMinutes'] == null && map['duration_minutes'] != null) {
+                  map['durationMinutes'] = map['duration_minutes'];
+                }
+                if (map['isMultiDay'] == null && map['is_multi_day'] != null) {
+                  map['isMultiDay'] = map['is_multi_day'];
+                }
+                final appt = BookingAppointment.fromJson(map);
+                final idx = _bookings.indexWhere((b) => b.id == appt.id);
+                if (idx != -1) {
+                  _bookings[idx] = appt;
+                } else {
+                  _bookings.insert(0, appt);
+                }
+                _bookings.sort((a, b) => b.scheduledDate.compareTo(a.scheduledDate));
+                LocalStorageService.saveBookings(_bookings);
+                notifyListeners();
+              } catch (_) {}
+            }
+            _refreshBookingsFromCloud(_currentUser.id, targetDetailerId: activeStudioDetailerId);
           },
         )
         .subscribe();

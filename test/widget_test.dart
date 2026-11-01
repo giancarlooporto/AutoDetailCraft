@@ -3265,7 +3265,10 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       theme: AppTheme.darkTheme,
       home: Scaffold(
-        body: DetailerWorkbenchView(repository: repository),
+        body: DetailerWorkbenchView(
+          repository: repository,
+          initialCalendarDate: DateTime(2026, 11, 2),
+        ),
       ),
     ));
     await tester.pumpAndSettle();
@@ -3422,7 +3425,10 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       theme: AppTheme.darkTheme,
       home: Scaffold(
-        body: DetailerWorkbenchView(repository: repository),
+        body: DetailerWorkbenchView(
+          repository: repository,
+          initialCalendarDate: DateTime(2026, 11, 2), // Monday (standard 08:00 AM - 06:00 PM operating hours)
+        ),
       ),
     ));
     await tester.pumpAndSettle();

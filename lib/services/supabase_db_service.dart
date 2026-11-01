@@ -1480,8 +1480,8 @@ class SupabaseDbService {
       final sanitizedClientId = (booking.clientId != null && validUuidRegex.hasMatch(booking.clientId!))
           ? booking.clientId
           : null;
-      final sanitizedDetailerId = validUuidRegex.hasMatch(booking.detailerId)
-          ? booking.detailerId
+      final sanitizedDetailerId = booking.detailerId.trim().isNotEmpty
+          ? booking.detailerId.trim()
           : '5ecfac74-435a-4c99-bb19-cbda2d0a1d65';
 
       // Primary payload matching live Supabase bookings schema
@@ -1500,7 +1500,7 @@ class SupabaseDbService {
         'package_data': booking.package.toJson(),
         'service_location_type': booking.locationType.name,
         'client_address': booking.clientAddress,
-        'scheduled_date': booking.scheduledDate.toIso8601String(),
+        'scheduled_date': '${booking.scheduledDate.year.toString().padLeft(4, '0')}-${booking.scheduledDate.month.toString().padLeft(2, '0')}-${booking.scheduledDate.day.toString().padLeft(2, '0')}',
         'scheduled_time_slot': booking.scheduledTimeSlot,
         'total_price': booking.totalPrice,
         'deposit_amount': booking.depositAmount,
@@ -1508,6 +1508,11 @@ class SupabaseDbService {
         'client_notes': booking.clientNotes,
         'pre_inspection_summary': booking.preInspectionSummary,
         'warranty_passport_id': booking.warrantyPassportId,
+        if (booking.startTime != null) 'start_time': booking.startTime,
+        if (booking.endTime != null) 'end_time': booking.endTime,
+        if (booking.completionDate != null) 'completion_date': booking.completionDate!.toIso8601String(),
+        if (booking.durationMinutes != null) 'duration_minutes': booking.durationMinutes,
+        'is_multi_day': booking.isMultiDay,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
 
@@ -1554,20 +1559,29 @@ class SupabaseDbService {
     String? userEmail,
     List<String>? guestEmails,
     List<String>? bookingIds,
+    String? targetDetailerId,
   }) async {
     final client = _client;
     if (client == null) return [];
 
     try {
-      final validUuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
-      final isUuid = validUuidRegex.hasMatch(userId.trim());
       final cleanEmail = userEmail?.trim().toLowerCase();
       final hasEmail = cleanEmail != null && cleanEmail.isNotEmpty;
 
       final filters = <String>[];
-      if (isUuid) {
+      if (userId.trim().isNotEmpty) {
         filters.add('client_id.eq.$userId');
         filters.add('detailer_id.eq.$userId');
+        if (userId == 'usr_detailer_pro') {
+          filters.add('detailer_id.eq.5ecfac74-435a-4c99-bb19-cbda2d0a1d65');
+        }
+      }
+      if (targetDetailerId != null && targetDetailerId.trim().isNotEmpty) {
+        final cleanTarget = targetDetailerId.trim();
+        filters.add('detailer_id.eq.$cleanTarget');
+        if (cleanTarget == 'usr_detailer_pro') {
+          filters.add('detailer_id.eq.5ecfac74-435a-4c99-bb19-cbda2d0a1d65');
+        }
       }
       if (hasEmail) {
         filters.add('client_email.eq.$cleanEmail');
@@ -1608,6 +1622,21 @@ class SupabaseDbService {
         }
         if (map['assignedTeamMemberName'] == null && map['assigned_team_member_name'] != null) {
           map['assignedTeamMemberName'] = map['assigned_team_member_name'];
+        }
+        if (map['startTime'] == null && map['start_time'] != null) {
+          map['startTime'] = map['start_time'];
+        }
+        if (map['endTime'] == null && map['end_time'] != null) {
+          map['endTime'] = map['end_time'];
+        }
+        if (map['completionDate'] == null && map['completion_date'] != null) {
+          map['completionDate'] = map['completion_date'];
+        }
+        if (map['durationMinutes'] == null && map['duration_minutes'] != null) {
+          map['durationMinutes'] = map['duration_minutes'];
+        }
+        if (map['isMultiDay'] == null && map['is_multi_day'] != null) {
+          map['isMultiDay'] = map['is_multi_day'];
         }
         bookings.add(BookingAppointment.fromJson(map));
       }

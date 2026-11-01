@@ -968,12 +968,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   int _getCountForHub(StudioHubSection section, int myJobs, int saved, UserProfile user, int invCount) {
     switch (section) {
       case StudioHubSection.calendar:
-        return widget.repository.bookings.where((b) {
-          return b.detailerId == user.id &&
-                 b.scheduledDate.year == _calendarDisplayMonth.year &&
-                 b.scheduledDate.month == _calendarDisplayMonth.month &&
-                 b.status != BookingStatus.cancelled;
-        }).length;
+        return widget.repository.studioBookings.where((b) => b.status != BookingStatus.cancelled).length;
       case StudioHubSection.booked:
         return widget.repository.studioBookings.where((b) => b.status != BookingStatus.cancelled).length;
       case StudioHubSection.messages:
@@ -2250,7 +2245,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
             final dayBookings = isViewingAll
                 ? widget.repository.getBookingsForDate(cellDate, detailerId: user.id)
                 : widget.repository.getBookingsForDate(cellDate, detailerId: user.id).where(
-                    (b) => b.assignedTeamMemberId == _selectedCalendarTeamMemberId || staff.length <= 1,
+                    (b) => b.assignedTeamMemberId == _selectedCalendarTeamMemberId ||
+                           staff.length <= 1 ||
+                           b.assignedTeamMemberId == null ||
+                           b.assignedTeamMemberId!.isEmpty,
                   ).toList();
             final isFullyBooked = !isFullyBlocked && !isRecurringOff && widget.repository.isDateFullyBooked(cellDate, detailerId: user.id, teamMemberId: targetMemberId);
 
@@ -7782,7 +7780,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     final allDayBookings = widget.repository.getBookingsForDate(date, detailerId: user.id);
     final dayBookings = (isViewingAll
         ? allDayBookings
-        : allDayBookings.where((b) => b.assignedTeamMemberId == _selectedCalendarTeamMemberId || staff.length <= 1).toList())
+        : allDayBookings.where((b) => b.assignedTeamMemberId == _selectedCalendarTeamMemberId ||
+                                      staff.length <= 1 ||
+                                      b.assignedTeamMemberId == null ||
+                                      b.assignedTeamMemberId!.isEmpty).toList())
       ..sort((a, b) {
         final aMin = a.startTime != null ? JobRepository.timeStringToMinutes(a.startTime!) : JobRepository.parseSlotRange(a.scheduledTimeSlot).$1;
         final bMin = b.startTime != null ? JobRepository.timeStringToMinutes(b.startTime!) : JobRepository.parseSlotRange(b.scheduledTimeSlot).$1;
@@ -8676,7 +8677,6 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   Widget _buildBookingAppointmentCard(BookingAppointment b) {
     final user = widget.repository.currentUser;
     final staff = widget.repository.getStudioStaff(detailerId: user.id);
-    final isViewingAll = _selectedCalendarTeamMemberId == 'all';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -8745,7 +8745,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               ],
             ),
           ],
-          if (staff.length > 1 && isViewingAll) ...[
+          if (staff.length > 1) ...[
             const SizedBox(height: 8),
             const Divider(color: AppTheme.border, height: 1),
             const SizedBox(height: 6),
