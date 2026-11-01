@@ -629,6 +629,30 @@ class BookingsListScreen extends StatelessWidget {
                   onPressed: () => repository.setActiveTab(0),
                 ),
               ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.textMuted,
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                  ),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 14),
+                  label: const Text('Dismiss from My Bookings', style: TextStyle(fontSize: 11.5)),
+                  onPressed: () async {
+                    await repository.deleteBooking(booking.id);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Cancelled booking removed from your list.'),
+                          behavior: SnackBarBehavior.floating,
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ),
             ],
           ],
         ),
