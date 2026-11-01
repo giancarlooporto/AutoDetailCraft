@@ -501,9 +501,19 @@ class BookingAppointment {
 
   factory BookingAppointment.fromJson(Map<String, dynamic> json) {
     final rawPackage = json['package'] ?? json['package_data'];
-    final packageMap = rawPackage is Map
-        ? Map<String, dynamic>.from(rawPackage)
-        : (rawPackage is String ? Map<String, dynamic>.from(jsonDecode(rawPackage) as Map) : <String, dynamic>{});
+    Map<String, dynamic> packageMap = <String, dynamic>{};
+    if (rawPackage is Map) {
+      try {
+        packageMap = Map<String, dynamic>.from(rawPackage);
+      } catch (_) {}
+    } else if (rawPackage is String) {
+      try {
+        final decoded = jsonDecode(rawPackage);
+        if (decoded is Map) {
+          packageMap = Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {}
+    }
 
     final locRaw = json['locationType'] ?? json['location_type'] ?? json['service_location_type'];
     final vehicleSizeRaw = json['vehicleSize'] ?? json['vehicle_size'];
@@ -530,7 +540,12 @@ class BookingAppointment {
             id: 'pkg_fallback',
             title: 'Standard Service',
             description: 'Professional detailing package',
-            basePrice: ((json['totalPrice'] ?? json['total_price']) as num?)?.toDouble() ?? 0.0,
+            basePrice: () {
+              final raw = json['totalPrice'] ?? json['total_price'];
+              if (raw is num) return raw.toDouble();
+              if (raw is String) return double.tryParse(raw) ?? 0.0;
+              return 0.0;
+            }(),
             estimatedDuration: '2 hours',
             includes: const ['Full detail service'],
           );
@@ -541,7 +556,7 @@ class BookingAppointment {
         : (rawIsMulti is String ? (rawIsMulti.toLowerCase() == 'true') : null);
     final resolvedIsMulti = parsedIsMulti ?? parsedPackage.isMultiDay;
 
-    final rawDate = (json['scheduledDate'] ?? json['scheduled_date']) as String?;
+    final rawDate = (json['scheduledDate'] ?? json['scheduled_date'])?.toString();
     DateTime parsedScheduledDate;
     if (rawDate != null && RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(rawDate.trim())) {
       final parts = rawDate.trim().substring(0, 10).split('-');
@@ -556,16 +571,16 @@ class BookingAppointment {
     }
 
     return BookingAppointment(
-      id: (json['id'] as String?) ?? 'bk_${DateTime.now().millisecondsSinceEpoch}',
-      clientId: (json['clientId'] ?? json['client_id']) as String?,
-      detailerId: (json['detailerId'] ?? json['detailer_id']) as String? ?? '',
-      detailerName: (json['detailerName'] ?? json['detailer_name']) as String? ?? '',
-      detailerBusinessName: (json['detailerBusinessName'] ?? json['detailer_business_name']) as String? ?? '',
-      detailerAvatar: (json['detailerAvatar'] ?? json['detailer_avatar']) as String? ?? '',
-      clientName: (json['clientName'] ?? json['client_name']) as String? ?? '',
-      clientPhone: (json['clientPhone'] ?? json['client_phone']) as String? ?? '',
-      clientEmail: (json['clientEmail'] ?? json['client_email']) as String? ?? '',
-      vehicleYearMakeModel: (json['vehicleYearMakeModel'] ?? json['vehicle_year_make_model']) as String? ?? '',
+      id: (json['id']?.toString()) ?? 'bk_${DateTime.now().millisecondsSinceEpoch}',
+      clientId: (json['clientId'] ?? json['client_id'])?.toString(),
+      detailerId: (json['detailerId'] ?? json['detailer_id'])?.toString() ?? '',
+      detailerName: (json['detailerName'] ?? json['detailer_name'])?.toString() ?? '',
+      detailerBusinessName: (json['detailerBusinessName'] ?? json['detailer_business_name'])?.toString() ?? '',
+      detailerAvatar: (json['detailerAvatar'] ?? json['detailer_avatar'])?.toString() ?? '',
+      clientName: (json['clientName'] ?? json['client_name'])?.toString() ?? '',
+      clientPhone: (json['clientPhone'] ?? json['client_phone'])?.toString() ?? '',
+      clientEmail: (json['clientEmail'] ?? json['client_email'])?.toString() ?? '',
+      vehicleYearMakeModel: (json['vehicleYearMakeModel'] ?? json['vehicle_year_make_model'])?.toString() ?? '',
       vehicleSize: VehicleSize.values.firstWhere(
         (v) => v.name == vehicleSizeRaw,
         orElse: () => VehicleSize.coupeSedan,
@@ -575,11 +590,29 @@ class BookingAppointment {
         (l) => l.name == locRaw,
         orElse: () => ServiceLocationType.mobile,
       ),
-      clientAddress: (json['clientAddress'] ?? json['client_address']) as String? ?? '',
+      clientAddress: (json['clientAddress'] ?? json['client_address'])?.toString() ?? '',
       scheduledDate: parsedScheduledDate,
-      scheduledTimeSlot: (json['scheduledTimeSlot'] ?? json['scheduled_time_slot']) as String? ?? '9:00 AM',
-      totalPrice: ((json['totalPrice'] ?? json['total_price']) as num?)?.toDouble() ?? 0.0,
-      depositAmount: ((json['depositAmount'] ?? json['deposit_amount']) as num?)?.toDouble() ?? 0.0,
+      scheduledTimeSlot: (json['scheduledTimeSlot'] ?? json['scheduled_time_slot'])?.toString() ?? '9:00 AM',
+      totalPrice: () {
+        final raw = json['totalPrice'] ?? json['total_price'];
+        if (raw == null) return 0.0;
+        if (raw is num) return raw.toDouble();
+        if (raw is String) {
+          final parsed = double.tryParse(raw);
+          if (parsed != null) return parsed;
+        }
+        throw FormatException('Invalid price format: $raw');
+      }(),
+      depositAmount: () {
+        final raw = json['depositAmount'] ?? json['deposit_amount'];
+        if (raw == null) return 0.0;
+        if (raw is num) return raw.toDouble();
+        if (raw is String) {
+          final parsed = double.tryParse(raw);
+          if (parsed != null) return parsed;
+        }
+        throw FormatException('Invalid deposit format: $raw');
+      }(),
       status: () {
         if (statusRaw == null) return BookingStatus.confirmed;
         final s = statusRaw.toString().trim().toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
@@ -593,14 +626,14 @@ class BookingAppointment {
           orElse: () => BookingStatus.confirmed,
         );
       }(),
-      clientNotes: (json['clientNotes'] ?? json['client_notes']) as String?,
-      preInspectionSummary: (json['preInspectionSummary'] ?? json['pre_inspection_summary']) as String?,
-      warrantyPassportId: (json['warrantyPassportId'] ?? json['warranty_passport_id']) as String?,
-      assignedTeamMemberId: (json['assignedTeamMemberId'] ?? json['assigned_team_member_id']) as String?,
-      assignedTeamMemberName: (json['assignedTeamMemberName'] ?? json['assigned_team_member_name']) as String?,
+      clientNotes: (json['clientNotes'] ?? json['client_notes'])?.toString(),
+      preInspectionSummary: (json['preInspectionSummary'] ?? json['pre_inspection_summary'])?.toString(),
+      warrantyPassportId: (json['warrantyPassportId'] ?? json['warranty_passport_id'])?.toString(),
+      assignedTeamMemberId: (json['assignedTeamMemberId'] ?? json['assigned_team_member_id'])?.toString(),
+      assignedTeamMemberName: (json['assignedTeamMemberName'] ?? json['assigned_team_member_name'])?.toString(),
       completionDate: parsedCompDate,
-      startTime: (json['startTime'] ?? json['start_time']) as String?,
-      endTime: (json['endTime'] ?? json['end_time']) as String?,
+      startTime: (json['startTime'] ?? json['start_time'])?.toString(),
+      endTime: (json['endTime'] ?? json['end_time'])?.toString(),
       durationMinutes: () {
         final raw = json['durationMinutes'] ?? json['duration_minutes'];
         if (raw is int) return raw;

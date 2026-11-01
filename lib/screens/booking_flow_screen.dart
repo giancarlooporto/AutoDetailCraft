@@ -482,7 +482,8 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
 
     final booking = BookingAppointment(
       id: 'book_${DateTime.now().millisecondsSinceEpoch}',
-      clientId: widget.repository.isLoggedIn ? widget.repository.currentUser.id : null,
+      clientId: SupabaseAuthService.currentAuthUser?.id ??
+          (widget.repository.isLoggedIn ? widget.repository.currentUser.id : null),
       detailerId: widget.detailer.id,
       assignedTeamMemberId: null,
       assignedTeamMemberName: null,

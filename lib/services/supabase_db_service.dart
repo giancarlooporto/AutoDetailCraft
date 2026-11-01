@@ -1667,7 +1667,7 @@ class SupabaseDbService {
       return bookings;
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error fetching bookings: $e');
-      return [];
+      rethrow;
     }
   }
 

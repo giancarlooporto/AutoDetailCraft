@@ -15,7 +15,7 @@ class BookingsListScreen extends StatelessWidget {
 
   const BookingsListScreen({super.key, required this.repository});
 
-  void _showBookingDetailsModal(BuildContext context, BookingAppointment booking) {
+  void _showBookingDetailsModal(BuildContext context, BookingAppointment initialBooking) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.surface,
@@ -23,352 +23,361 @@ class BookingsListScreen extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.75,
-        maxChildSize: 0.95,
-        minChildSize: 0.5,
-        expand: false,
-        builder: (_, scrollCtrl) => Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: SingleChildScrollView(
-              controller: scrollCtrl,
-              padding: const EdgeInsets.all(20),
-              child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppTheme.border,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(booking.package.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 2),
-                        Text('with ${booking.detailerBusinessName}', style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: booking.status.statusColor.withAlpha(30),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: booking.status.statusColor.withAlpha(100)),
-                    ),
-                    child: Text(
-                      booking.status.label,
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: booking.status.statusColor),
-                    ),
-                  ),
-                ],
-              ),
-              const Divider(color: AppTheme.border, height: 24),
-              _sectionHeader('Appointment Details', Icons.event_available_rounded),
-              _infoTile('Vehicle', booking.vehicleYearMakeModel),
-              if (booking.isMultiDay || booking.package.isMultiDay) ...[
-                _infoTile('Drop-off Date & Time', '${DateFormat('EEEE, MMMM d, yyyy').format(booking.scheduledDate)} at ${booking.startTime ?? booking.scheduledTimeSlot}'),
-                _infoTile('Ready Pick-up Date & Time', '${booking.completionDate != null ? DateFormat('EEEE, MMMM d, yyyy').format(booking.completionDate!) : DateFormat('EEEE, MMMM d, yyyy').format(booking.scheduledDate)} at ${booking.endTime ?? 'End of Day'}'),
-                _infoTile('Turnaround Time', booking.package.durationBadge),
-              ] else ...[
-                _infoTile('Scheduled Date', DateFormat('EEEE, MMMM d, yyyy').format(booking.scheduledDate)),
-                _infoTile('Arrival Window', booking.scheduledTimeSlot),
-                _infoTile('Estimated Duration', booking.package.durationBadge),
-              ],
-              _infoTile('Service Type', booking.locationType.label),
-              _infoTile('Address / Location', booking.clientAddress),
-              const SizedBox(height: 16),
-              _sectionHeader('Escrow & Payment Breakdown', Icons.account_balance_wallet_outlined),
-              _infoTile('Total Service Fee', '\$${booking.totalPrice.toStringAsFixed(0)}'),
-              _infoTile('Deposit Paid (Held in Escrow)', '\$${booking.depositAmount.toStringAsFixed(0)}', color: AppTheme.primary),
-              _infoTile('Balance Due on Completion', '\$${(booking.totalPrice - booking.depositAmount).toStringAsFixed(0)}'),
-              if (booking.warrantyPassportId != null) ...[
-                const SizedBox(height: 16),
-                _sectionHeader('Vehicle Warranty Certificate', Icons.shield_outlined),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surfaceLight,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.primary.withAlpha(60)),
-                  ),
-                  child: Row(
+      builder: (ctx) => ListenableBuilder(
+        listenable: repository,
+        builder: (modalCtx, _) {
+          final currentBooking = repository.bookings.firstWhere(
+            (b) => b.id == initialBooking.id,
+            orElse: () => initialBooking,
+          );
+          return DraggableScrollableSheet(
+            initialChildSize: 0.75,
+            maxChildSize: 0.95,
+            minChildSize: 0.5,
+            expand: false,
+            builder: (_, scrollCtrl) => Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: SingleChildScrollView(
+                  controller: scrollCtrl,
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.verified_user_rounded, color: AppTheme.primary),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: AppTheme.border,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(currentBooking.package.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 2),
+                                Text('with ${currentBooking.detailerBusinessName}', style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: currentBooking.status.statusColor.withAlpha(30),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: currentBooking.status.statusColor.withAlpha(100)),
+                            ),
+                            child: Text(
+                              currentBooking.status.label,
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: currentBooking.status.statusColor),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Divider(color: AppTheme.border, height: 24),
+                      _sectionHeader('Appointment Details', Icons.event_available_rounded),
+                      _infoTile('Vehicle', currentBooking.vehicleYearMakeModel),
+                      if (currentBooking.isMultiDay || currentBooking.package.isMultiDay) ...[
+                        _infoTile('Drop-off Date & Time', '${DateFormat('EEEE, MMMM d, yyyy').format(currentBooking.scheduledDate)} at ${currentBooking.startTime ?? currentBooking.scheduledTimeSlot}'),
+                        _infoTile('Ready Pick-up Date & Time', '${currentBooking.completionDate != null ? DateFormat('EEEE, MMMM d, yyyy').format(currentBooking.completionDate!) : DateFormat('EEEE, MMMM d, yyyy').format(currentBooking.scheduledDate)} at ${currentBooking.endTime ?? 'End of Day'}'),
+                        _infoTile('Turnaround Time', currentBooking.package.durationBadge),
+                      ] else ...[
+                        _infoTile('Scheduled Date', DateFormat('EEEE, MMMM d, yyyy').format(currentBooking.scheduledDate)),
+                        _infoTile('Arrival Window', currentBooking.scheduledTimeSlot),
+                        _infoTile('Estimated Duration', currentBooking.package.durationBadge),
+                      ],
+                      _infoTile('Service Type', currentBooking.locationType.label),
+                      _infoTile('Address / Location', currentBooking.clientAddress),
+                      const SizedBox(height: 16),
+                      _sectionHeader('Escrow & Payment Breakdown', Icons.account_balance_wallet_outlined),
+                      _infoTile('Total Service Fee', '\$${currentBooking.totalPrice.toStringAsFixed(0)}'),
+                      _infoTile('Deposit Paid (Held in Escrow)', '\$${currentBooking.depositAmount.toStringAsFixed(0)}', color: AppTheme.primary),
+                      _infoTile('Balance Due on Completion', '\$${(currentBooking.totalPrice - currentBooking.depositAmount).toStringAsFixed(0)}'),
+                      if (currentBooking.warrantyPassportId != null) ...[
+                        const SizedBox(height: 16),
+                        _sectionHeader('Vehicle Warranty Certificate', Icons.shield_outlined),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceLight,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppTheme.primary.withAlpha(60)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.verified_user_rounded, color: AppTheme.primary),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('AutoDetailCraft Passport', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                    Text('Certificate ID: ${currentBooking.warrantyPassportId}', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      if (repository.isLoggedIn && currentBooking.detailerId == repository.currentUser.id) ...[
+                        if (currentBooking.status == BookingStatus.pending) ...[
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF00E676),
+                                foregroundColor: Colors.black,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              icon: const Icon(Icons.check_circle_outline, size: 18),
+                              label: const Text('Confirm & Accept Booking', style: TextStyle(fontWeight: FontWeight.bold)),
+                              onPressed: () async {
+                                await repository.updateBookingStatus(currentBooking.id, BookingStatus.confirmed);
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Booking confirmed & added to schedule!')),
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                        ] else if (currentBooking.status == BookingStatus.confirmed) ...[
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFFFB300),
+                                foregroundColor: Colors.black,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
+                              label: const Text('Start Service (In Progress)', style: TextStyle(fontWeight: FontWeight.bold)),
+                              onPressed: () async {
+                                await repository.updateBookingStatus(currentBooking.id, BookingStatus.inProgress);
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Service is now in progress!')),
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                        ] else if (currentBooking.status == BookingStatus.inProgress) ...[
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF2979FF),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              icon: const Icon(Icons.task_alt_rounded, size: 18),
+                              label: const Text('Complete Service & Release Escrow', style: TextStyle(fontWeight: FontWeight.bold)),
+                              onPressed: () async {
+                                await repository.updateBookingStatus(currentBooking.id, BookingStatus.completed);
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Service marked as completed & escrow released!')),
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                      ] else ...[
+                        // Client perspective status explanation banner
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: currentBooking.status.statusColor.withAlpha(20),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: currentBooking.status.statusColor.withAlpha(70)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                currentBooking.status == BookingStatus.pending
+                                    ? Icons.hourglass_top_rounded
+                                    : (currentBooking.status == BookingStatus.confirmed
+                                        ? Icons.event_available_rounded
+                                        : (currentBooking.status == BookingStatus.inProgress
+                                            ? Icons.auto_awesome_rounded
+                                            : (currentBooking.status == BookingStatus.completed
+                                                ? Icons.verified_rounded
+                                                : Icons.cancel_outlined))),
+                                color: currentBooking.status.statusColor,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  currentBooking.status == BookingStatus.pending
+                                      ? 'Awaiting studio confirmation. Your deposit is held securely in escrow.'
+                                      : (currentBooking.status == BookingStatus.confirmed
+                                          ? 'Appointment confirmed! Please arrive within the arrival window: ${currentBooking.scheduledTimeSlot}.'
+                                          : (currentBooking.status == BookingStatus.inProgress
+                                              ? 'Service is actively in progress at ${currentBooking.detailerBusinessName}.'
+                                              : (currentBooking.status == BookingStatus.completed
+                                                  ? 'Service completed! Your digital warranty passport is ready.'
+                                                  : 'This appointment was cancelled by the detailing studio. Your slot has been released.'))),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: currentBooking.status.statusColor,
+                                    height: 1.3,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        _buildStatusTracker(currentBooking),
+                        const SizedBox(height: 12),
+                      ],
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                side: const BorderSide(color: AppTheme.border),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              icon: const Icon(Icons.phone_outlined, size: 16),
+                              label: const Text('Call Studio'),
+                              onPressed: () {
+                                final detailer = repository.publicDetailers
+                                    .where((d) => d.id == currentBooking.detailerId)
+                                    .firstOrNull;
+                                final phone = (detailer != null && detailer.phone.trim().isNotEmpty)
+                                    ? detailer.phone.trim()
+                                    : '(512) 555-0199';
+                                Clipboard.setData(ClipboardData(text: phone));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Studio phone number ($phone) copied to clipboard!'),
+                                    action: SnackBarAction(label: 'Call', onPressed: () {}),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.primary,
+                                foregroundColor: Colors.black,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              icon: const Icon(Icons.directions_rounded, size: 16),
+                              label: const Text('Directions / Map', style: TextStyle(fontWeight: FontWeight.bold)),
+                              onPressed: () {
+                                final address = currentBooking.clientAddress.isNotEmpty ? currentBooking.clientAddress : 'Austin, TX';
+                                final mapsUrl = 'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(address)}';
+                                Clipboard.setData(ClipboardData(text: mapsUrl));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Service location address copied: $address'),
+                                    action: SnackBarAction(label: 'OK', onPressed: () {}),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (currentBooking.status == BookingStatus.cancelled) ...[
+                        const SizedBox(height: 12),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            foregroundColor: Colors.black,
+                            minimumSize: const Size.fromHeight(44),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          icon: const Icon(Icons.explore_rounded, size: 18, color: Colors.black),
+                          label: const Text('Book Another Detailer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            repository.setActiveTab(0);
+                          },
+                        ),
+                      ],
+                      if (currentBooking.status != BookingStatus.cancelled && currentBooking.status != BookingStatus.completed) ...[
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Text('AutoDetailCraft Passport', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            Text('Certificate ID: ${booking.warrantyPassportId}', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                            TextButton.icon(
+                              onPressed: () => _showRescheduleDialog(context, repository, currentBooking),
+                              icon: const Icon(Icons.edit_calendar_rounded, size: 14, color: AppTheme.primary),
+                              label: const Text('Reschedule', style: TextStyle(color: AppTheme.primary, fontSize: 12)),
+                            ),
+                            const SizedBox(width: 16),
+                            TextButton.icon(
+                              onPressed: () async {
+                                await repository.cancelBooking(currentBooking.id);
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      behavior: SnackBarBehavior.floating,
+                                      backgroundColor: AppTheme.surface,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        side: const BorderSide(color: AppTheme.border),
+                                      ),
+                                      content: const Row(
+                                        children: [
+                                          Icon(Icons.cancel_outlined, color: Color(0xFFFF5252), size: 18),
+                                          SizedBox(width: 8),
+                                          Text('Booking reservation has been cancelled.', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                        ],
+                                      ),
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
+                              },
+                              icon: const Icon(Icons.cancel_outlined, size: 14, color: Color(0xFFFF5252)),
+                              label: const Text('Cancel Reservation', style: TextStyle(color: Color(0xFFFF5252), fontSize: 12)),
+                            ),
                           ],
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
-              ],
-              const SizedBox(height: 20),
-              if (repository.isLoggedIn && booking.detailerId == repository.currentUser.id) ...[
-                if (booking.status == BookingStatus.pending) ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF00E676),
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      icon: const Icon(Icons.check_circle_outline, size: 18),
-                      label: const Text('Confirm & Accept Booking', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () async {
-                        await repository.updateBookingStatus(booking.id, BookingStatus.confirmed);
-                        if (ctx.mounted) Navigator.pop(ctx);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Booking confirmed & added to schedule!')),
-                          );
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ] else if (booking.status == BookingStatus.confirmed) ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFFB300),
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
-                      label: const Text('Start Service (In Progress)', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () async {
-                        await repository.updateBookingStatus(booking.id, BookingStatus.inProgress);
-                        if (ctx.mounted) Navigator.pop(ctx);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Service is now in progress!')),
-                          );
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ] else if (booking.status == BookingStatus.inProgress) ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2979FF),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      icon: const Icon(Icons.task_alt_rounded, size: 18),
-                      label: const Text('Complete Service & Release Escrow', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () async {
-                        await repository.updateBookingStatus(booking.id, BookingStatus.completed);
-                        if (ctx.mounted) Navigator.pop(ctx);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Service marked as completed & escrow released!')),
-                          );
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-              ] else ...[
-                // Client perspective status explanation banner
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: booking.status.statusColor.withAlpha(20),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: booking.status.statusColor.withAlpha(70)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        booking.status == BookingStatus.pending
-                            ? Icons.hourglass_top_rounded
-                            : (booking.status == BookingStatus.confirmed
-                                ? Icons.event_available_rounded
-                                : (booking.status == BookingStatus.inProgress
-                                    ? Icons.auto_awesome_rounded
-                                    : (booking.status == BookingStatus.completed
-                                        ? Icons.verified_rounded
-                                        : Icons.cancel_outlined))),
-                        color: booking.status.statusColor,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          booking.status == BookingStatus.pending
-                              ? 'Awaiting studio confirmation. Your deposit is held securely in escrow.'
-                              : (booking.status == BookingStatus.confirmed
-                                  ? 'Appointment confirmed! Please arrive within the arrival window: ${booking.scheduledTimeSlot}.'
-                                  : (booking.status == BookingStatus.inProgress
-                                      ? 'Service is actively in progress at ${booking.detailerBusinessName}.'
-                                      : (booking.status == BookingStatus.completed
-                                          ? 'Service completed! Your digital warranty passport is ready.'
-                                          : 'This appointment was cancelled by the detailing studio. Your slot has been released.'))),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: booking.status.statusColor,
-                            height: 1.3,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                _buildStatusTracker(booking),
-                const SizedBox(height: 12),
-              ],
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        side: const BorderSide(color: AppTheme.border),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      icon: const Icon(Icons.phone_outlined, size: 16),
-                      label: const Text('Call Studio'),
-                      onPressed: () {
-                        final detailer = repository.publicDetailers
-                            .where((d) => d.id == booking.detailerId)
-                            .firstOrNull;
-                        final phone = (detailer != null && detailer.phone.trim().isNotEmpty)
-                            ? detailer.phone.trim()
-                            : '(512) 555-0199';
-                        Clipboard.setData(ClipboardData(text: phone));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Studio phone number ($phone) copied to clipboard!'),
-                            action: SnackBarAction(label: 'Call', onPressed: () {}),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primary,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      icon: const Icon(Icons.directions_rounded, size: 16),
-                      label: const Text('Directions / Map', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () {
-                        final address = booking.clientAddress.isNotEmpty ? booking.clientAddress : 'Austin, TX';
-                        final mapsUrl = 'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(address)}';
-                        Clipboard.setData(ClipboardData(text: mapsUrl));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Service location address copied: $address'),
-                            action: SnackBarAction(label: 'OK', onPressed: () {}),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
               ),
-              if (booking.status == BookingStatus.cancelled) ...[
-                const SizedBox(height: 12),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    foregroundColor: Colors.black,
-                    minimumSize: const Size.fromHeight(44),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  icon: const Icon(Icons.explore_rounded, size: 18, color: Colors.black),
-                  label: const Text('Book Another Detailer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    repository.setActiveTab(0);
-                  },
-                ),
-              ],
-              if (booking.status != BookingStatus.cancelled && booking.status != BookingStatus.completed) ...[
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    TextButton.icon(
-                      onPressed: () => _showRescheduleDialog(context, repository, booking),
-                      icon: const Icon(Icons.edit_calendar_rounded, size: 14, color: AppTheme.primary),
-                      label: const Text('Reschedule', style: TextStyle(color: AppTheme.primary, fontSize: 12)),
-                    ),
-                    const SizedBox(width: 16),
-                    TextButton.icon(
-                      onPressed: () async {
-                        await repository.cancelBooking(booking.id);
-                        if (ctx.mounted) Navigator.pop(ctx);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              behavior: SnackBarBehavior.floating,
-                              backgroundColor: AppTheme.surface,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                side: const BorderSide(color: AppTheme.border),
-                              ),
-                              content: const Row(
-                                children: [
-                                  Icon(Icons.cancel_outlined, color: Color(0xFFFF5252), size: 18),
-                                  SizedBox(width: 8),
-                                  Text('Booking reservation has been cancelled.', style: TextStyle(color: Colors.white, fontSize: 13)),
-                                ],
-                              ),
-                              duration: const Duration(seconds: 2),
-                            ),
-                          );
-                        }
-                      },
-                      icon: const Icon(Icons.cancel_outlined, size: 14, color: Color(0xFFFF5252)),
-                      label: const Text('Cancel Reservation', style: TextStyle(color: Color(0xFFFF5252), fontSize: 12)),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
-    ),
-  ),
-);
+    );
   }
 
   void _showRescheduleDialog(BuildContext context, JobRepository repo, BookingAppointment booking) async {

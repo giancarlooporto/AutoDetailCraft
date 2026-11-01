@@ -686,24 +686,39 @@ class JobRepository extends ChangeNotifier {
 
       final cloudIds = cloudBookings.map((b) => b.id).toSet();
       final targetScopeDetailerId = targetDetailerId ?? userId;
+      final cleanAuthEmail = SupabaseAuthService.currentAuthUser?.email?.trim().toLowerCase() ??
+          (_currentUser.username.contains('@') ? _currentUser.username.trim().toLowerCase() : null);
+      final authId = SupabaseAuthService.currentAuthUser?.id;
 
-      // 1. Reconcile deleted bookings: if a local booking in scope was previously synced to Supabase (in localIds),
-      // but is no longer present in cloudBookings, it was deleted in the cloud.
+      // 1. Reconcile deleted bookings:
+      // Even when cloudBookings is empty, all local bookings within scope that were
+      // previously queried in Supabase (wasInCloud) must be dropped because they no longer exist in Supabase.
       bool hasChanges = false;
       final remainingLocal = <BookingAppointment>[];
-      if (cloudBookings.isNotEmpty) {
-        for (final b in _bookings) {
-          final inScope = (b.detailerId == targetScopeDetailerId ||
-                           (targetDetailerId == null && (b.detailerId == userId || b.clientId == userId)));
-          final wasInCloud = localIds.contains(b.id);
-          if (inScope && wasInCloud && !cloudIds.contains(b.id)) {
-            hasChanges = true;
-            continue; // dropped because deleted in cloud
-          }
+      for (final b in _bookings) {
+        final cleanBookingEmail = b.clientEmail.trim().toLowerCase();
+        final isDeviceLocalGuest = (b.clientId == null || b.clientId == '' || b.clientId == 'usr_you') &&
+            b.detailerId == 'usr_you';
+        if (isDeviceLocalGuest) {
           remainingLocal.add(b);
+          continue;
         }
-      } else {
-        remainingLocal.addAll(_bookings);
+
+        final inScope = (targetDetailerId != null)
+            ? (b.detailerId == targetScopeDetailerId ||
+               (targetScopeDetailerId == 'usr_detailer_pro' && b.detailerId == '5ecfac74-435a-4c99-bb19-cbda2d0a1d65'))
+            : ((userId != 'usr_you' && b.detailerId == userId) ||
+               (authId != null && b.detailerId == authId) ||
+               (userId == 'usr_detailer_pro' && b.detailerId == '5ecfac74-435a-4c99-bb19-cbda2d0a1d65') ||
+               (b.clientId != null && b.clientId != 'usr_you' && (b.clientId == userId || (authId != null && b.clientId == authId))) ||
+               (cleanAuthEmail != null && cleanAuthEmail.isNotEmpty && cleanBookingEmail == cleanAuthEmail));
+
+        final wasInCloud = localIds.contains(b.id);
+        if (inScope && wasInCloud && !cloudIds.contains(b.id)) {
+          hasChanges = true;
+          continue; // dropped because deleted in cloud
+        }
+        remainingLocal.add(b);
       }
 
       // 2. Upsert cloud bookings and merge changes
@@ -2295,13 +2310,24 @@ class JobRepository extends ChangeNotifier {
   }
 
   bool addBooking(BookingAppointment booking, {bool allowOverbooking = false, bool syncToCloud = true}) {
+    // Immediate Auth Client ID Tagging:
+    // If the booking does not have an explicit clientId, tag it with the active
+    // authenticated Supabase UUID or logged-in user profile ID.
+    final authId = SupabaseAuthService.currentAuthUser?.id;
+    final effectiveClientId = (booking.clientId != null && booking.clientId!.isNotEmpty && booking.clientId != 'usr_you')
+        ? booking.clientId
+        : (authId ?? (_isLoggedIn && _currentUser.id != 'usr_you' ? _currentUser.id : null));
+    final effectiveBooking = (effectiveClientId != null && booking.clientId != effectiveClientId)
+        ? booking.copyWith(clientId: effectiveClientId)
+        : booking;
+
     // 1. Guard against duplicate booking insertions (idempotency)
-    final existingIdx = _bookings.indexWhere((b) => b.id == booking.id);
+    final existingIdx = _bookings.indexWhere((b) => b.id == effectiveBooking.id);
     if (existingIdx != -1) {
-      _bookings[existingIdx] = booking;
+      _bookings[existingIdx] = effectiveBooking;
       _persistBookings();
       if (syncToCloud) {
-        SupabaseDbService.saveBooking(booking);
+        SupabaseDbService.saveBooking(effectiveBooking);
       }
       notifyListeners();
       return true;
@@ -2310,21 +2336,21 @@ class JobRepository extends ChangeNotifier {
     // 2. Race condition guard: verify slot capacity has not been exhausted
     if (!allowOverbooking &&
         isSlotConflictedByBooking(
-          booking.scheduledDate,
-          booking.scheduledTimeSlot,
-          detailerId: booking.detailerId,
-          teamMemberId: booking.assignedTeamMemberId,
+          effectiveBooking.scheduledDate,
+          effectiveBooking.scheduledTimeSlot,
+          detailerId: effectiveBooking.detailerId,
+          teamMemberId: effectiveBooking.assignedTeamMemberId,
         )) {
       if (kDebugMode) {
-        print('[JobRepository] addBooking rejected: Slot ${booking.scheduledTimeSlot} on ${booking.scheduledDate} is already conflicted or fully booked.');
+        print('[JobRepository] addBooking rejected: Slot ${effectiveBooking.scheduledTimeSlot} on ${effectiveBooking.scheduledDate} is already conflicted or fully booked.');
       }
       return false;
     }
 
-    _bookings.insert(0, booking);
+    _bookings.insert(0, effectiveBooking);
     _persistBookings();
     if (syncToCloud) {
-      SupabaseDbService.saveBooking(booking);
+      SupabaseDbService.saveBooking(effectiveBooking);
     }
     notifyListeners();
     return true;
@@ -2334,7 +2360,8 @@ class JobRepository extends ChangeNotifier {
   Future<bool> addBookingAsync(BookingAppointment booking, {bool allowOverbooking = false}) async {
     final added = addBooking(booking, allowOverbooking: allowOverbooking, syncToCloud: false);
     if (added) {
-      final cloudSynced = await SupabaseDbService.saveBooking(booking);
+      final storedBooking = _bookings.firstWhere((b) => b.id == booking.id, orElse: () => booking);
+      final cloudSynced = await SupabaseDbService.saveBooking(storedBooking);
       if (kDebugMode) {
         print('[JobRepository] addBookingAsync cloud sync: $cloudSynced for ${booking.id}');
       }
@@ -5123,21 +5150,21 @@ class JobRepository extends ChangeNotifier {
 
   /// Simulates or processes an incoming Postgres Realtime booking change payload
   void simulateRealtimeBookingPayload(Map<String, dynamic> record, {bool isDelete = false}) {
-    if (isDelete) {
-      final deletedId = (record['id'] ?? record['booking_id']) as String?;
-      if (deletedId != null && deletedId.isNotEmpty) {
-        final removed = _bookings.where((b) => b.id == deletedId).toList();
-        if (removed.isNotEmpty) {
-          _bookings.removeWhere((b) => b.id == deletedId);
-          LocalStorageService.saveBookings(_bookings);
-          notifyListeners();
+    try {
+      if (isDelete) {
+        final deletedId = (record['id'] ?? record['booking_id'])?.toString();
+        if (deletedId != null && deletedId.isNotEmpty) {
+          final removed = _bookings.where((b) => b.id == deletedId).toList();
+          if (removed.isNotEmpty) {
+            _bookings.removeWhere((b) => b.id == deletedId);
+            LocalStorageService.saveBookings(_bookings);
+            notifyListeners();
+          }
         }
+        return;
       }
-      return;
-    }
 
-    if (record.isNotEmpty) {
-      try {
+      if (record.isNotEmpty) {
         final map = Map<String, dynamic>.from(record);
         if (map['assignedTeamMemberId'] == null && map['assigned_team_member_id'] != null) {
           map['assignedTeamMemberId'] = map['assigned_team_member_id'];
@@ -5157,28 +5184,124 @@ class JobRepository extends ChangeNotifier {
         if (map['durationMinutes'] == null && map['duration_minutes'] != null) {
           map['durationMinutes'] = map['duration_minutes'];
         }
+        if (map['scheduledTimeSlot'] == null && map['scheduled_time_slot'] != null) {
+          map['scheduledTimeSlot'] = map['scheduled_time_slot'];
+        }
+        if (map['scheduledDate'] == null && map['scheduled_date'] != null) {
+          map['scheduledDate'] = map['scheduled_date'];
+        }
+        if (map['clientAddress'] == null && map['client_address'] != null) {
+          map['clientAddress'] = map['client_address'];
+        }
+        if (map['totalPrice'] == null && map['total_price'] != null) {
+          map['totalPrice'] = map['total_price'];
+        }
+        if (map['depositAmount'] == null && map['deposit_amount'] != null) {
+          map['depositAmount'] = map['deposit_amount'];
+        }
+        if (map['vehicleYearMakeModel'] == null && map['vehicle_year_make_model'] != null) {
+          map['vehicleYearMakeModel'] = map['vehicle_year_make_model'];
+        }
+        if (map['vehicleSize'] == null && map['vehicle_size'] != null) {
+          map['vehicleSize'] = map['vehicle_size'];
+        }
+        if (map['locationType'] == null && (map['location_type'] != null || map['service_location_type'] != null)) {
+          map['locationType'] = map['location_type'] ?? map['service_location_type'];
+        }
+        if (map['package'] == null && map['package_data'] != null) {
+          map['package'] = map['package_data'];
+        }
+        if (map['clientName'] == null && map['client_name'] != null) {
+          map['clientName'] = map['client_name'];
+        }
+        if (map['clientPhone'] == null && map['client_phone'] != null) {
+          map['clientPhone'] = map['client_phone'];
+        }
+        if (map['clientEmail'] == null && map['client_email'] != null) {
+          map['clientEmail'] = map['client_email'];
+        }
+        if (map['clientId'] == null && map['client_id'] != null) {
+          map['clientId'] = map['client_id'];
+        }
+        if (map['detailerId'] == null && map['detailer_id'] != null) {
+          map['detailerId'] = map['detailer_id'];
+        }
+        if (map['detailerName'] == null && map['detailer_name'] != null) {
+          map['detailerName'] = map['detailer_name'];
+        }
+        if (map['detailerBusinessName'] == null && map['detailer_business_name'] != null) {
+          map['detailerBusinessName'] = map['detailer_business_name'];
+        }
         if (map['isMultiDay'] == null && map['is_multi_day'] != null) {
           map['isMultiDay'] = map['is_multi_day'];
         }
-        final incomingId = (map['id'] ?? map['booking_id']) as String?;
-        final idx = incomingId != null ? _bookings.indexWhere((b) => b.id == incomingId) : -1;
+        final incomingId = (map['id'] ?? map['booking_id'])?.toString();
+        if (incomingId != null && incomingId.isNotEmpty) {
+          map['id'] = incomingId;
+        }
+        final idx = (incomingId != null && incomingId.isNotEmpty)
+            ? _bookings.indexWhere((b) => b.id == incomingId)
+            : -1;
+
+        final rawStatus = map['status'] ?? map['booking_status'] ?? map['status_formatted'];
+        final statusStr = rawStatus != null
+            ? ((rawStatus is BookingStatus) ? rawStatus.name : rawStatus.toString())
+            : null;
+
         BookingAppointment appt;
         if (idx != -1) {
           final mergedMap = Map<String, dynamic>.from(_bookings[idx].toJson())..addAll(map);
-          if (map['status'] != null) {
-            mergedMap['status'] = map['status'];
-            mergedMap['status_formatted'] = map['status'];
+          if (statusStr != null) {
+            mergedMap['status'] = statusStr;
+            mergedMap['status_formatted'] = statusStr;
           }
           appt = BookingAppointment.fromJson(mergedMap);
           _bookings[idx] = appt;
         } else {
+          if (statusStr != null) {
+            map['status'] = statusStr;
+            map['status_formatted'] = statusStr;
+          }
           appt = BookingAppointment.fromJson(map);
+
+          // Scoped Realtime Ingestion Guard:
+          // Unknown bookings (idx == -1) from Postgres CDC must ONLY be inserted if
+          // they belong to the active user session as client or as detailer.
+          // Foreign guest bookings and unrelated studio bookings must be ignored.
+          final cleanAuthEmail = SupabaseAuthService.currentAuthUser?.email?.trim().toLowerCase() ??
+              (_currentUser.username.contains('@') ? _currentUser.username.trim().toLowerCase() : null);
+          final authId = SupabaseAuthService.currentAuthUser?.id;
+
+          final cleanBookingEmail = appt.clientEmail.trim().toLowerCase();
+          final isLoggedInClient = _isLoggedIn && _currentUser.id != 'usr_you';
+          final matchesClient = (appt.clientId != null &&
+                  appt.clientId!.isNotEmpty &&
+                  appt.clientId != 'usr_you' &&
+                  ((isLoggedInClient && appt.clientId == _currentUser.id) ||
+                      (authId != null && appt.clientId == authId))) ||
+              (cleanAuthEmail != null &&
+                  cleanAuthEmail.isNotEmpty &&
+                  cleanBookingEmail == cleanAuthEmail);
+
+          final matchesDetailer = appt.detailerId == _currentUser.id ||
+              (authId != null && appt.detailerId == authId) ||
+              (activeStudioDetailerId != null && appt.detailerId == activeStudioDetailerId) ||
+              (_currentUser.id == 'usr_detailer_pro' && appt.detailerId == '5ecfac74-435a-4c99-bb19-cbda2d0a1d65');
+
+          if (!matchesClient && !matchesDetailer) {
+            return;
+          }
+
           _bookings.insert(0, appt);
         }
         _bookings.sort((a, b) => b.scheduledDate.compareTo(a.scheduledDate));
         LocalStorageService.saveBookings(_bookings);
         notifyListeners();
-      } catch (_) {}
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[JobRepository] simulateRealtimeBookingPayload error: $e');
+      }
     }
   }
 
@@ -5236,9 +5359,15 @@ class JobRepository extends ChangeNotifier {
           schema: 'public',
           table: 'bookings',
           callback: (payload) {
-            final isDel = payload.eventType == PostgresChangeEvent.delete;
-            simulateRealtimeBookingPayload(isDel ? payload.oldRecord : payload.newRecord, isDelete: isDel);
-            _refreshBookingsFromCloud(_currentUser.id, targetDetailerId: activeStudioDetailerId);
+            try {
+              final isDel = payload.eventType == PostgresChangeEvent.delete;
+              simulateRealtimeBookingPayload(isDel ? payload.oldRecord : payload.newRecord, isDelete: isDel);
+              _refreshBookingsFromCloud(_currentUser.id, targetDetailerId: activeStudioDetailerId);
+            } catch (e) {
+              if (kDebugMode) {
+                print('[JobRepository] Bookings realtime callback error: $e');
+              }
+            }
           },
         )
         .subscribe();
@@ -5268,27 +5397,33 @@ class JobRepository extends ChangeNotifier {
           schema: 'public',
           table: 'profiles',
           callback: (payload) {
-            _refreshPublicDetailersFromCloud();
-            final newRec = payload.newRecord;
-            final newId = newRec['id'] as String?;
-            if (newId != null && newRec['calendar_preferences'] != null) {
-              try {
-                final rawPrefs = newRec['calendar_preferences'];
-                if (rawPrefs is Map && rawPrefs.isNotEmpty) {
-                  final prefs = DetailerCalendarPreferences.fromJson(Map<String, dynamic>.from(rawPrefs));
-                  _detailerPreferencesMap[newId] = prefs;
-                  LocalStorageService.saveDetailerCalendarPreferences(prefs, detailerId: newId);
-                  if (_isLoggedIn && newId == _currentUser.id) {
-                    _calendarPreferences = prefs;
+            try {
+              _refreshPublicDetailersFromCloud();
+              final newRec = payload.newRecord;
+              final newId = newRec['id']?.toString();
+              if (newId != null && newRec['calendar_preferences'] != null) {
+                try {
+                  final rawPrefs = newRec['calendar_preferences'];
+                  if (rawPrefs is Map && rawPrefs.isNotEmpty) {
+                    final prefs = DetailerCalendarPreferences.fromJson(Map<String, dynamic>.from(rawPrefs));
+                    _detailerPreferencesMap[newId] = prefs;
+                    LocalStorageService.saveDetailerCalendarPreferences(prefs, detailerId: newId);
+                    if (_isLoggedIn && newId == _currentUser.id) {
+                      _calendarPreferences = prefs;
+                    }
+                    notifyListeners();
                   }
-                  notifyListeners();
+                } catch (_) {}
+              }
+              if (_isLoggedIn) {
+                final oldId = payload.oldRecord['id']?.toString();
+                if (newId == _currentUser.id || oldId == _currentUser.id) {
+                  _refreshProfileFromCloud(_currentUser.id);
                 }
-              } catch (_) {}
-            }
-            if (_isLoggedIn) {
-              final oldId = payload.oldRecord['id'] as String?;
-              if (newId == _currentUser.id || oldId == _currentUser.id) {
-                _refreshProfileFromCloud(_currentUser.id);
+              }
+            } catch (e) {
+              if (kDebugMode) {
+                print('[JobRepository] Profiles realtime callback error: $e');
               }
             }
           },
@@ -5303,34 +5438,40 @@ class JobRepository extends ChangeNotifier {
           schema: 'public',
           table: 'vehicles',
           callback: (payload) {
-            final targetUserId = (_currentUser.id != 'usr_you')
-                ? _currentUser.id
-                : (SupabaseAuthService.currentAuthUser?.id ?? _currentUser.id);
-            if ((_isLoggedIn || SupabaseAuthService.isLoggedIn) && targetUserId != 'usr_you') {
-              final newUserId = payload.newRecord['user_id'] as String?;
-              final oldUserId = payload.oldRecord['user_id'] as String?;
-              final isTargetUser = newUserId == targetUserId ||
-                  oldUserId == targetUserId ||
-                  newUserId == _currentUser.id ||
-                  oldUserId == _currentUser.id;
+            try {
+              final targetUserId = (_currentUser.id != 'usr_you')
+                  ? _currentUser.id
+                  : (SupabaseAuthService.currentAuthUser?.id ?? _currentUser.id);
+              if ((_isLoggedIn || SupabaseAuthService.isLoggedIn) && targetUserId != 'usr_you') {
+                final newUserId = payload.newRecord['user_id']?.toString();
+                final oldUserId = payload.oldRecord['user_id']?.toString();
+                final isTargetUser = newUserId == targetUserId ||
+                    oldUserId == targetUserId ||
+                    newUserId == _currentUser.id ||
+                    oldUserId == _currentUser.id;
 
-              if (payload.eventType == PostgresChangeEvent.delete) {
-                final deletedId = payload.oldRecord['id'] as String?;
-                final isOurVehicle = deletedId != null &&
-                    _currentUser.myGarage.any((v) => v.id == deletedId);
-                if (isTargetUser || isOurVehicle) {
-                  if (deletedId != null && deletedId.isNotEmpty) {
-                    final updated = _currentUser.myGarage.where((v) => v.id != deletedId).toList();
-                    _currentUser = _currentUser.copyWith(myGarage: updated);
-                    LocalStorageService.saveGarageVehicles(updated);
-                    _persistUser();
-                    notifyListeners();
-                    return;
+                if (payload.eventType == PostgresChangeEvent.delete) {
+                  final deletedId = payload.oldRecord['id']?.toString();
+                  final isOurVehicle = deletedId != null &&
+                      _currentUser.myGarage.any((v) => v.id == deletedId);
+                  if (isTargetUser || isOurVehicle) {
+                    if (deletedId != null && deletedId.isNotEmpty) {
+                      final updated = _currentUser.myGarage.where((v) => v.id != deletedId).toList();
+                      _currentUser = _currentUser.copyWith(myGarage: updated);
+                      LocalStorageService.saveGarageVehicles(updated);
+                      _persistUser();
+                      notifyListeners();
+                      return;
+                    }
+                    refreshGarage();
                   }
+                } else if (isTargetUser) {
                   refreshGarage();
                 }
-              } else if (isTargetUser) {
-                refreshGarage();
+              }
+            } catch (e) {
+              if (kDebugMode) {
+                print('[JobRepository] Vehicles realtime callback error: $e');
               }
             }
           },
@@ -5345,30 +5486,36 @@ class JobRepository extends ChangeNotifier {
           schema: 'public',
           table: 'availability_blocks',
           callback: (payload) {
-            final targetUserId = (_currentUser.id != 'usr_you')
-                ? _currentUser.id
-                : (SupabaseAuthService.currentAuthUser?.id ?? _currentUser.id);
-            final newDetailerId = payload.newRecord['detailer_id'] as String?;
-            final oldDetailerId = payload.oldRecord['detailer_id'] as String?;
-            final isTargetDetailer = newDetailerId == targetUserId ||
-                oldDetailerId == targetUserId ||
-                newDetailerId == _currentUser.id ||
-                oldDetailerId == _currentUser.id;
+            try {
+              final targetUserId = (_currentUser.id != 'usr_you')
+                  ? _currentUser.id
+                  : (SupabaseAuthService.currentAuthUser?.id ?? _currentUser.id);
+              final newDetailerId = payload.newRecord['detailer_id']?.toString();
+              final oldDetailerId = payload.oldRecord['detailer_id']?.toString();
+              final isTargetDetailer = newDetailerId == targetUserId ||
+                  oldDetailerId == targetUserId ||
+                  newDetailerId == _currentUser.id ||
+                  oldDetailerId == _currentUser.id;
 
-            if (payload.eventType == PostgresChangeEvent.delete) {
-              final deletedId = payload.oldRecord['id'] as String?;
-              if (deletedId != null && deletedId.isNotEmpty) {
-                final hadBlock = _availabilityBlocks.any((b) => b.id == deletedId);
-                if (hadBlock) {
-                  _availabilityBlocks.removeWhere((b) => b.id == deletedId);
-                  LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
-                  notifyListeners();
-                  return;
+              if (payload.eventType == PostgresChangeEvent.delete) {
+                final deletedId = payload.oldRecord['id']?.toString();
+                if (deletedId != null && deletedId.isNotEmpty) {
+                  final hadBlock = _availabilityBlocks.any((b) => b.id == deletedId);
+                  if (hadBlock) {
+                    _availabilityBlocks.removeWhere((b) => b.id == deletedId);
+                    LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+                    notifyListeners();
+                    return;
+                  }
                 }
               }
-            }
-            if (isTargetDetailer || _availabilityBlocks.isNotEmpty) {
-              _refreshAvailabilityBlocksFromCloud(_currentUser.id);
+              if (isTargetDetailer || _availabilityBlocks.isNotEmpty) {
+                _refreshAvailabilityBlocksFromCloud(_currentUser.id);
+              }
+            } catch (e) {
+              if (kDebugMode) {
+                print('[JobRepository] Availability blocks realtime callback error: $e');
+              }
             }
           },
         )
