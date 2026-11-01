@@ -4,7 +4,11 @@ import 'package:intl/intl.dart';
 import '../core/theme/app_theme.dart';
 import '../models/booking_models.dart';
 import '../services/job_repository.dart';
+import '../widgets/booking_status_tracker.dart';
 import 'auth_modal.dart';
+
+/// Client-side bookings list screen and status tracker
+typedef ClientBookingsScreen = BookingsListScreen;
 
 class BookingsListScreen extends StatelessWidget {
   final JobRepository repository;
@@ -133,12 +137,14 @@ class BookingsListScreen extends StatelessWidget {
                       ),
                       icon: const Icon(Icons.check_circle_outline, size: 18),
                       label: const Text('Confirm & Accept Booking', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () {
-                        repository.updateBookingStatus(booking.id, BookingStatus.confirmed);
-                        Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Booking confirmed & added to schedule!')),
-                        );
+                      onPressed: () async {
+                        await repository.updateBookingStatus(booking.id, BookingStatus.confirmed);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Booking confirmed & added to schedule!')),
+                          );
+                        }
                       },
                     ),
                   ),
@@ -155,12 +161,14 @@ class BookingsListScreen extends StatelessWidget {
                       ),
                       icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
                       label: const Text('Start Service (In Progress)', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () {
-                        repository.updateBookingStatus(booking.id, BookingStatus.inProgress);
-                        Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Service is now in progress!')),
-                        );
+                      onPressed: () async {
+                        await repository.updateBookingStatus(booking.id, BookingStatus.inProgress);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Service is now in progress!')),
+                          );
+                        }
                       },
                     ),
                   ),
@@ -177,12 +185,14 @@ class BookingsListScreen extends StatelessWidget {
                       ),
                       icon: const Icon(Icons.task_alt_rounded, size: 18),
                       label: const Text('Complete Service & Release Escrow', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () {
-                        repository.updateBookingStatus(booking.id, BookingStatus.completed);
-                        Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Service marked as completed & escrow released!')),
-                        );
+                      onPressed: () async {
+                        await repository.updateBookingStatus(booking.id, BookingStatus.completed);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Service marked as completed & escrow released!')),
+                          );
+                        }
                       },
                     ),
                   ),
@@ -207,7 +217,9 @@ class BookingsListScreen extends StatelessWidget {
                                 ? Icons.event_available_rounded
                                 : (booking.status == BookingStatus.inProgress
                                     ? Icons.auto_awesome_rounded
-                                    : Icons.verified_rounded)),
+                                    : (booking.status == BookingStatus.completed
+                                        ? Icons.verified_rounded
+                                        : Icons.cancel_outlined))),
                         color: booking.status.statusColor,
                         size: 20,
                       ),
@@ -222,7 +234,7 @@ class BookingsListScreen extends StatelessWidget {
                                       ? 'Service is actively in progress at ${booking.detailerBusinessName}.'
                                       : (booking.status == BookingStatus.completed
                                           ? 'Service completed! Your digital warranty passport is ready.'
-                                          : 'This appointment was cancelled.'))),
+                                          : 'This appointment was cancelled by the detailing studio. Your slot has been released.'))),
                           style: TextStyle(
                             fontSize: 12,
                             color: booking.status.statusColor,
@@ -234,6 +246,8 @@ class BookingsListScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+                _buildStatusTracker(booking),
+                const SizedBox(height: 12),
               ],
               Row(
                 children: [
@@ -318,27 +332,29 @@ class BookingsListScreen extends StatelessWidget {
                     ),
                     const SizedBox(width: 16),
                     TextButton.icon(
-                      onPressed: () {
-                        repository.cancelBooking(booking.id);
-                        Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            behavior: SnackBarBehavior.floating,
-                            backgroundColor: AppTheme.surface,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              side: const BorderSide(color: AppTheme.border),
+                      onPressed: () async {
+                        await repository.cancelBooking(booking.id);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              behavior: SnackBarBehavior.floating,
+                              backgroundColor: AppTheme.surface,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                side: const BorderSide(color: AppTheme.border),
+                              ),
+                              content: const Row(
+                                children: [
+                                  Icon(Icons.cancel_outlined, color: Color(0xFFFF5252), size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Booking reservation has been cancelled.', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                ],
+                              ),
+                              duration: const Duration(seconds: 2),
                             ),
-                            content: const Row(
-                              children: [
-                                Icon(Icons.cancel_outlined, color: Color(0xFFFF5252), size: 18),
-                                SizedBox(width: 8),
-                                Text('Booking reservation has been cancelled.', style: TextStyle(color: Colors.white, fontSize: 13)),
-                              ],
-                            ),
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
+                          );
+                        }
                       },
                       icon: const Icon(Icons.cancel_outlined, size: 14, color: Color(0xFFFF5252)),
                       label: const Text('Cancel Reservation', style: TextStyle(color: Color(0xFFFF5252), fontSize: 12)),
@@ -595,6 +611,8 @@ class BookingsListScreen extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 10),
+            _buildStatusTracker(booking),
             if (booking.status == BookingStatus.cancelled) ...[
               const SizedBox(height: 12),
               SizedBox(
@@ -616,6 +634,10 @@ class BookingsListScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildStatusTracker(BookingAppointment booking) {
+    return BookingStatusTracker(booking: booking);
   }
 
   Widget _buildBookingsTabList(
@@ -756,6 +778,8 @@ class BookingsListScreen extends StatelessWidget {
                     child: Column(
                       children: [
                         if (!isLoggedIn) _buildGuestSyncBanner(context),
+                        if (upcoming.isEmpty && inProgress.isEmpty && completed.isEmpty && cancelled.isNotEmpty)
+                          _buildCancelledNoticeBanner(context, cancelled.length),
                         Expanded(
                           child: TabBarView(
                             children: [
@@ -850,6 +874,30 @@ class BookingsListScreen extends StatelessWidget {
             ),
             onPressed: () => AuthModal.show(context, repository: repository, initialIsSignUp: false),
             child: const Text('Sign In', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCancelledNoticeBanner(BuildContext context, int count) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFF5252).withAlpha(20),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFF5252).withAlpha(80)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline_rounded, size: 18, color: Color(0xFFFF5252)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$count booking${count == 1 ? ' was' : 's were'} cancelled by the studio. Review under the Cancelled tab.',
+              style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w500),
+            ),
           ),
         ],
       ),

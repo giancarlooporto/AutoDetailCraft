@@ -1494,9 +1494,8 @@ class SupabaseDbService {
           ? booking.clientEmail.trim().toLowerCase()
           : 'guest@autodetailcraft.com';
 
-      final validUuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
-      final sanitizedClientId = (booking.clientId != null && validUuidRegex.hasMatch(booking.clientId!))
-          ? booking.clientId
+      final sanitizedClientId = (booking.clientId != null && booking.clientId!.trim().isNotEmpty)
+          ? booking.clientId!.trim()
           : null;
       final sanitizedDetailerId = booking.detailerId.trim().isNotEmpty
           ? booking.detailerId.trim()
@@ -1515,14 +1514,14 @@ class SupabaseDbService {
         'client_email': emailFallback,
         'vehicle_year_make_model': booking.vehicleYearMakeModel,
         'vehicle_size': booking.vehicleSize.name,
-        'package_data': booking.package.toJson(),
-        'service_location_type': booking.locationType.name,
+        'package': booking.package.toJson(),
+        'location_type': booking.locationType.name,
         'client_address': booking.clientAddress,
         'scheduled_date': '${booking.scheduledDate.year.toString().padLeft(4, '0')}-${booking.scheduledDate.month.toString().padLeft(2, '0')}-${booking.scheduledDate.day.toString().padLeft(2, '0')}',
         'scheduled_time_slot': booking.scheduledTimeSlot,
         'total_price': booking.totalPrice,
         'deposit_amount': booking.depositAmount,
-        'status': booking.status.name,
+        'status': (booking.status == BookingStatus.inProgress ? 'in_progress' : booking.status.name),
         'client_notes': booking.clientNotes,
         'pre_inspection_summary': booking.preInspectionSummary,
         'warranty_passport_id': booking.warrantyPassportId,
@@ -1545,13 +1544,13 @@ class SupabaseDbService {
         if (kDebugMode) print('[SupabaseDbService] Booking saved to Supabase: ${booking.id}');
         return true;
       } on PostgrestException catch (pe) {
-        if (pe.code == 'PGRST204' || pe.code == '42703' || pe.message.contains('package_data') || pe.message.contains('service_location_type')) {
-          // Schema drift fallback: try alternate column naming if schema uses package or location_type
+        if (pe.code == 'PGRST204' || pe.code == '42703' || pe.message.contains('package') || pe.message.contains('location_type')) {
+          // Schema drift fallback: try alternate column naming if schema uses package_data or service_location_type
           final fallbackPayload = Map<String, dynamic>.from(basePayload);
-          fallbackPayload.remove('package_data');
-          fallbackPayload.remove('service_location_type');
-          fallbackPayload['package'] = booking.package.toJson();
-          fallbackPayload['location_type'] = booking.locationType.name;
+          fallbackPayload.remove('package');
+          fallbackPayload.remove('location_type');
+          fallbackPayload['package_data'] = booking.package.toJson();
+          fallbackPayload['service_location_type'] = booking.locationType.name;
           await client.from('bookings').upsert({
             ...fallbackPayload,
             if (booking.assignedTeamMemberId != null)
@@ -1593,6 +1592,11 @@ class SupabaseDbService {
         if (userId == 'usr_detailer_pro') {
           filters.add('detailer_id.eq.5ecfac74-435a-4c99-bb19-cbda2d0a1d65');
         }
+      }
+      final authId = client.auth.currentUser?.id;
+      if (authId != null && authId.trim().isNotEmpty && authId != userId) {
+        filters.add('client_id.eq.$authId');
+        filters.add('detailer_id.eq.$authId');
       }
       if (targetDetailerId != null && targetDetailerId.trim().isNotEmpty) {
         final cleanTarget = targetDetailerId.trim();
@@ -1689,12 +1693,13 @@ class SupabaseDbService {
     final client = _client;
     if (client == null) return;
 
+    final statusStr = newStatus == BookingStatus.inProgress ? 'in_progress' : newStatus.name;
     try {
       await client.from('bookings').update({
-        'status': newStatus.name,
+        'status': statusStr,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', bookingId);
-      if (kDebugMode) print('[SupabaseDbService] Updated booking status: $bookingId -> ${newStatus.name}');
+      if (kDebugMode) print('[SupabaseDbService] Updated booking status: $bookingId -> $statusStr');
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error updating booking status: $e');
     }

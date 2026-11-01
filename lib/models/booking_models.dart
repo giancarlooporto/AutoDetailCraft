@@ -434,7 +434,8 @@ class BookingAppointment {
     'scheduledTimeSlot': scheduledTimeSlot,
     'totalPrice': totalPrice,
     'depositAmount': depositAmount,
-    'status': status.name,
+    'status': status == BookingStatus.inProgress ? 'in_progress' : status.name,
+    'status_formatted': status == BookingStatus.inProgress ? 'in_progress' : status.name,
     'clientNotes': clientNotes,
     'preInspectionSummary': preInspectionSummary,
     'warrantyPassportId': warrantyPassportId,
@@ -485,7 +486,7 @@ class BookingAppointment {
     'scheduled_time_slot': scheduledTimeSlot,
     'total_price': totalPrice,
     'deposit_amount': depositAmount,
-    'status': status.name,
+    'status': status == BookingStatus.inProgress ? 'in_progress' : status.name,
     'client_notes': clientNotes,
     'pre_inspection_summary': preInspectionSummary,
     'warranty_passport_id': warrantyPassportId,
@@ -506,7 +507,7 @@ class BookingAppointment {
 
     final locRaw = json['locationType'] ?? json['location_type'] ?? json['service_location_type'];
     final vehicleSizeRaw = json['vehicleSize'] ?? json['vehicle_size'];
-    final statusRaw = json['status'];
+    final statusRaw = json['status'] ?? json['status_formatted'] ?? json['booking_status'];
     final rawCompDate = json['completionDate'] ?? json['completion_date'];
     DateTime? parsedCompDate;
     if (rawCompDate is String && RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(rawCompDate.trim())) {
@@ -579,10 +580,19 @@ class BookingAppointment {
       scheduledTimeSlot: (json['scheduledTimeSlot'] ?? json['scheduled_time_slot']) as String? ?? '9:00 AM',
       totalPrice: ((json['totalPrice'] ?? json['total_price']) as num?)?.toDouble() ?? 0.0,
       depositAmount: ((json['depositAmount'] ?? json['deposit_amount']) as num?)?.toDouble() ?? 0.0,
-      status: BookingStatus.values.firstWhere(
-        (s) => s.name == statusRaw,
-        orElse: () => BookingStatus.confirmed,
-      ),
+      status: () {
+        if (statusRaw == null) return BookingStatus.confirmed;
+        final s = statusRaw.toString().trim().toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
+        if (s == 'in_progress' || s == 'inprogress') return BookingStatus.inProgress;
+        if (s == 'pending') return BookingStatus.pending;
+        if (s == 'confirmed') return BookingStatus.confirmed;
+        if (s == 'completed') return BookingStatus.completed;
+        if (s == 'cancelled' || s == 'canceled') return BookingStatus.cancelled;
+        return BookingStatus.values.firstWhere(
+          (v) => v.name.toLowerCase() == s,
+          orElse: () => BookingStatus.confirmed,
+        );
+      }(),
       clientNotes: (json['clientNotes'] ?? json['client_notes']) as String?,
       preInspectionSummary: (json['preInspectionSummary'] ?? json['pre_inspection_summary']) as String?,
       warrantyPassportId: (json['warrantyPassportId'] ?? json['warranty_passport_id']) as String?,

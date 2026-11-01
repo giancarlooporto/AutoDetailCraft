@@ -713,8 +713,10 @@ class JobRepository extends ChangeNotifier {
       }
       for (final b in cloudBookings) {
         final existing = bookingMap[b.id];
-        if (existing == null ||
-            existing.status != b.status ||
+        if (existing == null) {
+          bookingMap[b.id] = b;
+          hasChanges = true;
+        } else if (existing.status != b.status ||
             existing.scheduledDate != b.scheduledDate ||
             existing.clientId != b.clientId ||
             existing.scheduledTimeSlot != b.scheduledTimeSlot ||
@@ -726,7 +728,28 @@ class JobRepository extends ChangeNotifier {
             existing.totalPrice != b.totalPrice ||
             existing.durationMinutes != b.durationMinutes ||
             existing.isMultiDay != b.isMultiDay) {
-          bookingMap[b.id] = b;
+          bookingMap[b.id] = existing.copyWith(
+            status: b.status,
+            scheduledDate: b.scheduledDate,
+            scheduledTimeSlot: b.scheduledTimeSlot.isNotEmpty ? b.scheduledTimeSlot : existing.scheduledTimeSlot,
+            clientId: b.clientId ?? existing.clientId,
+            clientName: b.clientName.isNotEmpty ? b.clientName : existing.clientName,
+            clientPhone: b.clientPhone.isNotEmpty ? b.clientPhone : existing.clientPhone,
+            clientEmail: b.clientEmail.isNotEmpty ? b.clientEmail : existing.clientEmail,
+            vehicleYearMakeModel: b.vehicleYearMakeModel.isNotEmpty ? b.vehicleYearMakeModel : existing.vehicleYearMakeModel,
+            clientAddress: b.clientAddress.isNotEmpty ? b.clientAddress : existing.clientAddress,
+            assignedTeamMemberId: b.assignedTeamMemberId ?? existing.assignedTeamMemberId,
+            assignedTeamMemberName: b.assignedTeamMemberName ?? existing.assignedTeamMemberName,
+            startTime: b.startTime ?? existing.startTime,
+            endTime: b.endTime ?? existing.endTime,
+            completionDate: b.completionDate ?? existing.completionDate,
+            durationMinutes: b.durationMinutes ?? existing.durationMinutes,
+            totalPrice: b.totalPrice > 0 ? b.totalPrice : existing.totalPrice,
+            depositAmount: b.depositAmount > 0 ? b.depositAmount : existing.depositAmount,
+            warrantyPassportId: b.warrantyPassportId ?? existing.warrantyPassportId,
+            clientNotes: b.clientNotes ?? existing.clientNotes,
+            preInspectionSummary: b.preInspectionSummary ?? existing.preInspectionSummary,
+          );
           hasChanges = true;
         }
       }
@@ -952,7 +975,7 @@ class JobRepository extends ChangeNotifier {
 
     for (final b in clientBookingsToCancel) {
       if (b.status != BookingStatus.completed && b.status != BookingStatus.cancelled) {
-        cancelBooking(b.id);
+        await cancelBooking(b.id);
         if (b.detailerId.isNotEmpty && b.detailerId != 'usr_you' && b.detailerId != userId) {
           try {
             final convId = await openOrCreateConversation(b.detailerId);
@@ -1174,14 +1197,25 @@ class JobRepository extends ChangeNotifier {
   List<BookingAppointment> get bookings => _bookings;
 
   // Studio Bookings: Only bookings placed by clients for this detailer's studio
-  List<BookingAppointment> get studioBookings =>
-      _bookings.where((b) => b.detailerId == _currentUser.id).toList();
+  List<BookingAppointment> get studioBookings {
+    final authId = SupabaseAuthService.currentAuthUser?.id;
+    return _bookings.where((b) =>
+        b.detailerId == _currentUser.id ||
+        (authId != null && b.detailerId == authId) ||
+        (_currentUser.id == 'usr_detailer_pro' && b.detailerId == '5ecfac74-435a-4c99-bb19-cbda2d0a1d65')
+    ).toList();
+  }
 
   // Active Studio Bookings: Upcoming bookings that are not yet completed or cancelled
-  List<BookingAppointment> get activeStudioBookings => _bookings.where((b) =>
-      b.detailerId == _currentUser.id &&
-      b.status != BookingStatus.completed &&
-      b.status != BookingStatus.cancelled).toList();
+  List<BookingAppointment> get activeStudioBookings {
+    final authId = SupabaseAuthService.currentAuthUser?.id;
+    return _bookings.where((b) =>
+        (b.detailerId == _currentUser.id ||
+         (authId != null && b.detailerId == authId) ||
+         (_currentUser.id == 'usr_detailer_pro' && b.detailerId == '5ecfac74-435a-4c99-bb19-cbda2d0a1d65')) &&
+        b.status != BookingStatus.completed &&
+        b.status != BookingStatus.cancelled).toList();
+  }
 
   bool get hasActiveStudioBookings => activeStudioBookings.isNotEmpty;
 
@@ -1189,13 +1223,17 @@ class JobRepository extends ChangeNotifier {
   List<BookingAppointment> get clientBookings {
     final cleanAuthEmail = SupabaseAuthService.currentAuthUser?.email?.trim().toLowerCase() ??
         (_currentUser.username.contains('@') ? _currentUser.username.trim().toLowerCase() : null);
+    final authId = SupabaseAuthService.currentAuthUser?.id;
     return _bookings.where((b) {
       final cleanBookingEmail = b.clientEmail.trim().toLowerCase();
-      final matchesId = b.clientId != null && b.clientId == _currentUser.id;
+      final matchesId = b.clientId != null &&
+          (b.clientId == _currentUser.id || (authId != null && b.clientId == authId));
       final matchesEmail = cleanAuthEmail != null && cleanAuthEmail.isNotEmpty && cleanBookingEmail == cleanAuthEmail;
       // An unassigned guest booking on this device belongs to the client if not booked with self as detailer
       final isGuestBooking = (b.clientId == null || b.clientId == '' || b.clientId == 'usr_you');
-      final matchesDeviceGuest = isGuestBooking && b.detailerId != _currentUser.id;
+      final matchesDeviceGuest = isGuestBooking &&
+          b.detailerId != _currentUser.id &&
+          (authId == null || b.detailerId != authId);
       return matchesId || matchesEmail || matchesDeviceGuest;
     }).toList();
   }
@@ -1830,10 +1868,12 @@ class JobRepository extends ChangeNotifier {
     final booking = _bookings[idx];
 
     // 1. Mark booking as cancelled
-    cancelBooking(bookingId);
+    await cancelBooking(bookingId);
 
     // 2. Send notification message to customer
-    final targetClientId = booking.clientId;
+    final targetClientId = (booking.clientId != null && booking.clientId!.isNotEmpty && booking.clientId != 'usr_you')
+        ? booking.clientId!
+        : (booking.clientEmail.trim().isNotEmpty ? booking.clientEmail.trim() : null);
     if (targetClientId != null && targetClientId.isNotEmpty && targetClientId != 'usr_you') {
       try {
         final convId = await openOrCreateConversation(targetClientId);
@@ -2302,29 +2342,33 @@ class JobRepository extends ChangeNotifier {
     return added;
   }
 
-  void updateBookingStatus(String bookingId, BookingStatus newStatus) {
+  Future<void> updateBookingStatus(String bookingId, BookingStatus newStatus) async {
     final idx = _bookings.indexWhere((b) => b.id == bookingId);
     if (idx != -1) {
       _bookings[idx] = _bookings[idx].copyWith(status: newStatus);
       _persistBookings();
-      if (_isLoggedIn) {
-        SupabaseDbService.updateBookingStatus(bookingId, newStatus);
-      }
       notifyListeners();
+      if (_isLoggedIn || SupabaseAuthService.isLoggedIn || SupabaseService.client != null) {
+        await SupabaseDbService.updateBookingStatus(bookingId, newStatus);
+      }
+    } else {
+      if (_isLoggedIn || SupabaseAuthService.isLoggedIn || SupabaseService.client != null) {
+        await SupabaseDbService.updateBookingStatus(bookingId, newStatus);
+      }
     }
   }
 
-  void cancelBooking(String bookingId) {
-    updateBookingStatus(bookingId, BookingStatus.cancelled);
+  Future<void> cancelBooking(String bookingId) async {
+    await updateBookingStatus(bookingId, BookingStatus.cancelled);
   }
 
-  void deleteBooking(String bookingId) {
+  Future<void> deleteBooking(String bookingId) async {
     _bookings.removeWhere((b) => b.id == bookingId);
     _persistBookings();
-    if (_isLoggedIn) {
-      SupabaseDbService.deleteBooking(bookingId);
-    }
     notifyListeners();
+    if (_isLoggedIn || SupabaseAuthService.isLoggedIn || SupabaseService.client != null) {
+      await SupabaseDbService.deleteBooking(bookingId);
+    }
   }
 
   bool rescheduleBooking(String bookingId, DateTime newDate, String newSlot) {
@@ -5077,6 +5121,67 @@ class JobRepository extends ChangeNotifier {
     return true;
   }
 
+  /// Simulates or processes an incoming Postgres Realtime booking change payload
+  void simulateRealtimeBookingPayload(Map<String, dynamic> record, {bool isDelete = false}) {
+    if (isDelete) {
+      final deletedId = (record['id'] ?? record['booking_id']) as String?;
+      if (deletedId != null && deletedId.isNotEmpty) {
+        final removed = _bookings.where((b) => b.id == deletedId).toList();
+        if (removed.isNotEmpty) {
+          _bookings.removeWhere((b) => b.id == deletedId);
+          LocalStorageService.saveBookings(_bookings);
+          notifyListeners();
+        }
+      }
+      return;
+    }
+
+    if (record.isNotEmpty) {
+      try {
+        final map = Map<String, dynamic>.from(record);
+        if (map['assignedTeamMemberId'] == null && map['assigned_team_member_id'] != null) {
+          map['assignedTeamMemberId'] = map['assigned_team_member_id'];
+        }
+        if (map['assignedTeamMemberName'] == null && map['assigned_team_member_name'] != null) {
+          map['assignedTeamMemberName'] = map['assigned_team_member_name'];
+        }
+        if (map['startTime'] == null && map['start_time'] != null) {
+          map['startTime'] = map['start_time'];
+        }
+        if (map['endTime'] == null && map['end_time'] != null) {
+          map['endTime'] = map['end_time'];
+        }
+        if (map['completionDate'] == null && map['completion_date'] != null) {
+          map['completionDate'] = map['completion_date'];
+        }
+        if (map['durationMinutes'] == null && map['duration_minutes'] != null) {
+          map['durationMinutes'] = map['duration_minutes'];
+        }
+        if (map['isMultiDay'] == null && map['is_multi_day'] != null) {
+          map['isMultiDay'] = map['is_multi_day'];
+        }
+        final incomingId = (map['id'] ?? map['booking_id']) as String?;
+        final idx = incomingId != null ? _bookings.indexWhere((b) => b.id == incomingId) : -1;
+        BookingAppointment appt;
+        if (idx != -1) {
+          final mergedMap = Map<String, dynamic>.from(_bookings[idx].toJson())..addAll(map);
+          if (map['status'] != null) {
+            mergedMap['status'] = map['status'];
+            mergedMap['status_formatted'] = map['status'];
+          }
+          appt = BookingAppointment.fromJson(mergedMap);
+          _bookings[idx] = appt;
+        } else {
+          appt = BookingAppointment.fromJson(map);
+          _bookings.insert(0, appt);
+        }
+        _bookings.sort((a, b) => b.scheduledDate.compareTo(a.scheduledDate));
+        LocalStorageService.saveBookings(_bookings);
+        notifyListeners();
+      } catch (_) {}
+    }
+  }
+
   /// Subscribes to all Supabase Realtime channels (messages, jobs, bookings, user_interactions)
   void _subscribeToRealtime() {
     final client = SupabaseService.client;
@@ -5131,52 +5236,8 @@ class JobRepository extends ChangeNotifier {
           schema: 'public',
           table: 'bookings',
           callback: (payload) {
-            if (payload.eventType == PostgresChangeEvent.delete) {
-              final deletedId = (payload.oldRecord['id'] ?? payload.oldRecord['booking_id']) as String?;
-              if (deletedId != null && deletedId.isNotEmpty) {
-                final removed = _bookings.where((b) => b.id == deletedId).toList();
-                if (removed.isNotEmpty) {
-                  _bookings.removeWhere((b) => b.id == deletedId);
-                  LocalStorageService.saveBookings(_bookings);
-                  notifyListeners();
-                }
-              }
-            } else if (payload.newRecord.isNotEmpty) {
-              try {
-                final map = Map<String, dynamic>.from(payload.newRecord);
-                if (map['assignedTeamMemberId'] == null && map['assigned_team_member_id'] != null) {
-                  map['assignedTeamMemberId'] = map['assigned_team_member_id'];
-                }
-                if (map['assignedTeamMemberName'] == null && map['assigned_team_member_name'] != null) {
-                  map['assignedTeamMemberName'] = map['assigned_team_member_name'];
-                }
-                if (map['startTime'] == null && map['start_time'] != null) {
-                  map['startTime'] = map['start_time'];
-                }
-                if (map['endTime'] == null && map['end_time'] != null) {
-                  map['endTime'] = map['end_time'];
-                }
-                if (map['completionDate'] == null && map['completion_date'] != null) {
-                  map['completionDate'] = map['completion_date'];
-                }
-                if (map['durationMinutes'] == null && map['duration_minutes'] != null) {
-                  map['durationMinutes'] = map['duration_minutes'];
-                }
-                if (map['isMultiDay'] == null && map['is_multi_day'] != null) {
-                  map['isMultiDay'] = map['is_multi_day'];
-                }
-                final appt = BookingAppointment.fromJson(map);
-                final idx = _bookings.indexWhere((b) => b.id == appt.id);
-                if (idx != -1) {
-                  _bookings[idx] = appt;
-                } else {
-                  _bookings.insert(0, appt);
-                }
-                _bookings.sort((a, b) => b.scheduledDate.compareTo(a.scheduledDate));
-                LocalStorageService.saveBookings(_bookings);
-                notifyListeners();
-              } catch (_) {}
-            }
+            final isDel = payload.eventType == PostgresChangeEvent.delete;
+            simulateRealtimeBookingPayload(isDel ? payload.oldRecord : payload.newRecord, isDelete: isDel);
             _refreshBookingsFromCloud(_currentUser.id, targetDetailerId: activeStudioDetailerId);
           },
         )

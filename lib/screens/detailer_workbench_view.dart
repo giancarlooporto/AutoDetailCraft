@@ -22,6 +22,7 @@ import '../models/shift_request.dart';
 import '../models/message_model.dart';
 import '../services/local_storage_service.dart';
 import '../widgets/ios_swipe_to_delete.dart';
+import '../widgets/booking_status_tracker.dart';
 import 'chat_screen.dart';
 
 enum StudioHubSection {
@@ -46,10 +47,13 @@ class DetailerWorkbenchView extends StatefulWidget {
   final JobRepository repository;
   final DateTime? initialCalendarDate;
 
+  final StudioHubSection? initialHubSection;
+
   const DetailerWorkbenchView({
     super.key,
     required this.repository,
     this.initialCalendarDate,
+    this.initialHubSection,
   });
 
   @override
@@ -124,7 +128,9 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
   @override
   void initState() {
     super.initState();
-    if (widget.initialCalendarDate != null) {
+    if (widget.initialHubSection != null) {
+      _selectedHub = widget.initialHubSection!;
+    } else if (widget.initialCalendarDate != null) {
       _selectedHub = StudioHubSection.calendar;
       _selectedCalendarDate = widget.initialCalendarDate!;
       _calendarDisplayMonth = DateTime(_selectedCalendarDate.year, _selectedCalendarDate.month, 1);
@@ -3533,6 +3539,46 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           ),
         ),
 
+        if (widget.repository.hasActiveStudioBookings)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.redAccent.withAlpha(20),
+              border: Border(bottom: BorderSide(color: Colors.redAccent.withAlpha(60))),
+            ),
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 4,
+              runSpacing: 2,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.calendar_today_rounded, size: 13, color: Colors.redAccent),
+                    const SizedBox(width: 5),
+                    Text(
+                      '${widget.repository.activeStudioBookings.length} Active Booking${widget.repository.activeStudioBookings.length == 1 ? '' : 's'}',
+                      style: const TextStyle(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.redAccent,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: const Icon(Icons.cancel_schedule_send_rounded, size: 13),
+                  label: const Text('Cancel All Bookings', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)),
+                  onPressed: () => _confirmCancelAllStudioBookings(context),
+                ),
+              ],
+            ),
+          ),
+
         // Bookings List
         Expanded(
           child: filtered.isEmpty
@@ -3602,8 +3648,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                                           color: isSelected ? AppTheme.primary : Colors.white,
                                         ),
                                         overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
                                       ),
                                     ),
+                                    const SizedBox(width: 6),
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
@@ -3612,7 +3660,15 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                                         border: Border.all(color: b.status.statusColor.withAlpha(90)),
                                       ),
                                       child: Text(
-                                        b.status.label,
+                                        b.status == BookingStatus.pending
+                                            ? 'Pending'
+                                            : (b.status == BookingStatus.confirmed
+                                                ? 'Confirmed'
+                                                : (b.status == BookingStatus.inProgress
+                                                    ? 'In Progress'
+                                                    : (b.status == BookingStatus.completed
+                                                        ? 'Completed'
+                                                        : 'Cancelled'))),
                                         style: TextStyle(
                                           fontSize: 9.5,
                                           fontWeight: FontWeight.bold,
@@ -3739,18 +3795,23 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: b.status.statusColor.withAlpha(25),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: b.status.statusColor.withAlpha(90)),
-                    ),
-                    child: Text(
-                      b.status.label.toUpperCase(),
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: b.status.statusColor),
+                  Flexible(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: b.status.statusColor.withAlpha(25),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: b.status.statusColor.withAlpha(90)),
+                      ),
+                      child: Text(
+                        b.status.label.toUpperCase(),
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: b.status.statusColor),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
                     ),
                   ),
+                  const SizedBox(width: 8),
                   Text(
                     '\$${b.totalPrice.toStringAsFixed(0)}',
                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white),
@@ -3763,20 +3824,36 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
               ),
               const SizedBox(height: 4),
-              Row(
+              Wrap(
+                spacing: 12,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  const Icon(Icons.directions_car_rounded, size: 14, color: AppTheme.primary),
-                  const SizedBox(width: 4),
-                  Text(
-                    b.vehicleSize.label,
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.directions_car_rounded, size: 14, color: AppTheme.primary),
+                      const SizedBox(width: 4),
+                      Text(
+                        b.vehicleSize.label,
+                        style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  const Icon(Icons.place_rounded, size: 14, color: AppTheme.primary),
-                  const SizedBox(width: 4),
-                  Text(
-                    b.locationType.label,
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.place_rounded, size: 14, color: AppTheme.primary),
+                      const SizedBox(width: 4),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 240),
+                        child: Text(
+                          b.locationType.label,
+                          style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -3883,24 +3960,26 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     child: const Icon(Icons.calendar_month_rounded, size: 16, color: AppTheme.primary),
                   ),
                   const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (b.isMultiDay || b.package.isMultiDay) ...[
-                        Text(
-                          'Drop-off: ${DateFormat('EEEE, MMMM d, yyyy').format(b.scheduledDate)} at ${b.startTime ?? b.scheduledTimeSlot}',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Ready: ${b.completionDate != null ? DateFormat('EEEE, MMMM d, yyyy').format(b.completionDate!) : DateFormat('EEEE, MMMM d, yyyy').format(b.scheduledDate)} at ${b.endTime ?? 'End of Day'} (${b.package.durationBadge})',
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF00E676)),
-                        ),
-                      ] else ...[
-                        Text(DateFormat('EEEE, MMMM d, yyyy').format(b.scheduledDate), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                        Text('${b.scheduledTimeSlot} • ${b.package.durationBadge}', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (b.isMultiDay || b.package.isMultiDay) ...[
+                          Text(
+                            'Drop-off: ${DateFormat('EEEE, MMMM d, yyyy').format(b.scheduledDate)} at ${b.startTime ?? b.scheduledTimeSlot}',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Ready: ${b.completionDate != null ? DateFormat('EEEE, MMMM d, yyyy').format(b.completionDate!) : DateFormat('EEEE, MMMM d, yyyy').format(b.scheduledDate)} at ${b.endTime ?? 'End of Day'} (${b.package.durationBadge})',
+                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF00E676)),
+                          ),
+                        ] else ...[
+                          Text(DateFormat('EEEE, MMMM d, yyyy').format(b.scheduledDate), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          Text('${b.scheduledTimeSlot} • ${b.package.durationBadge}', style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ],
               ),
@@ -3968,12 +4047,27 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              BookingStatusTracker(booking: b),
+              const SizedBox(height: 14),
               const Text('Update Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  if (b.status == BookingStatus.pending)
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00E676),
+                        foregroundColor: Colors.black,
+                      ),
+                      icon: const Icon(Icons.check_circle_outline, size: 16),
+                      label: const Text('Confirm Booking', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () async {
+                        await widget.repository.updateBookingStatus(b.id, BookingStatus.confirmed);
+                        if (mounted) setState(() {});
+                      },
+                    ),
                   if (b.status != BookingStatus.inProgress && b.status != BookingStatus.completed && b.status != BookingStatus.cancelled)
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
@@ -3982,9 +4076,9 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                       ),
                       icon: const Icon(Icons.play_arrow_rounded, size: 16),
                       label: const Text('Start (In Progress)'),
-                      onPressed: () {
-                        widget.repository.updateBookingStatus(b.id, BookingStatus.inProgress);
-                        setState(() {});
+                      onPressed: () async {
+                        await widget.repository.updateBookingStatus(b.id, BookingStatus.inProgress);
+                        if (mounted) setState(() {});
                       },
                     ),
                   if (b.status == BookingStatus.inProgress)
@@ -3995,9 +4089,9 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                       ),
                       icon: const Icon(Icons.check_circle_rounded, size: 16),
                       label: const Text('Complete Job', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () {
-                        widget.repository.updateBookingStatus(b.id, BookingStatus.completed);
-                        setState(() {});
+                      onPressed: () async {
+                        await widget.repository.updateBookingStatus(b.id, BookingStatus.completed);
+                        if (mounted) setState(() {});
                       },
                     ),
                   OutlinedButton.icon(
@@ -4077,7 +4171,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           ],
         ),
         content: Text(
-          'Cancelling this booking for ${b.clientName} (${b.vehicleYearMakeModel}) will immediately remove it from your Calendar schedule and free up the time slot for other clients.',
+          'Cancelling this booking for ${b.clientName} (${b.vehicleYearMakeModel}) will immediately notify the client, update their appointment to Cancelled in real time, and free up the time slot on your Calendar.',
           style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
         ),
         actions: [
@@ -4087,18 +4181,72 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(ctx).pop();
-              widget.repository.cancelBooking(b.id);
-              setState(() {});
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Booking cancelled. Appointment slot has been removed from Calendar.'),
-                  backgroundColor: AppTheme.surface,
-                ),
+              await widget.repository.cancelStudioBookingWithClientNotification(
+                b.id,
+                reason: 'Cancelled by studio detailer',
               );
+              if (mounted) setState(() {});
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Booking cancelled and client notified. Appointment slot has been removed from Calendar.'),
+                    backgroundColor: AppTheme.surface,
+                  ),
+                );
+              }
             },
             child: const Text('Confirm Cancellation', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmCancelAllStudioBookings(BuildContext context) {
+    final active = widget.repository.activeStudioBookings;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Colors.redAccent),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.redAccent),
+            SizedBox(width: 8),
+            Text('Cancel All Bookings?'),
+          ],
+        ),
+        content: Text(
+          'This will cancel all ${active.length} active customer bookings in your studio, notify each client with a direct message, persist the cancellations in real time, and free up your calendar slots.',
+          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Keep Bookings', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            icon: const Icon(Icons.cancel_schedule_send_rounded, size: 16),
+            label: const Text('Cancel & Notify All', style: TextStyle(fontWeight: FontWeight.bold)),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await widget.repository.cancelAllActiveStudioBookings(reason: 'All bookings cancelled by studio detailer');
+              if (mounted) setState(() {});
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('All studio bookings have been cancelled and clients notified.'),
+                    backgroundColor: AppTheme.surface,
+                  ),
+                );
+              }
+            },
           ),
         ],
       ),
@@ -8626,19 +8774,21 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
                 ),
               ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.redAccent,
-                  side: BorderSide(color: Colors.redAccent.withAlpha(120)),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  visualDensity: VisualDensity.compact,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              if (b.status != BookingStatus.cancelled) ...[
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.redAccent,
+                    side: BorderSide(color: Colors.redAccent.withAlpha(120)),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    visualDensity: VisualDensity.compact,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  ),
+                  icon: const Icon(Icons.cancel_outlined, size: 13),
+                  label: const Text('Cancel Booking', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  onPressed: () => _confirmCancelBooking(context, b),
                 ),
-                icon: const Icon(Icons.cancel_outlined, size: 13),
-                label: const Text('Cancel Booking', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                onPressed: () => _confirmCancelBooking(context, b),
-              ),
+              ],
             ],
           ),
           const SizedBox(height: 6),
