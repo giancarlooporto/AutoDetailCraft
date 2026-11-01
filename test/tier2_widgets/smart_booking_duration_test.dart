@@ -1642,7 +1642,7 @@ void main() {
       expect(find.text('45 minutes turnaround'), findsWidgets);
     });
 
-    testWidgets('UI 11: DetailerWorkbenchView Add Slot dialog respects slotDurationHours and offers 30-min increments', (tester) async {
+    testWidgets('UI 11: DetailerWorkbenchView Daily Studio Schedule replaces obsolete slot template buttons with clean schedule', (tester) async {
       tester.view.physicalSize = const Size(1200, 2400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -1652,9 +1652,6 @@ void main() {
 
       final repo = JobRepository();
       await repo.init();
-      repo.updateCalendarPreferences(repo.calendarPreferences.copyWith(
-        slotDurationHours: 2,
-      ));
 
       final testDate = DateTime(2026, 11, 2);
 
@@ -1675,44 +1672,18 @@ void main() {
       await tester.tap(find.text('Calendar'));
       await tester.pumpAndSettle();
 
-      // Tap "Add Slot" button
-      final addSlotBtn = find.widgetWithText(ElevatedButton, 'Add Slot');
-      expect(addSlotBtn, findsWidgets);
-      await tester.tap(addSlotBtn.first);
-      await tester.pumpAndSettle();
+      // Verify DAILY STUDIO SCHEDULE title is rendered
+      expect(find.text('DAILY STUDIO SCHEDULE'), findsOneWidget);
 
-      // Verify Dialog opened
-      expect(find.text('Add Booking Slot'), findsOneWidget);
+      // Verify obsolete slot template management buttons are removed
+      expect(find.text('Add Slot'), findsNothing);
+      expect(find.text('Auto-Gen'), findsNothing);
+      expect(find.text('Clear Slots'), findsNothing);
+      expect(find.text('Block Slot'), findsNothing);
+      expect(find.text('+ Block Window'), findsNothing);
 
-      // Verify End Time computed as startTime (8:00 AM) + 2 hours (120 mins) = 10:00 AM
-      expect(find.text('10:00 AM'), findsWidgets);
-
-      // Open Start Time dropdown to verify 30-min options exist
-      final startDropdown = find.text('8:00 AM');
-      expect(startDropdown, findsWidgets);
-      await tester.tap(startDropdown.first);
-      await tester.pumpAndSettle();
-
-      // 8:30 AM exists in the dropdown options
-      expect(find.text('8:30 AM'), findsWidgets);
-
-      // Select 8:30 AM
-      await tester.tap(find.text('8:30 AM').last);
-      await tester.pumpAndSettle();
-
-      // End time automatically updates to 8:30 AM + 2 hours = 10:30 AM
-      expect(find.text('10:30 AM'), findsWidgets);
-
-      // Save slot
-      final saveBtn = find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.widgetWithText(ElevatedButton, 'Add Slot'),
-      );
-      await tester.tap(saveBtn);
-      await tester.pumpAndSettle();
-
-      // Verify new custom slot is saved in repository preferences
-      expect(repo.calendarPreferences.customTimeSlots, contains('8:30 AM - 10:30 AM'));
+      // Verify clean empty schedule state
+      expect(find.text('No Jobs Scheduled Today'), findsOneWidget);
     });
 
     testWidgets('UI 12: DetailerWorkbenchView Pane 3 Day Inspector renders exact booked appointment details and no fake overlap cards', (tester) async {
@@ -1794,8 +1765,10 @@ void main() {
         expect(find.textContaining('Overlaps with'), findsNothing);
         expect(find.textContaining('Reserved •'), findsNothing);
 
-        // Verify Available for Booking card is also visible
-        expect(find.text('Available for Booking'), findsWidgets);
+        // Verify Daily Studio Schedule title and absence of obsolete slot cards
+        expect(find.text('DAILY STUDIO SCHEDULE'), findsOneWidget);
+        expect(find.text('Available for Booking'), findsNothing);
+        expect(find.text('Block Slot'), findsNothing);
       } finally {
         tearDownMockImageHttpClient();
       }
@@ -1895,8 +1868,9 @@ void main() {
         expect(repo.isBookingConflictingWithSlot(updatedBooking, testDate, '8:00 AM - 10:00 AM'), isFalse);
         expect(repo.getBookingsForDate(testDate).where((b) => b.id == 'bk_ui_cancel_01'), isEmpty);
 
-        // Available status card remains available for new bookings
-        expect(find.text('Available for Booking'), findsWidgets);
+        // Schedule transitions to clean empty state
+        expect(find.text('No Jobs Scheduled Today'), findsOneWidget);
+        expect(find.text('Available for Booking'), findsNothing);
       } finally {
         tearDownMockImageHttpClient();
       }
@@ -1921,6 +1895,7 @@ void main() {
         repo.updateCalendarPreferences(repo.calendarPreferences.copyWith(weeklySchedule: openSchedule));
 
         final testDate = DateTime(2026, 11, 3);
+        repo.toggleBlockSlot(testDate, '8:00 AM - 8:30 AM', detailerId: repo.currentUser.id, reason: 'Equipment maintenance');
 
         await tester.pumpWidget(
           MaterialApp(
@@ -1936,33 +1911,6 @@ void main() {
         await tester.pumpAndSettle();
 
         await tester.tap(find.text('Calendar'));
-        await tester.pumpAndSettle();
-
-        // Tap Block Slot button
-        final blockSlotBtn = find.widgetWithText(ElevatedButton, 'Block Slot').first;
-        expect(blockSlotBtn, findsOneWidget);
-        await tester.tap(blockSlotBtn);
-        await tester.pumpAndSettle();
-
-        // Block Time Window dialog opens
-        expect(find.text('Block Time Window'), findsOneWidget);
-        expect(find.text('30 mins'), findsWidgets);
-
-        // Enter custom reason
-        final reasonField = find.descendant(
-          of: find.byType(AlertDialog),
-          matching: find.byType(TextField),
-        );
-        expect(reasonField, findsOneWidget);
-        await tester.enterText(reasonField, 'Equipment maintenance');
-        await tester.pumpAndSettle();
-
-        // Tap Block Slot in dialog
-        final confirmBlockBtn = find.descendant(
-          of: find.byType(AlertDialog),
-          matching: find.widgetWithText(ElevatedButton, 'Block Slot'),
-        );
-        await tester.tap(confirmBlockBtn);
         await tester.pumpAndSettle();
 
         // Blocked slot card is displayed in Pane 3
@@ -1981,7 +1929,7 @@ void main() {
         // Blocked card is removed and slot is reopened
         expect(find.text('Blocked by Detailer (Equipment maintenance)'), findsNothing);
         expect(repo.isSlotBlocked(repo.currentUser.id, testDate, '8:00 AM - 8:30 AM'), isFalse);
-        expect(find.text('Available for Booking'), findsWidgets);
+        expect(find.text('No Jobs Scheduled Today'), findsOneWidget);
       } finally {
         tearDownMockImageHttpClient();
       }
@@ -2121,7 +2069,7 @@ void main() {
 
         // 1. Studio Owner Master View ('all'):
         // Shows general title
-        expect(find.text('HOURLY SLOT AVAILABILITY'), findsOneWidget);
+        expect(find.text('DAILY STUDIO SCHEDULE'), findsOneWidget);
 
         // Sees both Dave's and Elena's appointments with assigned tech badges
         expect(find.text('Booked by Dave Client'), findsOneWidget);
@@ -2144,8 +2092,8 @@ void main() {
         await tester.tap(elenaOption);
         await tester.pumpAndSettle();
 
-        // Section 1 title now isolates Elena's availability
-        expect(find.text("ELENA ROSTOVA'S AVAILABILITY"), findsOneWidget);
+        // Section 1 title now isolates Elena's schedule
+        expect(find.text("ELENA ROSTOVA'S SCHEDULE"), findsOneWidget);
 
         // Only Elena's schedule is shown; Dave's booking is filtered out
         expect(find.text('Booked by Elena Client'), findsOneWidget);
@@ -2160,7 +2108,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Master studio view restored
-        expect(find.text('HOURLY SLOT AVAILABILITY'), findsOneWidget);
+        expect(find.text('DAILY STUDIO SCHEDULE'), findsOneWidget);
         expect(find.text('Booked by Dave Client'), findsOneWidget);
         expect(find.text('Booked by Elena Client'), findsOneWidget);
       } finally {
@@ -2271,6 +2219,7 @@ void main() {
         repo.updateCalendarPreferences(repo.calendarPreferences.copyWith(weeklySchedule: openSchedule));
 
         final testDate = DateTime(2026, 11, 6);
+        repo.toggleBlockSlot(testDate, '5:00 PM - 6:00 PM', detailerId: repo.currentUser.id);
 
         await tester.pumpWidget(
           MaterialApp(
@@ -2286,40 +2235,6 @@ void main() {
         await tester.pumpAndSettle();
 
         await tester.tap(find.text('Calendar'));
-        await tester.pumpAndSettle();
-
-        // Tap Block Slot
-        final blockSlotBtn = find.widgetWithText(ElevatedButton, 'Block Slot').first;
-        await tester.tap(blockSlotBtn);
-        await tester.pumpAndSettle();
-
-        expect(find.text('Block Time Window'), findsOneWidget);
-
-        // Select Start Time dropdown
-        final startTimeDropdown = find.descendant(
-          of: find.byType(AlertDialog),
-          matching: find.byType(DropdownButton<String>),
-        ).first;
-        await tester.tap(startTimeDropdown);
-        await tester.pumpAndSettle();
-
-        // Select 5:00 PM as Start Time (shop closes at 6:00 PM)
-        final fivePmOption = find.descendant(of: find.byType(DropdownMenuItem<String>), matching: find.text('5:00 PM')).last;
-        await tester.tap(fivePmOption);
-        await tester.pumpAndSettle();
-
-        // Tap "2 hours" quick duration chip
-        final twoHoursChip = find.descendant(of: find.byType(AlertDialog), matching: find.text('2 hours'));
-        expect(twoHoursChip, findsOneWidget);
-        await tester.tap(twoHoursChip);
-        await tester.pumpAndSettle();
-
-        // Verify End Time dropdown clamped strictly to shop closing time (6:00 PM)
-        expect(find.descendant(of: find.byType(AlertDialog), matching: find.text('6:00 PM')), findsWidgets);
-
-        // Confirm Block Slot
-        final confirmBtn = find.descendant(of: find.byType(AlertDialog), matching: find.widgetWithText(ElevatedButton, 'Block Slot'));
-        await tester.tap(confirmBtn);
         await tester.pumpAndSettle();
 
         // Blocked slot rendered as 5:00 PM - 6:00 PM

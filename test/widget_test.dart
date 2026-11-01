@@ -2743,7 +2743,7 @@ void main() {
     // 2. Verify Pane 2 Month Grid & Pane 3 Day Inspector rendered
     expect(find.text('CALENDAR INSPECTOR'), findsOneWidget);
     expect(find.text('Operating Hours & Preferences'), findsWidgets);
-    expect(find.text('HOURLY SLOT AVAILABILITY'), findsOneWidget);
+    expect(find.text('DAILY STUDIO SCHEDULE'), findsOneWidget);
     expect(find.text('Block Full Day'), findsOneWidget);
 
     // 3. Toggle Full Day Block on currently selected date
@@ -2758,24 +2758,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Block Full Day'), findsOneWidget);
 
-    // 4. Toggle Hourly Slot Block on a specific window
-    final blockSlotButtons = find.text('Block Slot');
-    expect(blockSlotButtons, findsWidgets);
-    await tester.tap(blockSlotButtons.first);
-    await tester.pumpAndSettle();
-
-    if (find.byType(AlertDialog).evaluate().isNotEmpty) {
-      await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Block Slot')));
-      await tester.pumpAndSettle();
-    }
-
-    expect(find.text('Blocked by Detailer'), findsWidgets);
-    expect(find.text('Reopen'), findsWidgets);
-
-    // Reopen the blocked slot
-    await tester.tap(find.text('Reopen').first);
-    await tester.pumpAndSettle();
-    expect(find.text('Available for Booking'), findsWidgets);
+    // 4. Verify template slot management buttons are removed and clean empty schedule state is rendered
+    expect(find.text('Block Slot'), findsNothing);
+    expect(find.text('Add Slot'), findsNothing);
+    expect(find.text('Auto-Gen'), findsNothing);
+    expect(find.text('Clear Slots'), findsNothing);
+    expect(find.text('No Jobs Scheduled Today'), findsOneWidget);
 
     debugNetworkImageHttpClientProvider = null;
     tester.view.resetPhysicalSize();
@@ -3064,7 +3052,8 @@ void main() {
 
     // Verify Day Inspector shows exact booking
     expect(find.textContaining('Booked by Alex Rivera'), findsOneWidget);
-    expect(find.text('Available for Booking'), findsWidgets);
+    expect(find.text('DAILY STUDIO SCHEDULE'), findsOneWidget);
+    expect(find.text('Available for Booking'), findsNothing);
 
     debugNetworkImageHttpClientProvider = null;
     tester.view.resetPhysicalSize();
@@ -3116,9 +3105,9 @@ void main() {
     await tester.tap(find.text('Calendar'));
     await tester.pumpAndSettle();
 
-    // Slots should show Studio Closed (Day Off), and NOT Available for Booking
+    // Slots should show Studio Closed (Day Off), and NOT No Jobs Scheduled Today
     expect(find.text('Studio Closed (Day Off)'), findsWidgets);
-    expect(find.text('Available for Booking'), findsNothing);
+    expect(find.text('No Jobs Scheduled Today'), findsNothing);
 
     // 2. Open this weekday for booking
     final openSchedule = repository.calendarPreferences.weeklySchedule.map((d) {
@@ -3129,25 +3118,25 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Slots are now open and Available for Booking
-    expect(find.text('Available for Booking'), findsWidgets);
+    // Schedule is now open and shows clean empty schedule state
+    expect(find.text('No Jobs Scheduled Today'), findsWidgets);
     expect(find.text('Studio Closed (Day Off)'), findsNothing);
 
     // 3. Block full day
     await tester.tap(find.text('Block Full Day'));
     await tester.pumpAndSettle();
 
-    // Immediately strikes off Available for Booking and shows Day Blocked by Detailer
+    // Immediately strikes off No Jobs Scheduled Today and shows Day Blocked by Detailer
     expect(find.text('Day Blocked by Detailer'), findsWidgets);
-    expect(find.text('Available for Booking'), findsNothing);
+    expect(find.text('No Jobs Scheduled Today'), findsNothing);
     expect(find.text('Unblock Full Day'), findsOneWidget);
 
     // 4. Unblock full day
     await tester.tap(find.text('Unblock Full Day'));
     await tester.pumpAndSettle();
 
-    // Re-enables Available for Booking
-    expect(find.text('Available for Booking'), findsWidgets);
+    // Re-enables No Jobs Scheduled Today
+    expect(find.text('No Jobs Scheduled Today'), findsWidgets);
     expect(find.text('Day Blocked by Detailer'), findsNothing);
 
     // 5. Turn off this day in schedule again
@@ -3156,9 +3145,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Striking off Available for Booking right away
+    // Striking off No Jobs Scheduled Today right away
     expect(find.text('Studio Closed (Day Off)'), findsWidgets);
-    expect(find.text('Available for Booking'), findsNothing);
+    expect(find.text('No Jobs Scheduled Today'), findsNothing);
 
     // 6. Customer Perspective: verify slots are struck off and cannot be booked
     final detailer = repository.currentUser;
@@ -3261,13 +3250,16 @@ void main() {
     if (repository.currentUser.role != UserRole.detailer) {
       repository.toggleHostMode();
     }
+    final testDate = DateTime(2026, 11, 2);
+    // Block a slot via repo to verify blocked slot card and reopen
+    repository.toggleBlockSlot(testDate, '9:00 AM - 10:00 AM', detailerId: repository.currentUser.id, reason: 'Shop Maintenance');
 
     await tester.pumpWidget(MaterialApp(
       theme: AppTheme.darkTheme,
       home: Scaffold(
         body: DetailerWorkbenchView(
           repository: repository,
-          initialCalendarDate: DateTime(2026, 11, 2),
+          initialCalendarDate: testDate,
         ),
       ),
     ));
@@ -3277,46 +3269,26 @@ void main() {
     await tester.tap(find.text('Calendar'));
     await tester.pumpAndSettle();
 
-    // Verify Clear Slots button exists when slots are present
-    expect(find.text('Clear Slots'), findsWidgets);
+    // Verify DAILY STUDIO SCHEDULE title is present
+    expect(find.text('DAILY STUDIO SCHEDULE'), findsOneWidget);
 
-    // Tap Clear Slots
-    await tester.tap(find.text('Clear Slots').first);
+    // Verify obsolete slot template buttons are absent
+    expect(find.text('Clear Slots'), findsNothing);
+    expect(find.text('Add Slot'), findsNothing);
+    expect(find.text('Auto-Gen'), findsNothing);
+
+    // Verify blocked slot card is rendered with reason and Reopen button
+    expect(find.text('Blocked by Detailer (Shop Maintenance)'), findsOneWidget);
+    expect(find.text('9:00 AM - 10:00 AM'), findsOneWidget);
+    expect(find.text('Reopen'), findsOneWidget);
+
+    // Tap Reopen
+    await tester.tap(find.text('Reopen'));
     await tester.pumpAndSettle();
 
-    // Dialog pops up
-    expect(find.text('Clear All Time Slots'), findsOneWidget);
-    // Confirm Clear Slots in dialog
-    await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Clear Slots')));
-    await tester.pumpAndSettle();
-
-    // Empty state container must now be rendered (0 slots defined for this day!)
-    expect(find.text('No slots defined for this day.'), findsOneWidget);
-    expect(find.text('Reset to Schedule Defaults'), findsOneWidget);
-
-    // Tap Reset to Schedule Defaults
-    await tester.tap(find.text('Reset to Schedule Defaults'));
-    await tester.pumpAndSettle();
-
-    // Slots are back
-    expect(find.text('No slots defined for this day.'), findsNothing);
-    expect(find.byIcon(Icons.delete_outline_rounded), findsWidgets);
-
-    // Tap Delete on first slot
-    await tester.tap(find.byIcon(Icons.delete_outline_rounded).first);
-    await tester.pumpAndSettle();
-
-    // Confirmation dialog pops up
-    expect(find.text('Delete Time Slot'), findsOneWidget);
-    expect(find.text('This Date Only'), findsOneWidget);
-    expect(find.text('All Operating Days'), findsOneWidget);
-
-    // Tap This Date Only
-    await tester.tap(find.text('This Date Only'));
-    await tester.pumpAndSettle();
-
-    // Dialog is dismissed
-    expect(find.text('Delete Time Slot'), findsNothing);
+    // Slot is reopened and empty schedule card is displayed
+    expect(find.text('Blocked by Detailer (Shop Maintenance)'), findsNothing);
+    expect(find.text('No Jobs Scheduled Today'), findsOneWidget);
 
     debugNetworkImageHttpClientProvider = null;
     tester.view.resetPhysicalSize();
@@ -3422,12 +3394,42 @@ void main() {
       repository.toggleHostMode();
     }
 
+    final testDate = DateTime(2026, 11, 2);
+    final booking = BookingAppointment(
+      id: 'bk_wtest_autogen_replace',
+      detailerId: repository.currentUser.id,
+      detailerName: repository.currentUser.displayName,
+      detailerBusinessName: repository.currentUser.businessName,
+      detailerAvatar: repository.currentUser.avatarUrl,
+      clientName: 'Marcus Vance',
+      clientEmail: 'marcus@example.com',
+      clientPhone: '555-0199',
+      vehicleYearMakeModel: '2023 Porsche 911 GT3',
+      vehicleSize: VehicleSize.coupeSedan,
+      package: const ServicePackage(
+        id: 'pkg_track_prep',
+        title: 'Track Prep Polish',
+        description: 'Single stage correction and sealant',
+        basePrice: 450.0,
+        estimatedDuration: '3 hours',
+        includes: ['Decon wash', 'Machine polish'],
+      ),
+      locationType: ServiceLocationType.shop,
+      clientAddress: 'Detail Studio',
+      scheduledDate: testDate,
+      scheduledTimeSlot: '9:00 AM - 12:00 PM',
+      totalPrice: 450.0,
+      depositAmount: 50.0,
+      status: BookingStatus.confirmed,
+    );
+    repository.addBooking(booking);
+
     await tester.pumpWidget(MaterialApp(
       theme: AppTheme.darkTheme,
       home: Scaffold(
         body: DetailerWorkbenchView(
           repository: repository,
-          initialCalendarDate: DateTime(2026, 11, 2), // Monday (standard 08:00 AM - 06:00 PM operating hours)
+          initialCalendarDate: testDate,
         ),
       ),
     ));
@@ -3437,49 +3439,20 @@ void main() {
     await tester.tap(find.text('Calendar'));
     await tester.pumpAndSettle();
 
-    // Tap Auto-Gen button in calendar inspector
-    expect(find.text('Auto-Gen'), findsWidgets);
-    await tester.tap(find.text('Auto-Gen').first);
-    await tester.pumpAndSettle();
+    // Verify DAILY STUDIO SCHEDULE title is present
+    expect(find.text('DAILY STUDIO SCHEDULE'), findsOneWidget);
 
-    // Auto-Gen dialog is visible
-    expect(find.text('Auto-Generate Slots'), findsOneWidget);
-    expect(find.text('Slot Duration / Interval'), findsOneWidget);
+    // Verify obsolete slot template management buttons are removed
+    expect(find.text('Auto-Gen'), findsNothing);
+    expect(find.text('Add Slot'), findsNothing);
+    expect(find.text('Clear Slots'), findsNothing);
+    expect(find.text('Block Slot'), findsNothing);
 
-    // Verify all duration chips are rendered
-    expect(find.text('1 Hour'), findsOneWidget);
-    expect(find.text('2 Hours'), findsOneWidget);
-    expect(find.text('3 Hours'), findsOneWidget);
-    expect(find.text('4 Hours'), findsOneWidget);
-    expect(find.text('5 Hours'), findsOneWidget);
-    expect(find.text('6 Hours'), findsOneWidget);
-    expect(find.text('8 Hours'), findsOneWidget);
-
-    // Tap 4 Hours chip
-    await tester.tap(find.text('4 Hours'));
-    await tester.pumpAndSettle();
-
-    // Verify live preview shows 4h windows
-    expect(find.text('4h windows'), findsOneWidget);
-    expect(find.text('8:00 AM - 12:00 PM'), findsWidgets);
-
-    // Tap 2 Hours chip
-    await tester.tap(find.text('2 Hours'));
-    await tester.pumpAndSettle();
-
-    // Verify live preview shows 2h windows
-    expect(find.text('2h windows'), findsOneWidget);
-    expect(find.text('8:00 AM - 10:00 AM'), findsWidgets);
-
-    // Confirm Generate Slots
-    await tester.tap(find.text('Generate Slots'));
-    await tester.pumpAndSettle();
-
-    // Dialog is dismissed
-    expect(find.text('Auto-Generate Slots'), findsNothing);
-
-    // Verify slots are generated and visible in workbench
-    expect(find.text('8:00 AM - 10:00 AM'), findsWidgets);
+    // Verify confirmed booking is cleanly displayed
+    expect(find.text('Booked by Marcus Vance'), findsOneWidget);
+    expect(find.text('9:00 AM - 12:00 PM'), findsOneWidget);
+    expect(find.text('\$450'), findsWidgets);
+    expect(find.text('Cancel Booking'), findsOneWidget);
 
     debugNetworkImageHttpClientProvider = null;
     tester.view.resetPhysicalSize();
