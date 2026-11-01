@@ -115,6 +115,12 @@ class SupabaseDbService {
     Map<String, dynamic> res, {
     List<UserVehicle> garage = const [],
     List<TeamMember> team = const [],
+  }) => buildUserProfileFromMap(res, garage: garage, team: team);
+
+  static UserProfile? buildUserProfileFromMap(
+    Map<String, dynamic> res, {
+    List<UserVehicle> garage = const [],
+    List<TeamMember> team = const [],
   }) {
     try {
       List<ServicePackage> packages = [];
@@ -251,15 +257,17 @@ class SupabaseDbService {
     }
   }
 
-  /// Fetches all public registered detailers and studios from Supabase profiles in a single query.
-  static Future<List<UserProfile>> fetchPublicDetailers() async {
+  /// Fetches raw public registered detailer profile records from Supabase
+  static Future<List<Map<String, dynamic>>> fetchPublicDetailerRecords() async {
     final client = _client;
     if (client == null) return [];
 
     try {
-      final res = await client.from('profiles').select();
-      final list = res as List<dynamic>;
-      final profiles = <UserProfile>[];
+      final dynamic res = await client.from('profiles').select();
+      final List<dynamic> list = res is List
+          ? res
+          : (res is Map && res['data'] is List ? (res['data'] as List) : (res is Map ? [res] : <dynamic>[]));
+      final results = <Map<String, dynamic>>[];
       for (final item in list) {
         final profileMap = Map<String, dynamic>.from(item as Map);
         final role = profileMap['role'] as String?;
@@ -278,17 +286,27 @@ class SupabaseDbService {
         final isDetailer = (role == 'detailer' || role == 'super_admin' || role == 'superAdmin') &&
             (hasPackages || hasBusiness);
         if (isDetailer) {
-          final p = _buildUserProfileFromMap(profileMap);
-          if (p != null && p.role != UserRole.client && (p.businessName.trim().isNotEmpty || p.servicePackages.isNotEmpty)) {
-            profiles.add(p);
-          }
+          results.add(profileMap);
         }
       }
-      return profiles;
+      return results;
     } catch (e) {
-      if (kDebugMode) print('[SupabaseDbService] Error fetching public detailers: $e');
+      if (kDebugMode) print('[SupabaseDbService] Error fetching public detailer records: $e');
       return [];
     }
+  }
+
+  /// Fetches all public registered detailers and studios from Supabase profiles in a single query.
+  static Future<List<UserProfile>> fetchPublicDetailers() async {
+    final records = await fetchPublicDetailerRecords();
+    final profiles = <UserProfile>[];
+    for (final item in records) {
+      final p = buildUserProfileFromMap(item);
+      if (p != null && p.role != UserRole.client && (p.businessName.trim().isNotEmpty || p.servicePackages.isNotEmpty)) {
+        profiles.add(p);
+      }
+    }
+    return profiles;
   }
 
   /// Upsert full user profile to Supabase

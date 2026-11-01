@@ -53,16 +53,24 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   final _notesCtrl = TextEditingController();
 
   List<String> get _timeSlots {
+    final hours = widget.repository.getHoursForDate(_selectedDate, detailerId: widget.detailer.id);
+    final effectiveClose = hours.closeTime.isNotEmpty ? hours.closeTime : '06:00 PM';
+    final closeMin = JobRepository.closeTimeToMinutes(effectiveClose);
+
     final overrideBlock = widget.repository.getCustomDayOverride(_selectedDate, detailerId: widget.detailer.id);
     if (overrideBlock != null && overrideBlock.hasCustomSlotsOverride) {
       if (overrideBlock.customSlots.isEmpty) {
         return <String>[];
       }
-      return overrideBlock.customSlots.map((s) {
+      return overrideBlock.customSlots.where((s) {
+        final startMin = JobRepository.parseSlotRange(s).$1;
+        return startMin < closeMin;
+      }).map((s) {
         final startMin = JobRepository.parseSlotRange(s).$1;
         final startStr = JobRepository.formatMinutesToTime(startMin);
         if (_selectedPackage.isMultiDay) {
-          final finishStr = JobRepository.formatMinutesToTime(startMin + 60);
+          final dropOffEndMin = (startMin + 60 > closeMin ? closeMin : startMin + 60);
+          final finishStr = JobRepository.formatMinutesToTime(dropOffEndMin);
           return '$startStr - $finishStr';
         } else {
           final finishStr = JobRepository.formatMinutesToTime(startMin + _selectedPackage.durationMinutes);
@@ -71,18 +79,16 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       }).toList();
     }
 
-    final hours = widget.repository.getHoursForDate(_selectedDate, detailerId: widget.detailer.id);
     final effectiveOpen = hours.openTime.isNotEmpty ? hours.openTime : '08:00 AM';
-    final effectiveClose = hours.closeTime.isNotEmpty ? hours.closeTime : '06:00 PM';
     var openMin = JobRepository.timeStringToMinutes(effectiveOpen);
-    var closeMin = JobRepository.closeTimeToMinutes(effectiveClose);
-    if (closeMin <= openMin) {
+    var effectiveCloseMin = closeMin;
+    if (effectiveCloseMin <= openMin) {
       openMin = 480;
-      closeMin = 1080;
+      effectiveCloseMin = 1080;
     }
 
     final candidateStartMins = <int>{};
-    for (int m = openMin; m < closeMin; m += 30) {
+    for (int m = openMin; m < effectiveCloseMin; m += 30) {
       candidateStartMins.add(m);
     }
 
@@ -90,7 +96,8 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     return sortedStarts.map((startMin) {
       final startStr = JobRepository.formatMinutesToTime(startMin);
       if (_selectedPackage.isMultiDay) {
-        final finishStr = JobRepository.formatMinutesToTime(startMin + 60);
+        final dropOffEndMin = (startMin + 60 > effectiveCloseMin ? effectiveCloseMin : startMin + 60);
+        final finishStr = JobRepository.formatMinutesToTime(dropOffEndMin);
         return '$startStr - $finishStr';
       } else {
         final finishStr = JobRepository.formatMinutesToTime(startMin + _selectedPackage.durationMinutes);
@@ -217,6 +224,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     _recalculateCompletionAndSlot();
     _adjustSelectedSlotIfBlocked();
     widget.repository.refreshAvailabilityBlocks(detailerId: widget.detailer.id);
+    widget.repository.refreshDetailerPreferences(widget.detailer.id);
   }
 
   void _onRepoChanged() {
@@ -293,17 +301,16 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     }
 
     final isRollover = !_selectedPackage.isMultiDay && isLateDropOff && (startMin + _selectedPackage.durationMinutes > closeMin);
-    final slotToCheck = _selectedPackage.isMultiDay
-        ? '$startStr - ${JobRepository.formatMinutesToTime(startMin + 60)}'
-        : (isRollover
-            ? '$startStr - ${JobRepository.formatMinutesToTime(closeMin)}'
-            : '$startStr - ${JobRepository.formatMinutesToTime(startMin + _selectedPackage.durationMinutes)}');
+    final dropOffEndMin = _selectedPackage.isMultiDay
+        ? (startMin + 60 > closeMin ? closeMin : startMin + 60)
+        : (isRollover ? closeMin : startMin + _selectedPackage.durationMinutes);
+    final slotToCheck = '$startStr - ${JobRepository.formatMinutesToTime(dropOffEndMin)}';
 
-    if (widget.repository.isSlotBlocked(widget.detailer.id, _selectedDate, slotToCheck)) {
-      return 'Time Window Blocked by Detailer';
-    }
     if (!widget.repository.isSlotWithinOperatingHours(_selectedDate, slotToCheck, detailerId: widget.detailer.id)) {
       return 'Outside Business Operating Hours';
+    }
+    if (widget.repository.isSlotBlocked(widget.detailer.id, _selectedDate, slotToCheck)) {
+      return 'Time Window Blocked by Detailer';
     }
     if (!widget.repository.isSlotWithinLeadTime(_selectedDate, startStr, detailerId: widget.detailer.id)) {
       final leadHours = widget.repository.getCalendarPreferences(detailerId: widget.detailer.id).advanceNoticeHours;
@@ -500,7 +507,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       scheduledTimeSlot: _selectedTimeSlot,
       totalPrice: _calculatedTotal,
       depositAmount: _depositAmount,
-      status: widget.repository.calendarPreferences.autoConfirmBookings
+      status: widget.repository.getCalendarPreferences(detailerId: widget.detailer.id).autoConfirmBookings
           ? BookingStatus.confirmed
           : BookingStatus.pending,
       clientNotes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),

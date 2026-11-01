@@ -836,8 +836,9 @@ class LocalStorageService {
       final jsonStr = jsonEncode(preferences.toJson());
       if (detailerId != null) {
         await prefs.setString('${_calendarPrefsKey}_$detailerId', jsonStr);
+      } else {
+        await prefs.setString(_calendarPrefsKey, jsonStr);
       }
-      await prefs.setString(_calendarPrefsKey, jsonStr);
       if (kDebugMode) {
         print('[LocalStorageService] Successfully saved calendar preferences.');
       }
@@ -854,6 +855,7 @@ class LocalStorageService {
           final Map<String, dynamic> data = jsonDecode(detailerJson);
           return DetailerCalendarPreferences.fromJson(Map<String, dynamic>.from(data));
         }
+        return null;
       }
       final jsonStr = prefs.getString(_calendarPrefsKey);
       if (jsonStr != null && jsonStr.isNotEmpty) {

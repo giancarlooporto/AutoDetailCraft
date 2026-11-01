@@ -5,9 +5,11 @@ import 'package:detail_craft/core/theme/app_theme.dart';
 import 'package:detail_craft/models/booking_models.dart';
 import 'package:detail_craft/models/calendar_availability_block.dart';
 import 'package:detail_craft/models/team_member.dart';
+import 'package:detail_craft/models/user_profile.dart';
 import 'package:detail_craft/screens/booking_flow_screen.dart';
 import 'package:detail_craft/screens/detailer_workbench_view.dart';
 import 'package:detail_craft/services/job_repository.dart';
+import 'package:detail_craft/services/local_storage_service.dart';
 import 'package:detail_craft/services/mock_data_service.dart';
 import '../core/mock_http_client.dart';
 
@@ -584,6 +586,233 @@ void main() {
 
         // Assignment dialog should appear
         expect(find.text('Assign Technician to Booking'), findsOneWidget);
+      } finally {
+        tearDownMockImageHttpClient();
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      }
+    });
+
+    test('Operating Hours Sync: refreshDetailerPreferences updates _detailerPreferencesMap and propagates across detailer and client views', () async {
+      final repo = JobRepository();
+      await repo.init();
+      repo.isLoggedIn = true;
+
+      const detailerId = 'detailer_target_sync_1';
+      final detailerSchedule5pm = [
+        for (int w = 1; w <= 7; w++)
+          DayBusinessHours(weekday: w, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+      ];
+      final prefs5pm = DetailerCalendarPreferences(
+        weeklySchedule: detailerSchedule5pm,
+        autoConfirmBookings: false,
+      );
+
+      // Save directly to local storage for this specific detailer
+      await LocalStorageService.saveDetailerCalendarPreferences(prefs5pm, detailerId: detailerId);
+
+      // Call refreshDetailerPreferences to load and hydrate into repo
+      await repo.refreshDetailerPreferences(detailerId);
+
+      final loadedPrefs = repo.getCalendarPreferences(detailerId: detailerId);
+      expect(loadedPrefs.weeklySchedule.first.closeTime, equals('05:00 PM'));
+      expect(loadedPrefs.autoConfirmBookings, isFalse);
+
+      final hoursMonday = repo.getHoursForDate(DateTime(2026, 11, 2), detailerId: detailerId);
+      expect(hoursMonday.closeTime, equals('05:00 PM'));
+
+      // Detailer updates operating hours to 6:00 PM closing
+      final detailerSchedule6pm = [
+        for (int w = 1; w <= 7; w++)
+          DayBusinessHours(weekday: w, isOpen: true, openTime: '08:00 AM', closeTime: '06:00 PM'),
+      ];
+      final prefs6pm = DetailerCalendarPreferences(
+        weeklySchedule: detailerSchedule6pm,
+        autoConfirmBookings: true,
+      );
+
+      repo.updateCalendarPreferences(prefs6pm, detailerId: detailerId);
+
+      final updatedPrefs = repo.getCalendarPreferences(detailerId: detailerId);
+      expect(updatedPrefs.weeklySchedule.first.closeTime, equals('06:00 PM'));
+      expect(updatedPrefs.autoConfirmBookings, isTrue);
+
+      final updatedHours = repo.getHoursForDate(DateTime(2026, 11, 2), detailerId: detailerId);
+      expect(updatedHours.closeTime, equals('06:00 PM'));
+    });
+
+    testWidgets('Operating Hours: Detailer changes closing time to 5:00 PM -> client drop-off slots end at 4:30 PM; 5:00 PM and 5:30 PM do NOT appear', (tester) async {
+      tester.view.physicalSize = const Size(1280, 3000);
+      tester.view.devicePixelRatio = 1.0;
+      setupMockImageHttpClient();
+
+      try {
+        final repo = JobRepository();
+        await repo.init();
+        repo.isLoggedIn = true;
+
+        const targetDetailerId = 'detailer_5pm_studio';
+        final schedule5pm = [
+          for (int w = 1; w <= 7; w++)
+            DayBusinessHours(weekday: w, isOpen: true, openTime: '08:00 AM', closeTime: '05:00 PM'),
+        ];
+        final prefs5pm = DetailerCalendarPreferences(weeklySchedule: schedule5pm);
+        repo.updateCalendarPreferences(prefs5pm, detailerId: targetDetailerId);
+
+        const standardPkg = ServicePackage(
+          id: 'pkg_5pm_test',
+          title: 'Standard Detail Service',
+          description: 'Basic Wash',
+          basePrice: 120.0,
+          estimatedDuration: '2 hrs',
+          includes: ['Wash'],
+        );
+
+        final targetDetailer = UserProfile(
+          id: targetDetailerId,
+          username: 'detailer_5pm',
+          displayName: 'Five PM Studio',
+          businessName: 'Five PM Studio',
+          servicePackages: [standardPkg],
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: BookingFlowScreen(
+              detailer: targetDetailer,
+              initialPackage: standardPkg,
+              repository: repo,
+              initialDate: DateTime(2026, 11, 2), // Monday
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Advance to Step 1 (date & time selection)
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // 4:30 PM drop-off slot MUST appear as the last drop-off slot
+        final chip430Finder = find.widgetWithText(FilterChip, '4:30 PM');
+        expect(chip430Finder, findsOneWidget, reason: '4:30 PM drop-off slot must appear for 5:00 PM closing');
+
+        // 5:00 PM and 5:30 PM must NEVER be generated, rendered, or shown as blocked
+        final chip500Finder = find.widgetWithText(FilterChip, '5:00 PM');
+        expect(chip500Finder, findsNothing, reason: '5:00 PM slot must NOT appear when closing at 5:00 PM');
+
+        final chip530Finder = find.widgetWithText(FilterChip, '5:30 PM');
+        expect(chip530Finder, findsNothing, reason: '5:30 PM slot must NOT appear when closing at 5:00 PM');
+
+        // Verify there is no 'BLOCKED' badge displayed for 5:30 PM
+        expect(find.text('BLOCKED'), findsNothing);
+      } finally {
+        tearDownMockImageHttpClient();
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      }
+    });
+
+    testWidgets('Operating Hours: Detailer changes closing time to 6:00 PM -> 5:30 PM drop-off is generated, open/available (NOT blocked) for both same-day rollover and multi-day packages', (tester) async {
+      tester.view.physicalSize = const Size(1280, 3000);
+      tester.view.devicePixelRatio = 1.0;
+      setupMockImageHttpClient();
+
+      try {
+        final repo = JobRepository();
+        await repo.init();
+        repo.isLoggedIn = true;
+
+        const targetDetailerId = 'detailer_6pm_studio';
+        final schedule6pm = [
+          for (int w = 1; w <= 7; w++)
+            DayBusinessHours(weekday: w, isOpen: true, openTime: '08:00 AM', closeTime: '06:00 PM'),
+        ];
+        final prefs6pm = DetailerCalendarPreferences(weeklySchedule: schedule6pm);
+        repo.updateCalendarPreferences(prefs6pm, detailerId: targetDetailerId);
+
+        const rolloverPkg = ServicePackage(
+          id: 'pkg_rollover_3hr',
+          title: '3-Hour Paint Correction',
+          description: 'Paint correction',
+          basePrice: 400.0,
+          estimatedDuration: '3 hrs',
+          includes: ['Correction'],
+        );
+
+        const multiDayPkg = ServicePackage(
+          id: 'pkg_multiday_full',
+          title: 'Full Multi-Day Resto',
+          description: 'Multi-day restoration',
+          basePrice: 1200.0,
+          estimatedDuration: '2 days',
+          includes: ['Restoration'],
+        );
+
+        final targetDetailer = UserProfile(
+          id: targetDetailerId,
+          username: 'detailer_6pm',
+          displayName: 'Six PM Studio',
+          businessName: 'Six PM Studio',
+          servicePackages: [rolloverPkg, multiDayPkg],
+        );
+
+        // 1. Test Same-day rollover package
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: BookingFlowScreen(
+              detailer: targetDetailer,
+              initialPackage: rolloverPkg,
+              repository: repo,
+              initialDate: DateTime(2026, 11, 2), // Monday
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        final chip530Rollover = find.widgetWithText(FilterChip, '5:30 PM');
+        expect(chip530Rollover, findsOneWidget, reason: '5:30 PM drop-off slot must exist for 6:00 PM closing');
+
+        final filterChipWidgetRollover = tester.widget<FilterChip>(chip530Rollover);
+        expect(filterChipWidgetRollover.onSelected, isNotNull, reason: '5:30 PM drop-off must be selectable (NOT disabled/blocked)');
+        expect(find.text('BLOCKED'), findsNothing, reason: 'No BLOCKED badge for 5:30 PM slot');
+
+        await tester.tap(chip530Rollover);
+        await tester.pumpAndSettle();
+        expect(tester.widget<FilterChip>(chip530Rollover).selected, isTrue);
+
+        // 2. Test Multi-day package
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: BookingFlowScreen(
+              detailer: targetDetailer,
+              initialPackage: multiDayPkg,
+              repository: repo,
+              initialDate: DateTime(2026, 11, 2), // Monday
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        final chip530MultiDay = find.widgetWithText(FilterChip, '5:30 PM');
+        expect(chip530MultiDay, findsOneWidget, reason: '5:30 PM drop-off slot must exist for multi-day package');
+
+        final filterChipWidgetMultiDay = tester.widget<FilterChip>(chip530MultiDay);
+        expect(filterChipWidgetMultiDay.onSelected, isNotNull, reason: '5:30 PM drop-off must be selectable for multi-day');
+        expect(find.text('BLOCKED'), findsNothing, reason: 'No BLOCKED badge for multi-day 5:30 PM slot');
+
+        await tester.ensureVisible(chip530MultiDay);
+        await tester.tap(chip530MultiDay, warnIfMissed: false);
+        await tester.pumpAndSettle();
+        expect(tester.widget<FilterChip>(chip530MultiDay).selected, isTrue);
       } finally {
         tearDownMockImageHttpClient();
         tester.view.resetPhysicalSize();

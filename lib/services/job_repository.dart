@@ -691,15 +691,19 @@ class JobRepository extends ChangeNotifier {
       // but is no longer present in cloudBookings, it was deleted in the cloud.
       bool hasChanges = false;
       final remainingLocal = <BookingAppointment>[];
-      for (final b in _bookings) {
-        final inScope = (b.detailerId == targetScopeDetailerId ||
-                         (targetDetailerId == null && (b.detailerId == userId || b.clientId == userId)));
-        final wasInCloud = localIds.contains(b.id);
-        if (inScope && wasInCloud && !cloudIds.contains(b.id)) {
-          hasChanges = true;
-          continue; // dropped because deleted in cloud
+      if (cloudBookings.isNotEmpty) {
+        for (final b in _bookings) {
+          final inScope = (b.detailerId == targetScopeDetailerId ||
+                           (targetDetailerId == null && (b.detailerId == userId || b.clientId == userId)));
+          final wasInCloud = localIds.contains(b.id);
+          if (inScope && wasInCloud && !cloudIds.contains(b.id)) {
+            hasChanges = true;
+            continue; // dropped because deleted in cloud
+          }
+          remainingLocal.add(b);
         }
-        remainingLocal.add(b);
+      } else {
+        remainingLocal.addAll(_bookings);
       }
 
       // 2. Upsert cloud bookings and merge changes
@@ -1022,10 +1026,27 @@ class JobRepository extends ChangeNotifier {
 
   Future<void> _refreshPublicDetailersFromCloud() async {
     try {
-      final detailers = await SupabaseDbService.fetchPublicDetailers();
-      if (detailers.isNotEmpty) {
-        _publicDetailers = detailers;
-        notifyListeners();
+      final records = await SupabaseDbService.fetchPublicDetailerRecords();
+      if (records.isNotEmpty) {
+        final detailers = <UserProfile>[];
+        for (final item in records) {
+          final profile = SupabaseDbService.buildUserProfileFromMap(item);
+          if (profile != null && profile.role != UserRole.client && (profile.businessName.trim().isNotEmpty || profile.servicePackages.isNotEmpty)) {
+            detailers.add(profile);
+            final rawPrefs = item['calendar_preferences'];
+            if (rawPrefs != null && rawPrefs is Map && rawPrefs.isNotEmpty) {
+              try {
+                final prefs = DetailerCalendarPreferences.fromJson(Map<String, dynamic>.from(rawPrefs));
+                _detailerPreferencesMap[profile.id] = prefs;
+                LocalStorageService.saveDetailerCalendarPreferences(prefs, detailerId: profile.id);
+              } catch (_) {}
+            }
+          }
+        }
+        if (detailers.isNotEmpty) {
+          _publicDetailers = detailers;
+          notifyListeners();
+        }
       }
     } catch (_) {}
   }
@@ -2329,23 +2350,49 @@ class JobRepository extends ChangeNotifier {
     updateCalendarPreferences(preferences, detailerId: detailerId);
     final targetId = detailerId ?? _currentUser.id;
     await LocalStorageService.saveDetailerCalendarPreferences(preferences, detailerId: targetId);
-    await LocalStorageService.saveCalendarPreferences(preferences);
+    if (targetId == _currentUser.id) {
+      await LocalStorageService.saveCalendarPreferences(preferences);
+    }
     if (_isLoggedIn) {
       await SupabaseDbService.saveCalendarPreferences(targetId, preferences);
     }
   }
 
   void updateCalendarPreferences(DetailerCalendarPreferences preferences, {String? detailerId}) {
-    _calendarPreferences = preferences;
     final targetId = detailerId ?? _currentUser.id;
     _detailerPreferencesMap[targetId] = preferences;
-    _detailerPreferencesMap[_currentUser.id] = preferences;
-    LocalStorageService.saveCalendarPreferences(preferences);
+    if (targetId == _currentUser.id) {
+      _calendarPreferences = preferences;
+      LocalStorageService.saveCalendarPreferences(preferences);
+    }
     LocalStorageService.saveDetailerCalendarPreferences(preferences, detailerId: targetId);
     if (_isLoggedIn) {
       SupabaseDbService.saveCalendarPreferences(targetId, preferences);
     }
     notifyListeners();
+  }
+
+  /// Hydrates and refreshes operating hours calendar preferences for a given detailer
+  Future<void> refreshDetailerPreferences(String detailerId) async {
+    try {
+      final localPrefs = await LocalStorageService.loadDetailerCalendarPreferences(detailerId: detailerId);
+      if (localPrefs != null) {
+        _detailerPreferencesMap[detailerId] = localPrefs;
+        if (detailerId == _currentUser.id) {
+          _calendarPreferences = localPrefs;
+        }
+        notifyListeners();
+      }
+      final cloudPrefs = await SupabaseDbService.fetchCalendarPreferences(detailerId);
+      if (cloudPrefs != null) {
+        _detailerPreferencesMap[detailerId] = cloudPrefs;
+        if (detailerId == _currentUser.id) {
+          _calendarPreferences = cloudPrefs;
+        }
+        await LocalStorageService.saveDetailerCalendarPreferences(cloudPrefs, detailerId: detailerId);
+        notifyListeners();
+      }
+    } catch (_) {}
   }
 
   DetailerCalendarPreferences getCalendarPreferences({String? detailerId}) {
@@ -5161,8 +5208,23 @@ class JobRepository extends ChangeNotifier {
           table: 'profiles',
           callback: (payload) {
             _refreshPublicDetailersFromCloud();
+            final newRec = payload.newRecord;
+            final newId = newRec['id'] as String?;
+            if (newId != null && newRec['calendar_preferences'] != null) {
+              try {
+                final rawPrefs = newRec['calendar_preferences'];
+                if (rawPrefs is Map && rawPrefs.isNotEmpty) {
+                  final prefs = DetailerCalendarPreferences.fromJson(Map<String, dynamic>.from(rawPrefs));
+                  _detailerPreferencesMap[newId] = prefs;
+                  LocalStorageService.saveDetailerCalendarPreferences(prefs, detailerId: newId);
+                  if (_isLoggedIn && newId == _currentUser.id) {
+                    _calendarPreferences = prefs;
+                  }
+                  notifyListeners();
+                }
+              } catch (_) {}
+            }
             if (_isLoggedIn) {
-              final newId = payload.newRecord['id'] as String?;
               final oldId = payload.oldRecord['id'] as String?;
               if (newId == _currentUser.id || oldId == _currentUser.id) {
                 _refreshProfileFromCloud(_currentUser.id);

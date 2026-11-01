@@ -69,6 +69,7 @@ Detailers will not pay subscriptions if there are no clients, and clients won't 
   - **"What If" Emergency Troubleshooting Runbooks:** Instant searchable solutions for live on-the-job problems (dusting polish, sticky paint, window haze, pet hair).
   - **On-the-Job Interactive Utilities:** Real-time chemical dilution calculator, paint depth gauge 3D panel logger.
   - **Digital Pre-Inspection Sheet (Legal Shield):** Pre-wash scratch/chip mapping signed digitally by the customer with liability waiver and arbitration clause.
+  - **Dedicated Client Directory & Vehicle History Log:** Centralized customer contact list and car service history.
   - **Local Directory Search Listing:** Profile appears in customer proximity searches.
   - **Customer Review & Automated Badging Engine:** Post-job SMS/push review collection that automatically unlocks badges.
 * **Gated / Excluded:**
@@ -83,6 +84,7 @@ Detailers will not pay subscriptions if there are no clients, and clients won't 
   - **Job Dispatch & Route Assignment:** Assign booked jobs and recurring maintenance routes directly to specific techs.
   - **Team Shift & Bay Schedule Calendar:** Manage technician working hours, days off, and bay allocations.
   - **Private Internal Shop SOPs (Standard Operating Procedures):** Proprietary recipes and step-by-step checklists locked strictly inside the shop’s private workspace.
+  - **Automated Client SMS/Email Reminders & Re-engagement:** Appointment alerts and annual maintenance recalls.
   - **Priority Search Boost:** "Featured Studio" badge and top placement in local customer searches.
   - **Multi-Vehicle Fleet Invoicing:** Bulk invoicing and commercial account management.
 
@@ -104,7 +106,35 @@ In detailing, shop owners struggle with two major headaches:
 
 ---
 
-## 5. The Recurring Client Engine ("The Car Care Club")
+## 5. The Critical CRM Feature Enhancements (Product Roadmap)
+
+AutoDetailCraft is currently a hybrid between an operational detailing workbench and an early-stage CRM. To make the CRM indispensable for paying subscribers, the following 5 core pillars are planned:
+
+1. **Dedicated Client Directory & Contact Manager:**
+   - Centralized searchable list of all past clients (names, phone numbers, emails, addresses, gate codes).
+   - Lifetime spend tracker per client and internal customer notes (e.g., *"Customer is very particular about wheel barrels"*).
+2. **Automated SMS & Email Appointment Notifications:**
+   - Instant booking confirmation to client.
+   - 24-hour and 2-hour pre-appointment reminders.
+   - 1-tap "On My Way" ETA text message.
+   - Dramatically cuts down customer no-shows and forgotten mobile appointments.
+3. **Automated Re-Engagement & "Recall" Marketing:**
+   - Automated check-ins triggered by service type:
+     - 4 weeks after a wash $\rightarrow$ *"Time for your monthly refresh."*
+     - 6 months after a ceramic coating $\rightarrow$ *"Time for your ceramic warranty maintenance inspection."*
+   - Generates predictable repeat revenue for the detailer with zero manual texting.
+4. **Deposit & Payment Invoicing (Stripe Integration):**
+   - Collect upfront non-refundable card deposits during online booking.
+   - Full card balance settlement at job completion.
+   - Automated digital PDF receipts & invoices sent to customer email.
+5. **The Digital Vehicle Service History Log ("Vehicle Passport"):**
+   - A timeline of all work completed on a specific VIN or license plate.
+   - Logs dates, paint depth measurements, service packages, and warranty IDs.
+   - Builds trust and gives car owners a reason to keep booking through the platform to maintain their vehicle's service history.
+
+---
+
+## 6. The Recurring Client Engine ("The Car Care Club")
 
 A built-in membership system that lets detailers turn one-off customers into predictable monthly recurring income.
 
@@ -125,7 +155,7 @@ A built-in membership system that lets detailers turn one-off customers into pre
 
 ---
 
-## 6. In-App Knowledge Base: The "What If" Emergency Manual
+## 7. In-App Knowledge Base: The "What If" Emergency Manual
 
 No long video production or manual grading required. Built as high-contrast, instant visual guides and an on-the-job troubleshooting search:
 
@@ -139,7 +169,7 @@ No long video production or manual grading required. Built as high-contrast, ins
 
 ---
 
-## 7. The Earned Badging System
+## 8. The Earned Badging System
 
 Badges are awarded automatically by the app as detailers log and complete high-rated jobs:
 - 🛡️ **Verified Detailer:** Granted upon profile completion, waiver sign-off, and setup.
