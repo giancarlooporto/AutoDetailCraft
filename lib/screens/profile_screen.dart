@@ -139,7 +139,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 subtitle: const Text('Change name, photo, bio, address', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
                 onTap: () {
                   Navigator.of(ctx).pop();
-                  EditProfileDialog.show(context, repository: widget.repository);
+                  EditProfileDialog.show(context, repository: widget.repository, isStudioProfile: false);
                 },
               ),
               const Divider(color: AppTheme.border, height: 1),
@@ -930,7 +930,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               GestureDetector(
-                                onTap: () => EditProfileDialog.show(context, repository: widget.repository),
+                                onTap: () => EditProfileDialog.show(context, repository: widget.repository, isStudioProfile: false),
                                 child: Stack(
                                   alignment: Alignment.bottomRight,
                                   children: [
@@ -1000,7 +1000,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                         ),
                                         const SizedBox(width: 4),
                                         InkWell(
-                                          onTap: () => EditProfileDialog.show(context, repository: widget.repository),
+                                          onTap: () => EditProfileDialog.show(context, repository: widget.repository, isStudioProfile: false),
                                           child: Container(
                                             padding: const EdgeInsets.all(4),
                                             decoration: BoxDecoration(

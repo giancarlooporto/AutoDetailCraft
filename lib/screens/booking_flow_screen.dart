@@ -7,6 +7,7 @@ import '../models/user_vehicle.dart';
 import '../services/job_repository.dart';
 import '../services/supabase_auth_service.dart';
 import '../services/mock_data_service.dart';
+import '../services/map_launcher_service.dart';
 import 'auth_modal.dart';
 import 'vehicle_editor_dialog.dart';
 
@@ -51,6 +52,15 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   final _phoneCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
+
+  // --- Milestone M3 Location & Gate Code State ---
+  bool _useTemporaryLocation = false;
+  final _tempStreetCtrl = TextEditingController();
+  final _tempUnitCtrl = TextEditingController();
+  final _tempCityCtrl = TextEditingController();
+  final _tempStateCtrl = TextEditingController();
+  final _tempZipCtrl = TextEditingController();
+  final _gateCodeNotesCtrl = TextEditingController();
 
   List<String> get _timeSlots {
     final hours = widget.repository.getHoursForDate(_selectedDate, detailerId: widget.detailer.id);
@@ -185,8 +195,19 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     } else {
       _emailCtrl.text = '';
     }
-    if (user.location.isNotEmpty) {
-      _addressCtrl.text = user.location;
+    final hasSavedHome = user.hasClientAddress || user.formattedClientAddress.isNotEmpty;
+    if (hasSavedHome) {
+      _useTemporaryLocation = false;
+      _addressCtrl.text = user.formattedClientAddress;
+      if (user.unitOrApt.isNotEmpty) {
+        _gateCodeNotesCtrl.text = user.unitOrApt;
+      }
+    } else {
+      _useTemporaryLocation = true;
+      if (user.location.isNotEmpty) {
+        _addressCtrl.text = user.location;
+        _tempStreetCtrl.text = user.location;
+      }
     }
     if (user.myGarage.isNotEmpty) {
       _selectedGarageVehicle = user.myGarage.first;
@@ -240,6 +261,10 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         } else {
           _selectedGarageVehicle = null;
           _vehicleModelCtrl.text = '';
+        }
+        final user = widget.repository.currentUser;
+        if (!_useTemporaryLocation && (user.hasClientAddress || user.formattedClientAddress.isNotEmpty)) {
+          _addressCtrl.text = user.formattedClientAddress;
         }
         _adjustSelectedSlotIfBlocked();
       });
@@ -370,6 +395,12 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     _phoneCtrl.dispose();
     _emailCtrl.dispose();
     _notesCtrl.dispose();
+    _tempStreetCtrl.dispose();
+    _tempUnitCtrl.dispose();
+    _tempCityCtrl.dispose();
+    _tempStateCtrl.dispose();
+    _tempZipCtrl.dispose();
+    _gateCodeNotesCtrl.dispose();
     super.dispose();
   }
 
@@ -480,6 +511,62 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         ? _selectedPickUpTime
         : comp.completionTime;
 
+    final user = widget.repository.currentUser;
+    String effectiveAddress;
+    String? effectiveUnitOrGate;
+    double? effectiveLat;
+    double? effectiveLon;
+
+    if (_locationType == ServiceLocationType.shop) {
+      effectiveAddress = widget.detailer.formattedStudioAddress.isNotEmpty
+          ? widget.detailer.formattedStudioAddress
+          : (widget.detailer.location.isNotEmpty
+              ? widget.detailer.location
+              : '${widget.detailer.businessName} Studio');
+      effectiveUnitOrGate = widget.detailer.studioUnitOrApt.isNotEmpty
+          ? widget.detailer.studioUnitOrApt
+          : null;
+      effectiveLat = widget.detailer.effectiveStudioLatitude;
+      effectiveLon = widget.detailer.effectiveStudioLongitude;
+    } else {
+      // Mobile Detailing
+      final gateNotes = _gateCodeNotesCtrl.text.trim();
+      if (!_useTemporaryLocation && (user.hasClientAddress || user.formattedClientAddress.isNotEmpty)) {
+        effectiveAddress = user.formattedClientAddress.isNotEmpty
+            ? user.formattedClientAddress
+            : _addressCtrl.text.trim();
+        effectiveUnitOrGate = gateNotes.isNotEmpty
+            ? gateNotes
+            : (user.unitOrApt.isNotEmpty ? user.unitOrApt : null);
+        effectiveLat = user.latitude;
+        effectiveLon = user.longitude;
+      } else {
+        // Temporary Location
+        final tempStateZip = [
+          if (_tempStateCtrl.text.trim().isNotEmpty) _tempStateCtrl.text.trim(),
+          if (_tempZipCtrl.text.trim().isNotEmpty) _tempZipCtrl.text.trim(),
+        ].join(' ');
+        final tempCityStateZip = [
+          if (_tempCityCtrl.text.trim().isNotEmpty) _tempCityCtrl.text.trim(),
+          if (tempStateZip.isNotEmpty) tempStateZip,
+        ].join(', ');
+        final tempParts = [
+          if (_tempStreetCtrl.text.trim().isNotEmpty) _tempStreetCtrl.text.trim(),
+          if (_tempUnitCtrl.text.trim().isNotEmpty) _tempUnitCtrl.text.trim(),
+          if (tempCityStateZip.isNotEmpty) tempCityStateZip,
+        ];
+        effectiveAddress = tempParts.isNotEmpty ? tempParts.join(', ') : _addressCtrl.text.trim();
+        effectiveUnitOrGate = gateNotes.isNotEmpty
+            ? gateNotes
+            : (_tempUnitCtrl.text.trim().isNotEmpty ? _tempUnitCtrl.text.trim() : null);
+        effectiveLat = null;
+        effectiveLon = null;
+      }
+      if (effectiveAddress.isEmpty) {
+        effectiveAddress = _addressCtrl.text.trim().isNotEmpty ? _addressCtrl.text.trim() : 'Client Location';
+      }
+    }
+
     final booking = BookingAppointment(
       id: 'book_${DateTime.now().millisecondsSinceEpoch}',
       clientId: SupabaseAuthService.currentAuthUser?.id ??
@@ -501,9 +588,10 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       vehicleSize: effectiveVehicleSize,
       package: _selectedPackage,
       locationType: _locationType,
-      clientAddress: _locationType == ServiceLocationType.mobile
-          ? _addressCtrl.text.trim()
-          : '${widget.detailer.businessName} Studio, ${widget.detailer.location}',
+      clientAddress: effectiveAddress,
+      clientUnitOrGateCode: effectiveUnitOrGate,
+      latitude: effectiveLat,
+      longitude: effectiveLon,
       scheduledDate: _selectedDate,
       scheduledTimeSlot: _selectedTimeSlot,
       totalPrice: _calculatedTotal,
@@ -1005,7 +1093,13 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Vehicle to Detail', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+              const Expanded(
+                child: Text(
+                  'Vehicle to Detail',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               TextButton.icon(
                 style: TextButton.styleFrom(
                   visualDensity: VisualDensity.compact,
@@ -1108,14 +1202,22 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                       children: [
                         Row(
                           children: [
-                            Text(
-                              _selectedGarageVehicle!.vehicleType,
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                            Flexible(
+                              child: Text(
+                                _selectedGarageVehicle!.vehicleType,
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             const SizedBox(width: 6),
-                            Text(
-                              '• ${_selectedGarageVehicle!.colorName}',
-                              style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                            Expanded(
+                              child: Text(
+                                '• ${_selectedGarageVehicle!.colorName}',
+                                style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           ],
                         ),
@@ -2198,6 +2300,294 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     );
   }
 
+  Widget _buildServiceLocationCard() {
+    final user = widget.repository.currentUser;
+    final isShop = _locationType == ServiceLocationType.shop;
+    final hasHomeAddress = user.hasClientAddress || user.formattedClientAddress.isNotEmpty;
+
+    return Container(
+      key: const Key('checkout_service_location_card'),
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isShop ? Icons.storefront_rounded : Icons.location_on_rounded,
+                size: 16,
+                color: AppTheme.primary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isShop ? 'Drop-off Studio Location' : 'Service Location',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withAlpha(25),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  isShop ? 'Shop Drop-off' : 'We Come to You',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                ),
+              ),
+            ],
+          ),
+          const Divider(color: AppTheme.border, height: 16),
+          if (isShop) ...[
+            Text(
+              widget.detailer.businessName.isNotEmpty ? widget.detailer.businessName : widget.detailer.displayName,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.place_outlined, size: 14, color: AppTheme.textSecondary),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    widget.detailer.formattedStudioAddress.isNotEmpty
+                        ? widget.detailer.formattedStudioAddress
+                        : (widget.detailer.location.isNotEmpty ? widget.detailer.location : 'Studio address on file'),
+                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceLight,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline_rounded, size: 16, color: AppTheme.primary),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Drop off vehicle at detailer studio at scheduled start time. Please arrive 5-10 minutes prior to drop-off for joint intake walkaround.',
+                      style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    key: const Key('booking_studio_directions_btn'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.primary,
+                      side: const BorderSide(color: AppTheme.primary),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: const Icon(Icons.directions_rounded, size: 14),
+                    label: const Text('Directions', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    onPressed: () {
+                      MapLauncherService.launchNavigation(
+                        latitude: widget.detailer.effectiveStudioLatitude,
+                        longitude: widget.detailer.effectiveStudioLongitude,
+                        address: widget.detailer.formattedStudioAddress,
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            // Mobile Detailing Address Selector
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    key: const Key('checkout_location_home_option'),
+                    onTap: hasHomeAddress ? () => setState(() => _useTemporaryLocation = false) : null,
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: !_useTemporaryLocation ? AppTheme.primary.withAlpha(20) : AppTheme.surfaceLight,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: !_useTemporaryLocation ? AppTheme.primary : AppTheme.border,
+                          width: !_useTemporaryLocation ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                !_useTemporaryLocation ? Icons.radio_button_checked : Icons.radio_button_off,
+                                size: 16,
+                                color: !_useTemporaryLocation ? AppTheme.primary : AppTheme.textMuted,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  'Saved Home Address',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: !_useTemporaryLocation ? AppTheme.primary : Colors.white,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            hasHomeAddress ? user.formattedClientAddress : 'No saved home address in profile',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: hasHomeAddress ? AppTheme.textSecondary : AppTheme.textMuted,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: GestureDetector(
+                    key: const Key('checkout_location_temp_option'),
+                    onTap: () => setState(() => _useTemporaryLocation = true),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: _useTemporaryLocation ? AppTheme.primary.withAlpha(20) : AppTheme.surfaceLight,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _useTemporaryLocation ? AppTheme.primary : AppTheme.border,
+                          width: _useTemporaryLocation ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                _useTemporaryLocation ? Icons.radio_button_checked : Icons.radio_button_off,
+                                size: 16,
+                                color: _useTemporaryLocation ? AppTheme.primary : AppTheme.textMuted,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  'Temporary Location',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: _useTemporaryLocation ? AppTheme.primary : Colors.white,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Work, gym, friend\'s house, etc.',
+                            style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (_useTemporaryLocation) ...[
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('checkout_temp_street_field'),
+                controller: _tempStreetCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Street Address',
+                  prefixIcon: Icon(Icons.home_outlined),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                key: const Key('checkout_temp_unit_field'),
+                controller: _tempUnitCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Apt, Unit, Suite, Building (Optional)',
+                  prefixIcon: Icon(Icons.apartment_outlined),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: TextField(
+                      key: const Key('checkout_temp_city_field'),
+                      controller: _tempCityCtrl,
+                      decoration: const InputDecoration(labelText: 'City'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 2,
+                    child: TextField(
+                      key: const Key('checkout_temp_state_field'),
+                      controller: _tempStateCtrl,
+                      decoration: const InputDecoration(labelText: 'State'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 2,
+                    child: TextField(
+                      key: const Key('checkout_temp_zip_field'),
+                      controller: _tempZipCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'ZIP Code'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            TextField(
+              key: const Key('checkout_gate_code_notes_field'),
+              controller: _gateCodeNotesCtrl,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'Gate Code / Access Instructions (Optional)',
+                hintText: 'e.g. Gate code #4021, park in visitor bay or left driveway',
+                prefixIcon: Icon(Icons.vpn_key_outlined),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildCheckoutReviewStep() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2246,9 +2636,14 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('Drop-off (Start):', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                    Text(
-                      '${DateFormat('EEE, MMM d').format(_selectedDate)} at $_selectedStartTime',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        '${DateFormat('EEE, MMM d').format(_selectedDate)} at $_selectedStartTime',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
+                      ),
                     ),
                   ],
                 ),
@@ -2257,9 +2652,14 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('Ready Pick-up (Finished):', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                    Text(
-                      '${DateFormat('EEE, MMM d').format(_calculatedCompletionDate ?? _selectedDate)} at $_selectedPickUpTime',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF00E676)),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        '${DateFormat('EEE, MMM d').format(_calculatedCompletionDate ?? _selectedDate)} at $_selectedPickUpTime',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF00E676)),
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
+                      ),
                     ),
                   ],
                 ),
@@ -2268,9 +2668,14 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('Scheduled Date:', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                    Text(
-                      DateFormat('EEEE, MMMM d, yyyy').format(_selectedDate),
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        DateFormat('EEEE, MMMM d, yyyy').format(_selectedDate),
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
+                      ),
                     ),
                   ],
                 ),
@@ -2279,9 +2684,14 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('Time Window:', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                    Text(
-                      _selectedTimeSlot,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        _selectedTimeSlot,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
+                      ),
                     ),
                   ],
                 ),
@@ -2289,6 +2699,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
             ],
           ),
         ),
+
+        // Service Location Card
+        _buildServiceLocationCard(),
 
         const Text('Client Contact Details', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),

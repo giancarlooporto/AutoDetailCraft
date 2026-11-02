@@ -1,85 +1,88 @@
-# Project: AutoDetailCraft Functional Audit, Persistence Hardening & Testing
+# Project: AutoDetailCraft Location Services & Explore Search
 
 ## Architecture
-- **Framework & Runtime**: Flutter Web (SDK ^3.13.2)
+- **Framework & Runtime**: Flutter Web / Multi-platform (SDK ^3.13.2)
 - **State Management**: Native Flutter `ChangeNotifier` + `ListenableBuilder` via central `JobRepository` singleton/provider pattern.
-- **Persistence Layer**:
-  - Local browser storage: `LocalStorageService` utilizing `SharedPreferences` (HTML5 `window.localStorage` on Web).
-  - Cloud database & auth: `SupabaseDbService` & `SupabaseAuthService` (`supabase_flutter: ^2.17.2`).
-  - Media CDN: Cloudflare R2 via `R2StorageService`.
-- **Hydration & Synchronization**:
-  - Offline-first / local-first architecture.
-  - Initial load executes a single re-entrancy protected `JobRepository.init()` pass reading dedicated entity keys from `LocalStorageService`.
-  - Cloud hydration (`_refreshProfileFromCloud`) non-destructively merges server state without overwriting local custom packages/vehicles when cloud returns empty or null.
-  - Guest/Detailer state distinction: Guest mode does not lock users out of their local studio packages, garage vehicles, or bookings.
+- **Location Architecture (Zero-Cost Browsing $0.00)**:
+  - In-app Haversine distance calculation and sorting across `JobRepository.publicDetailers` using pure Dart (`dart:math`).
+  - Zero billable Google API calls for casual Explore browsing and city/ZIP filtering.
+  - Zero-hardware `LocationService` abstraction with deterministic test hooks.
+- **Privacy & Dual-Address Architecture**:
+  - `UserProfile` strictly segregates private residential client home address (`streetAddress`, `unitOrApt`, `city`, `state`, `postalCode`, `latitude`, `longitude`) from commercial shop studio address (`studioStreetAddress`, `studioUnitOrApt`, `studioCity`, `studioState`, `studioPostalCode`, `studioLatitude`, `studioLongitude`).
+  - Activating detailer mode auto-inherits the client address if studio address is unset.
+  - Updating the commercial studio address never mutates or overwrites the client's private residential address.
+- **Navigation Architecture**:
+  - `MapLauncherService` abstracts native Apple Maps (`maps://`) and Google Maps (`geo:` / `https://`) handoff via `url_launcher`, with mockable test hooks.
+- **Persistence & Cloud Sync**:
+  - Idempotent Supabase migration `20261102_add_location_fields.sql` extending `public.profiles` and `public.bookings`.
+  - Local browser storage via `LocalStorageService` with backward-compatible model serialization.
 
 ## Feature Inventory
 | # | Feature | Description | Milestone | Source |
 |---|---------|-------------|-----------|--------|
-| 1 | Single-pass initialization lock | Remove un-awaited `init()` from constructor; prevent double init race in `main.dart` | M1 | Survey 1 (O1) |
-| 2 | Dedicated entity storage keys | Add dedicated storage keys (`adc_service_packages_v1`, etc.) in `LocalStorageService` | M1 | Survey 1 (O3, Concl) |
-| 3 | Service Packages CRUD & Refresh | Add, update, delete custom packages; survive browser reload; non-destructive cloud merge | M1 | ORIGINAL_REQUEST R1 |
-| 4 | Studio guest mode lockout fix | Ensure local studio workbench and garage do not get locked behind guest view on reload | M1 | Survey 1 (O2) |
-| 5 | My Garage Vehicles CRUD & Refresh | Add, update, delete vehicles; survive reload; preserve photo URLs | M2 | ORIGINAL_REQUEST R2 |
-| 6 | My Teams Staff & Shifts Persistence | Add/edit/remove staff; persist `customWeeklySchedule` and personal shifts on reload | M2 | ORIGINAL_REQUEST R2 |
-| 7 | Inventory Items & Chemical Fill Levels | Add/edit/delete hardware, chemicals, recipes; persist fill status (Full/Half/Empty) & dilution specs | M3 | ORIGINAL_REQUEST R2 |
-| 8 | Calendar Operating Hours & Day Blocks | Persist weekly hours, day blocks, and custom slots; sync with booking modal | M3 | ORIGINAL_REQUEST R2 |
-| 9 | Client Booking Flow & Conflict Prevention | Lock out booked slots, prevent double-bookings, persist appointments in client & detailer views | M3 | ORIGINAL_REQUEST R2 |
-| 10 | Feed Community Jobs, Comments & Likes | Persist custom job uploads, discussion comments on all jobs (including mock jobs), and like counts | M4 | ORIGINAL_REQUEST R2 |
-| 11 | Mobile 390px RenderFlex Overflow Fixes | Fix docked bars & specialist rows in `PublicStudioScreen`, `BookingFlowScreen`, `JobDetailScreen` | M4 | ORIGINAL_REQUEST R3, Survey 2 |
-| 12 | UI/UX Usability Polish & Feedback | Enrich empty states (Studio Service Inspector), form validation feedback, action snackbars | M4 | ORIGINAL_REQUEST R3, Survey 2 |
-| 13 | Modular 4-Tier Test Suite & TestHarness | Build reusable `TestHarness` with refresh simulation, Tier 1 unit, Tier 2 widget, Tier 3 persistence, Tier 4 E2E | E2E Testing Track | ORIGINAL_REQUEST R4, Survey 3 |
-| 14 | Final Verification & Adversarial Shield | 100% passing E2E tests across all tiers, 0 flutter analyze issues, Phase 2 adversarial coverage hardening | M5 | ORIGINAL_REQUEST R4, Pattern |
+| 1 | UserProfile Location Fields | Add `streetAddress`, `unitOrApt`, `city`, `state`, `postalCode`, `latitude`, `longitude` (and studio fields) with backward-compatible JSON | M1 | ORIGINAL_REQUEST R1 |
+| 2 | BookingAppointment Location Fields | Retain `clientAddress`, add `clientUnitOrGateCode`, `latitude`, `longitude` | M1 | ORIGINAL_REQUEST R1 |
+| 3 | Supabase Migration | Idempotent `20261102_add_location_fields.sql` adding location columns to `profiles` and `bookings` | M1 | ORIGINAL_REQUEST R1 |
+| 4 | LocationService & Haversine | Device GPS retrieval (`geolocator`) + in-app Haversine formula distance calculation with mock provider | M1 | ORIGINAL_REQUEST R3 |
+| 5 | Studio Address Auto-Carryover | Inherit client address upon detailer mode activation if studio address unset | M1 | ORIGINAL_REQUEST R2 |
+| 6 | Studio Address Privacy Isolation | Editing commercial studio address does not mutate client private home address | M1 | ORIGINAL_REQUEST R2 |
+| 7 | EditProfileDialog Inputs | Dedicated street, apt/gate, city, state, ZIP inputs with offline fallback | M1 | ORIGINAL_REQUEST R2 |
+| 8 | Explore "Near Me" GPS Action | Explore search bar "📍 Near Me" button querying GPS and sorting studios | M2 | ORIGINAL_REQUEST R3 |
+| 9 | Proximity Distance Badges | Display distance badges (e.g. "1.2 mi away") on studio feed cards | M2 | ORIGINAL_REQUEST R3 |
+| 10 | Zero-Cost City/ZIP Search | Filter studios by city and ZIP code in-memory ($0.00 API cost) | M2 | ORIGINAL_REQUEST R3 |
+| 11 | Checkout Service Location Card | Review step displays Service Location Card defaulting to pre-selected saved Home Address | M3 | ORIGINAL_REQUEST R4 |
+| 12 | Checkout Temporary Location & Notes | Radio toggle to enter temporary address (work/gym) + gate code & parking notes | M3 | ORIGINAL_REQUEST R4 |
+| 13 | Drop-Off Studio Directions | Drop-off services show studio physical address and directions button | M3 | ORIGINAL_REQUEST R4 |
+| 14 | Native Navigation Handoff | "Navigate" button on appointment cards launching Apple/Google Maps via `MapLauncherService` | M3 | ORIGINAL_REQUEST R4 |
+| 15 | Tier 1 Unit Test Suite | Comprehensive tests in `test/tier1_unit/` for serialization, inheritance, and Haversine | M4 | ORIGINAL_REQUEST R5 |
+| 16 | Tier 2 Widget Test Suite | Comprehensive tests in `test/tier2_widgets/` for Explore search and checkout card | M4 | ORIGINAL_REQUEST R5 |
+| 17 | Final System Verification | 100% test pass rate across all suites and `flutter analyze` 0 issues | M4 | ORIGINAL_REQUEST R5 |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| M1 | Services & Core Persistence Hardening | Initialization lock, dedicated storage keys, Service Packages CRUD & refresh survival, non-destructive cloud merge, guest mode unlock | none | DONE (132 tests pass, analyze 0 issues, Auditor CLEAN, 2 Reviewers & 2 Challengers APPROVE) |
-| M2 | Garage & Teams Multi-Module Hardening | My Garage vehicles CRUD & refresh, My Teams staff & weekly schedule persistence, R2 photo preservation | M1 | DONE (155 tests pass, analyze 0 issues, Auditor CLEAN, 2 Reviewers & 2 Challengers APPROVE) |
-| M3 | Inventory, Calendar & Booking Flow Hardening | Inventory items (hardware, chemicals, recipes, fill status), Calendar preferences & day blocks, Client booking slot lockouts & appointment persistence | M1 | DONE (197 tests pass, analyze 0 issues, Auditor CLEAN, 2 Reviewers & 2 Challengers APPROVE) |
-| M4 | Feed, Community & Responsive UI/UX Polish | Feed custom jobs, comments & likes persistence, Mobile 390px RenderFlex overflow fixes, empty states & action snackbars | M2, M3 | IN_PROGRESS (Remediating M4-DEFECT-01 PublicStudioScreen Card Duration Overflow: Iteration 3) |
-| M5 | Final E2E Regression Shield & Adversarial Hardening | Phase 1: Pass 100% of E2E tests (Tiers 1-4). Phase 2: Adversarial coverage hardening (Tier 5) with Challengers & Reviewers | M4, E2E Testing Track (TEST_READY.md) | PLANNED |
-
-## Parallel Track: E2E Testing Track
-- **Scope**: Build `test/core/test_harness.dart` with browser refresh simulation, Tier 1 unit tests (`test/tier1_unit/`), Tier 2 widget tests (`test/tier2_widgets/`), Tier 3 persistence tests (`test/tier3_persistence/`), Tier 4 E2E user journeys (`test/tier4_e2e/`), and publish `TEST_READY.md`.
-- **Dependencies**: none (derived from user requirements and specifications independently).
-- **Status**: IN_PROGRESS.
+| M1 | Data Models, Schema, Repository & Profile Dialog | Dependencies (`geolocator`, `url_launcher`), `UserProfile`, `BookingAppointment`, migration SQL, `LocationService`, detailer auto-carryover & isolation, `EditProfileDialog` | none | DONE (126 tier1 tests pass, 183 tier2 tests pass, 27 challenger stress tests pass, analyze 0 issues, Auditor CLEAN, Remediation complete) |
+| M2 | Explore Search & "Near Me" GPS Proximity Sorting | Feed search bar "📍 Near Me" GPS action, Haversine proximity sorting, distance badges, zero-cost city/ZIP filtering | M1 | DONE (Feed screen & repo implemented, 12/12 stress tests pass, 9/9 zero cost tests pass, 578/578 workspace tests pass, analyze 0 issues, Auditor CLEAN) |
+| M3 | Checkout Service Location Card & Navigation Handoff | Review step Service Location Card (saved home default + temporary toggle + gate notes), `MapLauncherService`, "Navigate" button on appointment cards | M1 | DONE (Implemented & verified across 4 viewports, 19/19 stress tests pass, Auditor CLEAN) |
+| M4 | Automated Test Suites & End-to-End Verification | Tier 1 unit tests, Tier 2 widget tests, full workspace `flutter test` verification, `flutter analyze` 0 issues | M1, M2, M3 | DONE (All 644/644 workspace tests pass, `flutter analyze` 0 issues) |
 
 ## Interface Contracts
-### `LocalStorageService` ↔ `JobRepository`
-- `Future<void> saveServicePackages(List<ServicePackage> packages)`
-- `Future<List<ServicePackage>> loadServicePackages()`
-- `Future<void> saveGarageVehicles(List<UserVehicle> vehicles)`
-- `Future<List<UserVehicle>> loadGarageVehicles()`
-- `Future<void> saveTeamMembers(List<TeamMember> members)`
-- `Future<List<TeamMember>> loadTeamMembers()`
-- `Future<void> saveInventoryItems(List<InventoryItem> items)`
-- `Future<List<InventoryItem>> loadInventoryItems()`
-- `Future<void> saveCalendarBlocks(List<CalendarAvailabilityBlock> blocks)`
-- `Future<List<CalendarAvailabilityBlock>> loadCalendarBlocks()`
-- `Future<void> saveDetailerCalendarPreferences(DetailerCalendarPreferences prefs, {String? detailerId})`
-- `Future<DetailerCalendarPreferences?> loadDetailerCalendarPreferences({String? detailerId})`
-- `Future<void> saveBookings(List<BookingAppointment> bookings)`
-- `Future<List<BookingAppointment>> loadBookings()`
-- `Future<void> saveJobCommentsOverride(String jobId, List<JobComment> comments)`
-- `Future<Map<String, List<JobComment>>> loadJobCommentsOverrides()`
+### `LocationService`
+- `Future<LocationCoordinates?> getCurrentLocation()`
+- `double calculateDistanceMiles(double lat1, double lon1, double lat2, double lon2)`
+- `String formatDistance(double? miles)`
+- `static void setMockLocationProvider(Future<LocationCoordinates?> Function()? provider)`
 
-### `SupabaseDbService` ↔ `JobRepository`
-- `fetchUserProfile(String userId)` must return existing remote packages if present; if empty or null, return null (do NOT fall back to `MockDataService.standardPackages` inside the fetcher).
-- `JobRepository._refreshProfileFromCloud()` must preserve local custom packages and vehicles when remote tables are empty or unconfigured.
+### `MapLauncherService`
+- `Future<bool> launchNavigation({required double? latitude, required double? longitude, String? address})`
+- `static void setMockLauncher(Future<bool> Function(String url)? launcher)`
 
-### UI Screens ↔ `JobRepository`
-- `ProfileScreen`: If `workbenchMode == 'studio'` or custom packages/workbench items exist, render `DetailerWorkbenchView` directly without forcing unauthenticated guest blocking.
-- `BookingsListScreen`: If local or cloud bookings exist, render the bookings list with status tabs rather than blocking behind guest view.
+### `JobRepository` ↔ UI Screens
+- `Future<void> enableDetailerMode({UserRole? targetRole})`: Copies client address to studio address if `studioStreetAddress` or `studioCity` is empty.
+- `Future<void> updateStudioAddress(...)`: Updates only studio location properties, preserving client home address.
+- `Future<void> updateClientAddress(...)`: Updates only client home address.
+- `Future<void> sortDetailersByProximity(double userLat, double userLon)`: Sorts `filteredDetailers` by distance and populates distance cache.
+- `double? getDistanceToDetailer(String detailerId)`: Returns cached proximity distance in miles.
 
 ## Code Layout
-- `lib/models/`: Entity definitions with JSON serialization (`booking_models.dart`, `user_vehicle.dart`, `team_member.dart`, `inventory_item.dart`, `calendar_availability_block.dart`, `detail_job.dart`, `user_profile.dart`).
-- `lib/services/`: State management and I/O (`job_repository.dart`, `local_storage_service.dart`, `supabase_db_service.dart`, `supabase_auth_service.dart`, `r2_storage_service.dart`).
-- `lib/screens/`: UI screens and responsive views (`detailer_workbench_view.dart`, `public_studio_screen.dart`, `booking_flow_screen.dart`, `bookings_list_screen.dart`, `job_detail_screen.dart`, `profile_screen.dart`, `feed_screen.dart`).
-- `lib/widgets/`: Modal dialogs and reusable components (`service_package_editor_dialog.dart`, `vehicle_editor_dialog.dart`, `add_team_member_dialog.dart`, `inventory_item_editor_dialog.dart`, `calendar_preferences_dialog.dart`).
+- `lib/models/`:
+  - `user_profile.dart`: Structured client & studio address fields, JSON converters, fallback getters.
+  - `booking_models.dart`: `BookingAppointment` location and gate code fields.
+- `lib/services/`:
+  - `location_service.dart`: Device GPS and Haversine distance calculator.
+  - `map_launcher_service.dart`: Native Apple/Google Maps launcher.
+  - `job_repository.dart`: Proximity sorting, zero-cost search, studio address inheritance & isolation.
+- `lib/screens/`:
+  - `edit_profile_dialog.dart`: Structured address inputs with offline manual fallback.
+  - `feed_screen.dart`: Explore search bar with "📍 Near Me" button and distance badges.
+  - `booking_flow_screen.dart`: Review Step Service Location Card (saved home default, temporary toggle, gate notes).
+  - `detailer_workbench_view.dart`: "Navigate" button on booking inspector.
+  - `bookings_list_screen.dart`: "Navigate" button on client bookings.
+- `supabase/migrations/`:
+  - `20261102_add_location_fields.sql`: Idempotent schema extension for `profiles` and `bookings`.
 - `test/`:
-  - `test/core/`: `mock_http_client.dart`, `test_harness.dart`.
-  - `test/tier1_unit/`: Models serialization, calculations, algorithms.
-  - `test/tier2_widgets/`: Dialog and component widget tests.
-  - `test/tier3_persistence/`: Persistence and refresh simulation tests for all 7 modules.
-  - `test/tier4_e2e/`: End-to-end multi-module user flows.
+  - `test/tier1_unit/location_models_and_haversine_unit_test.dart`
+  - `test/challenger/location_m1_stress_test.dart`
+  - `test/challenger/address_privacy_and_role_switch_stress_test.dart`
+  - `test/tier2_widgets/explore_location_search_and_near_me_test.dart`
+  - `test/tier2_widgets/booking_checkout_location_selector_test.dart`

@@ -5,6 +5,7 @@ import '../core/theme/app_theme.dart';
 import '../models/booking_models.dart';
 import '../services/job_repository.dart';
 import '../widgets/booking_status_tracker.dart';
+import '../services/map_launcher_service.dart';
 import 'auth_modal.dart';
 
 /// Client-side bookings list screen and status tracker
@@ -103,6 +104,8 @@ class BookingsListScreen extends StatelessWidget {
                       ],
                       _infoTile('Service Type', currentBooking.locationType.label),
                       _infoTile('Address / Location', currentBooking.clientAddress),
+                      if (currentBooking.clientUnitOrGateCode != null && currentBooking.clientUnitOrGateCode!.isNotEmpty)
+                        _infoTile('Gate / Unit Code', currentBooking.clientUnitOrGateCode!),
                       const SizedBox(height: 16),
                       _sectionHeader('Escrow & Payment Breakdown', Icons.account_balance_wallet_outlined),
                       _infoTile('Total Service Fee', '\$${currentBooking.totalPrice.toStringAsFixed(0)}'),
@@ -292,6 +295,7 @@ class BookingsListScreen extends StatelessWidget {
                           const SizedBox(width: 12),
                           Expanded(
                             child: ElevatedButton.icon(
+                              key: const Key('client_booking_navigate_btn'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppTheme.primary,
                                 foregroundColor: Colors.black,
@@ -300,16 +304,43 @@ class BookingsListScreen extends StatelessWidget {
                               ),
                               icon: const Icon(Icons.directions_rounded, size: 16),
                               label: const Text('Directions / Map', style: TextStyle(fontWeight: FontWeight.bold)),
-                              onPressed: () {
-                                final address = currentBooking.clientAddress.isNotEmpty ? currentBooking.clientAddress : 'Austin, TX';
-                                final mapsUrl = 'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(address)}';
-                                Clipboard.setData(ClipboardData(text: mapsUrl));
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Service location address copied: $address'),
-                                    action: SnackBarAction(label: 'OK', onPressed: () {}),
-                                  ),
+                              onPressed: () async {
+                                final isShop = currentBooking.locationType == ServiceLocationType.shop;
+                                final detailer = repository.publicDetailers
+                                    .where((d) => d.id == currentBooking.detailerId)
+                                    .firstOrNull ??
+                                    (repository.currentUser.id == currentBooking.detailerId ? repository.currentUser : null);
+
+                                final targetLat = isShop
+                                    ? (detailer?.effectiveStudioLatitude ?? currentBooking.latitude)
+                                    : currentBooking.latitude;
+                                final targetLon = isShop
+                                    ? (detailer?.effectiveStudioLongitude ?? currentBooking.longitude)
+                                    : currentBooking.longitude;
+                                final targetAddress = isShop
+                                    ? ((detailer != null && detailer.hasStudioAddress)
+                                        ? detailer.formattedStudioAddress
+                                        : ((detailer != null && detailer.location.isNotEmpty)
+                                            ? detailer.location
+                                            : currentBooking.clientAddress))
+                                    : currentBooking.clientAddress;
+
+                                final success = await MapLauncherService.launchNavigation(
+                                  latitude: targetLat,
+                                  longitude: targetLon,
+                                  address: targetAddress,
                                 );
+
+                                if (!success && context.mounted) {
+                                  final fallbackAddress = targetAddress.isNotEmpty ? targetAddress : 'Austin, TX';
+                                  Clipboard.setData(ClipboardData(text: fallbackAddress));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Service location address copied: $fallbackAddress'),
+                                      action: SnackBarAction(label: 'OK', onPressed: () {}),
+                                    ),
+                                  );
+                                }
                               },
                             ),
                           ),

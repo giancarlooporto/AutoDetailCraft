@@ -184,6 +184,24 @@ class UserProfile {
   final String? ownerPinHash; // salted PBKDF2 hash only, never the raw PIN
   final bool isStudioPaused; // Detailer vacation/pause mode — hides studio from public search
 
+  // Structured Client Home Address (Private residential location)
+  final String streetAddress;
+  final String unitOrApt;
+  final String city;
+  final String state;
+  final String postalCode;
+  final double? latitude;
+  final double? longitude;
+
+  // Commercial Studio Address (Public shop / drop-off location)
+  final String studioStreetAddress;
+  final String studioUnitOrApt;
+  final String studioCity;
+  final String studioState;
+  final String studioPostalCode;
+  final double? studioLatitude;
+  final double? studioLongitude;
+
   const UserProfile({
     required this.id,
     this.role = UserRole.client,
@@ -215,7 +233,79 @@ class UserProfile {
     this.startingPrice = 0.0,
     this.ownerPinHash,
     this.isStudioPaused = false,
+    // Structured client address defaults
+    this.streetAddress = '',
+    this.unitOrApt = '',
+    this.city = '',
+    this.state = '',
+    this.postalCode = '',
+    this.latitude,
+    this.longitude,
+    // Commercial studio address defaults
+    this.studioStreetAddress = '',
+    this.studioUnitOrApt = '',
+    this.studioCity = '',
+    this.studioState = '',
+    this.studioPostalCode = '',
+    this.studioLatitude,
+    this.studioLongitude,
   });
+
+  /// Formatted single-line client home address for checkout display and cards
+  String get formattedClientAddress {
+    final stateZip = [
+      if (state.isNotEmpty) state,
+      if (postalCode.isNotEmpty) postalCode,
+    ].join(' ');
+    final cityStateZip = [
+      if (city.isNotEmpty) city,
+      if (stateZip.isNotEmpty) stateZip,
+    ].join(', ');
+    final parts = [
+      if (streetAddress.isNotEmpty) streetAddress,
+      if (unitOrApt.isNotEmpty) unitOrApt,
+      if (cityStateZip.isNotEmpty) cityStateZip,
+    ];
+    if (parts.isNotEmpty) return parts.join(', ');
+    return location;
+  }
+
+  /// Formatted single-line commercial studio address for Explore feed and drop-off navigation
+  String get formattedStudioAddress {
+    final stateZip = [
+      if (studioState.isNotEmpty) studioState,
+      if (studioPostalCode.isNotEmpty) studioPostalCode,
+    ].join(' ');
+    final cityStateZip = [
+      if (studioCity.isNotEmpty) studioCity,
+      if (stateZip.isNotEmpty) stateZip,
+    ].join(', ');
+    final parts = [
+      if (studioStreetAddress.isNotEmpty) studioStreetAddress,
+      if (studioUnitOrApt.isNotEmpty) studioUnitOrApt,
+      if (cityStateZip.isNotEmpty) cityStateZip,
+    ];
+    if (parts.isNotEmpty) return parts.join(', ');
+    return location;
+  }
+
+  /// Effective latitude for general operations (client primary, studio fallback)
+  double? get effectiveLatitude => latitude ?? studioLatitude;
+
+  /// Effective longitude for general operations (client primary, studio fallback)
+  double? get effectiveLongitude => longitude ?? studioLongitude;
+
+  /// Effective studio latitude for Explore search and drop-off routing (studio primary, client fallback)
+  double? get effectiveStudioLatitude => studioLatitude ?? latitude;
+
+  /// Effective studio longitude for Explore search and drop-off routing (studio primary, client fallback)
+  double? get effectiveStudioLongitude => studioLongitude ?? longitude;
+
+  /// Returns true if client has configured any home address components
+  bool get hasClientAddress => streetAddress.isNotEmpty || city.isNotEmpty;
+
+  /// Returns true if studio has configured a physical shop address
+  bool get hasStudioAddress => studioStreetAddress.isNotEmpty || studioCity.isNotEmpty;
 
   UserProfile copyWith({
     String? id,
@@ -248,6 +338,20 @@ class UserProfile {
     double? startingPrice,
     String? ownerPinHash,
     bool? isStudioPaused,
+    String? streetAddress,
+    String? unitOrApt,
+    String? city,
+    String? state,
+    String? postalCode,
+    double? latitude,
+    double? longitude,
+    String? studioStreetAddress,
+    String? studioUnitOrApt,
+    String? studioCity,
+    String? studioState,
+    String? studioPostalCode,
+    double? studioLatitude,
+    double? studioLongitude,
   }) {
     return UserProfile(
       id: id ?? this.id,
@@ -280,6 +384,20 @@ class UserProfile {
       startingPrice: startingPrice ?? this.startingPrice,
       ownerPinHash: ownerPinHash ?? this.ownerPinHash,
       isStudioPaused: isStudioPaused ?? this.isStudioPaused,
+      streetAddress: streetAddress ?? this.streetAddress,
+      unitOrApt: unitOrApt ?? this.unitOrApt,
+      city: city ?? this.city,
+      state: state ?? this.state,
+      postalCode: postalCode ?? this.postalCode,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      studioStreetAddress: studioStreetAddress ?? this.studioStreetAddress,
+      studioUnitOrApt: studioUnitOrApt ?? this.studioUnitOrApt,
+      studioCity: studioCity ?? this.studioCity,
+      studioState: studioState ?? this.studioState,
+      studioPostalCode: studioPostalCode ?? this.studioPostalCode,
+      studioLatitude: studioLatitude ?? this.studioLatitude,
+      studioLongitude: studioLongitude ?? this.studioLongitude,
     );
   }
 
@@ -316,7 +434,41 @@ class UserProfile {
       'owner_pin_hash': ownerPinHash,
       'isStudioPaused': isStudioPaused,
       'is_studio_paused': isStudioPaused,
+      // Structured client home address
+      'streetAddress': streetAddress,
+      'unitOrApt': unitOrApt,
+      'city': city,
+      'state': state,
+      'postalCode': postalCode,
+      'latitude': latitude,
+      'longitude': longitude,
+      // Structured commercial studio address
+      'studioStreetAddress': studioStreetAddress,
+      'studioUnitOrApt': studioUnitOrApt,
+      'studioCity': studioCity,
+      'studioState': studioState,
+      'studioPostalCode': studioPostalCode,
+      'studioLatitude': studioLatitude,
+      'studioLongitude': studioLongitude,
+      // PostgREST database snake_case mirrors
+      'street_address': streetAddress,
+      'unit_or_apt': unitOrApt,
+      'postal_code': postalCode,
+      'studio_street_address': studioStreetAddress,
+      'studio_unit_or_apt': studioUnitOrApt,
+      'studio_city': studioCity,
+      'studio_state': studioState,
+      'studio_postal_code': studioPostalCode,
+      'studio_latitude': studioLatitude,
+      'studio_longitude': studioLongitude,
     };
+  }
+
+  static double? _parseCoordinate(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
   }
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
@@ -348,6 +500,32 @@ class UserProfile {
     final rawInstagram = json['instagramHandle'] as String? ?? '';
     final cleanInstagram = (rawInstagram == '@detailcraft') ? '' : rawInstagram;
 
+    // Structured client address parsing (handling camelCase and snake_case)
+    final parsedStreetAddress = (json['streetAddress'] ?? json['street_address'])?.toString() ?? '';
+    final parsedUnitOrApt = (json['unitOrApt'] ?? json['unit_or_apt'])?.toString() ?? '';
+    final parsedCity = (json['city'])?.toString() ?? '';
+    final parsedState = (json['state'])?.toString() ?? '';
+    final parsedPostalCode = (json['postalCode'] ?? json['postal_code'])?.toString() ?? '';
+    final parsedLatitude = _parseCoordinate(json['latitude'] ?? json['lat']);
+    final parsedLongitude = _parseCoordinate(json['longitude'] ?? json['lng']);
+
+    // Structured commercial studio address parsing (handling camelCase and snake_case)
+    final parsedStudioStreetAddress = (json['studioStreetAddress'] ?? json['studio_street_address'])?.toString() ?? '';
+    final parsedStudioUnitOrApt = (json['studioUnitOrApt'] ?? json['studio_unit_or_apt'])?.toString() ?? '';
+    final parsedStudioCity = (json['studioCity'] ?? json['studio_city'])?.toString() ?? '';
+    final parsedStudioState = (json['studioState'] ?? json['studio_state'])?.toString() ?? '';
+    final parsedStudioPostalCode = (json['studioPostalCode'] ?? json['studio_postal_code'])?.toString() ?? '';
+    final parsedStudioLatitude = _parseCoordinate(json['studioLatitude'] ?? json['studio_latitude']);
+    final parsedStudioLongitude = _parseCoordinate(json['studioLongitude'] ?? json['studio_longitude']);
+
+    final resolvedLocation = cleanLocation.isNotEmpty
+        ? cleanLocation
+        : (parsedCity.isNotEmpty
+            ? (parsedState.isNotEmpty ? '$parsedCity, $parsedState' : parsedCity)
+            : (parsedStudioCity.isNotEmpty
+                ? (parsedStudioState.isNotEmpty ? '$parsedStudioCity, $parsedStudioState' : parsedStudioCity)
+                : ''));
+
     return UserProfile(
       id: json['id'] as String? ?? 'usr_you',
       role: parsedRole,
@@ -358,7 +536,7 @@ class UserProfile {
       localAvatarBytes: json['localAvatarBytes'] != null ? base64Decode(json['localAvatarBytes'] as String) : null,
       coverUrl: cleanCover,
       localCoverBytes: json['localCoverBytes'] != null ? base64Decode(json['localCoverBytes'] as String) : null,
-      location: cleanLocation,
+      location: resolvedLocation,
       serviceRadius: json['serviceRadius'] as String? ?? '',
       bio: cleanBio,
       phone: json['phone'] as String? ?? '',
@@ -407,6 +585,21 @@ class UserProfile {
       startingPrice: (json['startingPrice'] as num?)?.toDouble() ?? 150.0,
       ownerPinHash: json['owner_pin_hash'] as String?,
       isStudioPaused: (json['isStudioPaused'] ?? json['is_studio_paused']) as bool? ?? false,
+      // Structured address fields
+      streetAddress: parsedStreetAddress,
+      unitOrApt: parsedUnitOrApt,
+      city: parsedCity,
+      state: parsedState,
+      postalCode: parsedPostalCode,
+      latitude: parsedLatitude,
+      longitude: parsedLongitude,
+      studioStreetAddress: parsedStudioStreetAddress,
+      studioUnitOrApt: parsedStudioUnitOrApt,
+      studioCity: parsedStudioCity,
+      studioState: parsedStudioState,
+      studioPostalCode: parsedStudioPostalCode,
+      studioLatitude: parsedStudioLatitude,
+      studioLongitude: parsedStudioLongitude,
     );
   }
 }

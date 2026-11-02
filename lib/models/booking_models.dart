@@ -305,6 +305,9 @@ class BookingAppointment {
   final ServicePackage package;
   final ServiceLocationType locationType;
   final String clientAddress;
+  final String? clientUnitOrGateCode;
+  final double? latitude;
+  final double? longitude;
   final DateTime scheduledDate;
   final String scheduledTimeSlot;
   final double totalPrice;
@@ -351,6 +354,9 @@ class BookingAppointment {
     this.endTime,
     this.durationMinutes,
     this.isMultiDay = false,
+    this.clientUnitOrGateCode,
+    this.latitude,
+    this.longitude,
   });
 
   BookingAppointment copyWith({
@@ -383,6 +389,9 @@ class BookingAppointment {
     String? endTime,
     int? durationMinutes,
     bool? isMultiDay,
+    String? clientUnitOrGateCode,
+    double? latitude,
+    double? longitude,
   }) => BookingAppointment(
     id: id ?? this.id,
     clientId: clientId ?? this.clientId,
@@ -413,6 +422,9 @@ class BookingAppointment {
     endTime: endTime ?? this.endTime,
     durationMinutes: durationMinutes ?? this.durationMinutes,
     isMultiDay: isMultiDay ?? this.isMultiDay,
+    clientUnitOrGateCode: clientUnitOrGateCode ?? this.clientUnitOrGateCode,
+    latitude: latitude ?? this.latitude,
+    longitude: longitude ?? this.longitude,
   );
 
   Map<String, dynamic> toJson() => {
@@ -430,6 +442,12 @@ class BookingAppointment {
     'package': package.toJson(),
     'locationType': locationType.name,
     'clientAddress': clientAddress,
+    if (clientUnitOrGateCode != null) ...{
+      'clientUnitOrGateCode': clientUnitOrGateCode,
+      'client_unit_or_gate_code': clientUnitOrGateCode,
+    },
+    if (latitude != null) 'latitude': latitude,
+    if (longitude != null) 'longitude': longitude,
     'scheduledDate': scheduledDate.toIso8601String(),
     'scheduledTimeSlot': scheduledTimeSlot,
     'totalPrice': totalPrice,
@@ -482,6 +500,9 @@ class BookingAppointment {
     'package_data': package.toJson(),
     'service_location_type': locationType.name,
     'client_address': clientAddress,
+    if (clientUnitOrGateCode != null) 'client_unit_or_gate_code': clientUnitOrGateCode,
+    if (latitude != null) 'latitude': latitude,
+    if (longitude != null) 'longitude': longitude,
     'scheduled_date': '${scheduledDate.year.toString().padLeft(4, '0')}-${scheduledDate.month.toString().padLeft(2, '0')}-${scheduledDate.day.toString().padLeft(2, '0')}',
     'scheduled_time_slot': scheduledTimeSlot,
     'total_price': totalPrice,
@@ -498,6 +519,13 @@ class BookingAppointment {
     if (durationMinutes != null) 'duration_minutes': durationMinutes,
     'is_multi_day': isMultiDay,
   };
+
+  static double? _parseCoordinate(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
 
   factory BookingAppointment.fromJson(Map<String, dynamic> json) {
     final rawPackage = json['package'] ?? json['package_data'];
@@ -642,6 +670,9 @@ class BookingAppointment {
         return null;
       }(),
       isMultiDay: resolvedIsMulti,
+      clientUnitOrGateCode: (json['clientUnitOrGateCode'] ?? json['client_unit_or_gate_code'])?.toString(),
+      latitude: _parseCoordinate(json['latitude'] ?? json['lat']),
+      longitude: _parseCoordinate(json['longitude'] ?? json['lng']),
     );
   }
 }

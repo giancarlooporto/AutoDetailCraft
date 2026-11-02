@@ -7,6 +7,7 @@ import 'booking_flow_screen.dart';
 import 'public_studio_screen.dart';
 import 'auth_modal.dart';
 import '../widgets/client_garage_gate.dart';
+import '../services/location_service.dart';
 
 class FeedScreen extends StatefulWidget {
   final JobRepository repository;
@@ -21,6 +22,7 @@ class _FeedScreenState extends State<FeedScreen> {
   bool _isSearching = false;
   final TextEditingController _searchCtrl = TextEditingController();
   bool? _isFeaturedExpandedOverride;
+  bool _isLocating = false;
 
   @override
   void dispose() {
@@ -82,6 +84,143 @@ class _FeedScreenState extends State<FeedScreen> {
         builder: (_) => PublicStudioScreen(
           detailer: detailer,
           repository: widget.repository,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onNearMeTapped(BuildContext context) async {
+    if (_isLocating) return;
+
+    if (widget.repository.currentUserGpsLocation != null) {
+      widget.repository.clearProximitySort();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cleared proximity sort'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _isLocating = true;
+    });
+
+    try {
+      final coords = await LocationService.getCurrentLocation();
+      if (!context.mounted) return;
+
+      if (coords != null) {
+        if (widget.repository.selectedLocationCity != 'All Locations') {
+          widget.repository.setLocationFilter('All Locations');
+        }
+        await widget.repository.sortDetailersByProximity(coords.latitude, coords.longitude);
+        if (!context.mounted) return;
+
+        setState(() {
+          _isFeaturedExpandedOverride = true;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sorted studios nearest to your location'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to obtain GPS location. Check device permissions or search by city/ZIP.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Location error: $e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLocating = false;
+        });
+      } else {
+        _isLocating = false;
+      }
+    }
+  }
+
+  Widget _buildNearMeButton(
+    BuildContext context, {
+    required bool isNearMeActive,
+    bool isCompact = false,
+  }) {
+    return Tooltip(
+      message: isNearMeActive
+          ? 'Clear proximity filter (showing nearest)'
+          : 'Sort studios nearest to your GPS location',
+      child: InkWell(
+        key: const Key('near_me_gps_btn'),
+        borderRadius: BorderRadius.circular(10),
+        onTap: _isLocating ? null : () => _onNearMeTapped(context),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          height: 38,
+          padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 12),
+          decoration: BoxDecoration(
+            color: isNearMeActive ? AppTheme.primary.withAlpha(30) : AppTheme.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isNearMeActive ? AppTheme.primary : AppTheme.border,
+              width: isNearMeActive ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_isLocating)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
+                )
+              else
+                Icon(
+                  isNearMeActive ? Icons.near_me_rounded : Icons.near_me_outlined,
+                  size: 16,
+                  color: isNearMeActive ? AppTheme.primary : AppTheme.textMuted,
+                ),
+              const SizedBox(width: 6),
+              Text(
+                'Near Me',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isNearMeActive ? FontWeight.bold : FontWeight.w500,
+                  color: isNearMeActive ? AppTheme.primary : AppTheme.textPrimary,
+                  letterSpacing: -0.2,
+                ),
+              ),
+              if (isNearMeActive) ...[
+                const SizedBox(width: 4),
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(
+                    color: AppTheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -282,7 +421,9 @@ class _FeedScreenState extends State<FeedScreen> {
                       Expanded(
                         child: Text(
                           selectedCity == 'All Locations'
-                              ? 'Featured Detailers & Studios'
+                              ? (widget.repository.currentUserGpsLocation != null
+                                  ? 'Studios Near You'
+                                  : 'Featured Detailers & Studios')
                               : 'Verified Studios in $selectedCity',
                           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
                           overflow: TextOverflow.ellipsis,
@@ -346,7 +487,7 @@ class _FeedScreenState extends State<FeedScreen> {
                   behavior: HitTestBehavior.opaque,
                   onTap: () => _openPublicStudio(context, d),
                   child: Container(
-                    width: 252,
+                    width: 260,
                     margin: const EdgeInsets.only(right: 12),
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
@@ -418,7 +559,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                     ],
                                   ),
                                   const SizedBox(height: 2),
-                                  Text(d.location, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                                  _buildStudioLocationSubtitle(d),
                                 ],
                               ),
                             ),
@@ -485,6 +626,99 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
+  Widget _buildStudioLocationSubtitle(UserProfile d) {
+    final distance = widget.repository.getDistanceToDetailer(d.id);
+    final distanceLabel = LocationService.formatDistance(distance);
+
+    final displayCityState = d.studioCity.isNotEmpty
+        ? (d.studioState.isNotEmpty ? '${d.studioCity}, ${d.studioState}' : d.studioCity)
+        : (d.city.isNotEmpty
+            ? (d.state.isNotEmpty ? '${d.city}, ${d.state}' : d.city)
+            : (d.location.isNotEmpty ? d.location : 'Studio'));
+
+    if (distanceLabel.isNotEmpty) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Container(
+              key: Key('studio_distance_badge_${d.id}'),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withAlpha(25),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: AppTheme.primary.withAlpha(80), width: 0.5),
+              ),
+              child: Row(
+                key: Key('detailer_distance_badge_${d.id}'),
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.near_me_rounded,
+                    size: 9,
+                    color: AppTheme.primary,
+                  ),
+                  const SizedBox(width: 2),
+                  Flexible(
+                    child: Text(
+                      distanceLabel,
+                      style: const TextStyle(
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.primary,
+                        letterSpacing: -0.3,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (displayCityState.isNotEmpty) ...[
+            const SizedBox(width: 3),
+            Flexible(
+              child: Text(
+                displayCityState,
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: AppTheme.textMuted,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
+        ],
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(
+          Icons.location_on_outlined,
+          size: 11,
+          color: AppTheme.textMuted,
+        ),
+        const SizedBox(width: 2),
+        Flexible(
+          child: Text(
+            displayCityState,
+            key: Key('studio_location_text_${d.id}'),
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppTheme.textMuted,
+            ),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -494,6 +728,10 @@ class _FeedScreenState extends State<FeedScreen> {
         final detailers = widget.repository.filteredDetailers;
         final activeCities = widget.repository.activeCitiesWithDetailers;
         final selectedCity = widget.repository.selectedLocationCity;
+        final isNearMeActive = widget.repository.currentUserGpsLocation != null;
+        final isFilterActive = selectedCity != 'All Locations' ||
+            _searchCtrl.text.isNotEmpty ||
+            isNearMeActive;
 
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -617,9 +855,13 @@ class _FeedScreenState extends State<FeedScreen> {
                                         ),
                                       ),
                                     ),
+                                     const SizedBox(width: 8),
+
+                                    // 2. Near Me Action Button
+                                    _buildNearMeButton(context, isNearMeActive: isNearMeActive),
                                     const SizedBox(width: 8),
 
-                                    // 2. All Locations Dropdown
+                                    // 3. All Locations Dropdown
                                     ConstrainedBox(
                                       constraints: const BoxConstraints(minWidth: 150, maxWidth: 200),
                                       child: _buildLocationDropdown(
@@ -630,9 +872,8 @@ class _FeedScreenState extends State<FeedScreen> {
                                       ),
                                     ),
 
-                                    // 3. Quick Reset Button (if filters or search active)
-                                    if (selectedCity != 'All Locations' ||
-                                        _searchCtrl.text.isNotEmpty) ...[
+                                    // 4. Quick Reset Button (if filters, search, or Near Me active)
+                                    if (isFilterActive) ...[
                                       const SizedBox(width: 6),
                                       Tooltip(
                                         message: 'Reset Filters',
@@ -641,6 +882,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                           onTap: () {
                                             _searchCtrl.clear();
                                             widget.repository.clearFilters();
+                                            widget.repository.clearProximitySort();
                                             setState(() {});
                                           },
                                           borderRadius: BorderRadius.circular(10),
@@ -684,15 +926,20 @@ class _FeedScreenState extends State<FeedScreen> {
                                         isEmbedded: false,
                                       ),
                                     ),
+                                    const SizedBox(width: 8),
+
+                                    // Near Me Button
+                                    _buildNearMeButton(context, isNearMeActive: isNearMeActive, isCompact: false),
+
                                     // Quick Reset button if filters active
-                                    if (selectedCity != 'All Locations' ||
-                                        _searchCtrl.text.isNotEmpty) ...[
+                                    if (isFilterActive) ...[
                                       const SizedBox(width: 8),
                                       InkWell(
                                         key: const Key('reset_filters_btn'),
                                         onTap: () {
                                           _searchCtrl.clear();
                                           widget.repository.clearFilters();
+                                          widget.repository.clearProximitySort();
                                           setState(() {});
                                         },
                                         borderRadius: BorderRadius.circular(10),
@@ -754,6 +1001,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                                 onPressed: () {
                                                   _searchCtrl.clear();
                                                   widget.repository.clearFilters();
+                                                  widget.repository.clearProximitySort();
                                                 },
                                                 label: const Text('Reset All Filters', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold)),
                                               ),

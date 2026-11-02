@@ -8,13 +8,25 @@ import '../services/supabase_service.dart';
 
 class EditProfileDialog extends StatefulWidget {
   final JobRepository repository;
+  final bool isStudioProfile;
 
-  const EditProfileDialog({super.key, required this.repository});
+  const EditProfileDialog({
+    super.key,
+    required this.repository,
+    this.isStudioProfile = false,
+  });
 
-  static Future<void> show(BuildContext context, {required JobRepository repository}) {
+  static Future<void> show(
+    BuildContext context, {
+    required JobRepository repository,
+    bool isStudioProfile = false,
+  }) {
     return showDialog(
       context: context,
-      builder: (ctx) => EditProfileDialog(repository: repository),
+      builder: (ctx) => EditProfileDialog(
+        repository: repository,
+        isStudioProfile: isStudioProfile,
+      ),
     );
   }
 
@@ -23,12 +35,20 @@ class EditProfileDialog extends StatefulWidget {
 }
 
 class _EditProfileDialogState extends State<EditProfileDialog> {
+  final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameCtrl;
   late TextEditingController _businessCtrl;
   late TextEditingController _locationCtrl;
   late TextEditingController _bioCtrl;
   late TextEditingController _phoneCtrl;
   late TextEditingController _instagramCtrl;
+
+  // Dedicated Address Controllers
+  late TextEditingController _streetCtrl;
+  late TextEditingController _unitCtrl;
+  late TextEditingController _cityCtrl;
+  late TextEditingController _stateCtrl;
+  late TextEditingController _zipCtrl;
 
   late String _avatarUrl;
   Uint8List? _avatarBytes;
@@ -48,6 +68,35 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
     _bioCtrl = TextEditingController(text: user.bio);
     _phoneCtrl = TextEditingController(text: user.phone);
     _instagramCtrl = TextEditingController(text: user.instagramHandle);
+
+    if (widget.isStudioProfile) {
+      _streetCtrl = TextEditingController(text: user.studioStreetAddress);
+      _unitCtrl = TextEditingController(text: user.studioUnitOrApt);
+      _cityCtrl = TextEditingController(
+        text: user.studioCity.isNotEmpty
+            ? user.studioCity
+            : (user.city.isNotEmpty ? user.city : (user.location.contains(',') ? user.location.split(',')[0].trim() : user.location)),
+      );
+      _stateCtrl = TextEditingController(
+        text: user.studioState.isNotEmpty
+            ? user.studioState
+            : (user.state.isNotEmpty ? user.state : (user.location.contains(',') ? user.location.split(',')[1].trim() : '')),
+      );
+      _zipCtrl = TextEditingController(
+        text: user.studioPostalCode.isNotEmpty ? user.studioPostalCode : user.postalCode,
+      );
+    } else {
+      _streetCtrl = TextEditingController(text: user.streetAddress);
+      _unitCtrl = TextEditingController(text: user.unitOrApt);
+      _cityCtrl = TextEditingController(
+        text: user.city.isNotEmpty ? user.city : (user.location.contains(',') ? user.location.split(',')[0].trim() : user.location),
+      );
+      _stateCtrl = TextEditingController(
+        text: user.state.isNotEmpty ? user.state : (user.location.contains(',') ? user.location.split(',')[1].trim() : ''),
+      );
+      _zipCtrl = TextEditingController(text: user.postalCode);
+    }
+
     _avatarUrl = user.avatarUrl;
     _avatarBytes = user.localAvatarBytes;
     _coverUrl = user.coverUrl;
@@ -62,6 +111,11 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
     _bioCtrl.dispose();
     _phoneCtrl.dispose();
     _instagramCtrl.dispose();
+    _streetCtrl.dispose();
+    _unitCtrl.dispose();
+    _cityCtrl.dispose();
+    _stateCtrl.dispose();
+    _zipCtrl.dispose();
     super.dispose();
   }
 
@@ -170,29 +224,77 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
   }
 
   void _save() {
-    final updated = widget.repository.currentUser.copyWith(
-      displayName: _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : null,
-      businessName: _businessCtrl.text.trim().isNotEmpty ? _businessCtrl.text.trim() : null,
-      location: _locationCtrl.text.trim().isNotEmpty ? _locationCtrl.text.trim() : null,
-      bio: _bioCtrl.text.trim(),
-      phone: _phoneCtrl.text.trim(),
-      instagramHandle: _instagramCtrl.text.trim(),
-      avatarUrl: _avatarUrl,
-      localAvatarBytes: _avatarBytes,
-      coverUrl: _coverUrl,
-      localCoverBytes: _coverBytes,
-    );
+    if (_formKey.currentState != null && !_formKey.currentState!.validate()) {
+      return;
+    }
+
+    final city = _cityCtrl.text.trim();
+    final state = _stateCtrl.text.trim();
+    final street = _streetCtrl.text.trim();
+    final unit = _unitCtrl.text.trim();
+    final zip = _zipCtrl.text.trim();
+
+    // Auto-compose legacy location field for backward compatibility
+    final composedCityState = [
+      if (city.isNotEmpty) city,
+      if (state.isNotEmpty) state,
+    ].join(', ');
+
+    final currentUser = widget.repository.currentUser;
+    final UserProfile updated;
+
+    if (widget.isStudioProfile) {
+      updated = currentUser.copyWith(
+        displayName: _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : null,
+        businessName: _businessCtrl.text.trim().isNotEmpty ? _businessCtrl.text.trim() : null,
+        studioStreetAddress: street,
+        studioUnitOrApt: unit,
+        studioCity: city,
+        studioState: state,
+        studioPostalCode: zip,
+        location: composedCityState.isNotEmpty ? composedCityState : (_locationCtrl.text.trim().isNotEmpty ? _locationCtrl.text.trim() : currentUser.location),
+        bio: _bioCtrl.text.trim(),
+        phone: _phoneCtrl.text.trim(),
+        instagramHandle: _instagramCtrl.text.trim(),
+        avatarUrl: _avatarUrl,
+        localAvatarBytes: _avatarBytes,
+        coverUrl: _coverUrl,
+        localCoverBytes: _coverBytes,
+      );
+    } else {
+      updated = currentUser.copyWith(
+        displayName: _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : null,
+        businessName: _businessCtrl.text.trim().isNotEmpty ? _businessCtrl.text.trim() : null,
+        streetAddress: street,
+        unitOrApt: unit,
+        city: city,
+        state: state,
+        postalCode: zip,
+        location: composedCityState.isNotEmpty ? composedCityState : (_locationCtrl.text.trim().isNotEmpty ? _locationCtrl.text.trim() : currentUser.location),
+        bio: _bioCtrl.text.trim(),
+        phone: _phoneCtrl.text.trim(),
+        instagramHandle: _instagramCtrl.text.trim(),
+        avatarUrl: _avatarUrl,
+        localAvatarBytes: _avatarBytes,
+        coverUrl: _coverUrl,
+        localCoverBytes: _coverBytes,
+      );
+    }
 
     widget.repository.updateCurrentUser(updated);
     Navigator.of(context).pop();
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Row(
           children: [
-            Icon(Icons.check_circle_rounded, color: AppTheme.primary),
-            SizedBox(width: 8),
-            Text('Profile & Location saved! You are now discoverable on Explore.'),
+            const Icon(Icons.check_circle_rounded, color: AppTheme.primary),
+            const SizedBox(width: 8),
+            Text(
+              widget.isStudioProfile
+                  ? 'Studio location & profile saved!'
+                  : 'Profile & home address saved!',
+            ),
           ],
         ),
         backgroundColor: AppTheme.surface,
@@ -210,11 +312,18 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
         borderRadius: BorderRadius.circular(20),
         side: const BorderSide(color: AppTheme.border),
       ),
-      title: const Row(
+      title: Row(
         children: [
-          Icon(Icons.edit_outlined, color: AppTheme.primary, size: 20),
-          SizedBox(width: 10),
-          Text('Edit Profile & Location', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          Icon(
+            widget.isStudioProfile ? Icons.storefront_outlined : Icons.edit_outlined,
+            color: AppTheme.primary,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Text(
+            widget.isStudioProfile ? 'Edit Studio Profile & Location' : 'Edit Profile & Location',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
         ],
       ),
       content: ConstrainedBox(
@@ -222,10 +331,12 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
         child: SizedBox(
           width: double.maxFinite,
           child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
               // Photos section (Avatar & Cover)
               Center(
                 child: Stack(
@@ -278,24 +389,119 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
               const SizedBox(height: 12),
 
               // Full Name
-              TextField(
+              TextFormField(
+                key: const Key('edit_profile_name_input'),
                 controller: _nameCtrl,
                 decoration: const InputDecoration(
                   labelText: 'Your Name',
                   prefixIcon: Icon(Icons.person_outline_rounded, size: 18),
                 ),
+                validator: (val) {
+                  if (val == null || val.trim().isEmpty) {
+                    return 'Please enter your name';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 12),
 
-              // Location / City & State
-              TextField(
-                controller: _locationCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'City & State / Location',
-                  hintText: 'e.g. Austin, Texas or Los Angeles, CA',
-                  helperText: 'Enables users to search and discover you in this location',
-                  helperStyle: TextStyle(fontSize: 10, color: AppTheme.textMuted),
-                  prefixIcon: Icon(Icons.location_on_outlined, size: 18),
+              // Dedicated Address Fields (100% Offline Manual Entry)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceLight.withAlpha(50),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.border.withAlpha(100)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          widget.isStudioProfile ? Icons.storefront_rounded : Icons.home_rounded,
+                          size: 16,
+                          color: AppTheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          widget.isStudioProfile ? 'Commercial Studio / Shop Address' : 'Personal Residential Address',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.isStudioProfile
+                          ? 'Used for customer drop-off bookings and Explore proximity sorting.'
+                          : 'Used as default service location for mobile detailing bookings.',
+                      style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      key: const Key('edit_profile_street_input'),
+                      controller: _streetCtrl,
+                      decoration: InputDecoration(
+                        labelText: widget.isStudioProfile ? 'Studio Street Address' : 'Street Address',
+                        hintText: 'e.g. 1200 S Congress Ave',
+                        prefixIcon: const Icon(Icons.location_on_outlined, size: 18),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      key: const Key('edit_profile_unit_input'),
+                      controller: _unitCtrl,
+                      decoration: InputDecoration(
+                        labelText: widget.isStudioProfile ? 'Suite / Bay / Unit (Optional)' : 'Apt / Suite / Gate Code (Optional)',
+                        hintText: widget.isStudioProfile ? 'e.g. Suite 104 or Bay B' : 'e.g. Apt 3B or Gate #1234',
+                        prefixIcon: const Icon(Icons.tag_rounded, size: 18),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 4,
+                          child: TextFormField(
+                            key: const Key('edit_profile_city_input'),
+                            controller: _cityCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'City',
+                              hintText: 'e.g. Austin',
+                              prefixIcon: Icon(Icons.location_city_rounded, size: 18),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 2,
+                          child: TextFormField(
+                            key: const Key('edit_profile_state_input'),
+                            controller: _stateCtrl,
+                            textCapitalization: TextCapitalization.characters,
+                            decoration: const InputDecoration(
+                              labelText: 'State',
+                              hintText: 'TX',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 3,
+                          child: TextFormField(
+                            key: const Key('edit_profile_zip_input'),
+                            controller: _zipCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Postal Code',
+                              hintText: '78704',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 12),
@@ -361,6 +567,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
         ),
       ),
     ),
+  ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),

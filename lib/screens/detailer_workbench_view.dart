@@ -23,6 +23,7 @@ import '../models/message_model.dart';
 import '../services/local_storage_service.dart';
 import '../widgets/ios_swipe_to_delete.dart';
 import '../widgets/booking_status_tracker.dart';
+import '../services/map_launcher_service.dart';
 import 'chat_screen.dart';
 
 enum StudioHubSection {
@@ -538,7 +539,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       case StudioHubSection.teams:
         if (!_canManageTeam) return;
         if (_selectedTeamMemberId == 'founder' || _selectedTeamMemberId == null) {
-          EditProfileDialog.show(context, repository: widget.repository);
+          EditProfileDialog.show(context, repository: widget.repository, isStudioProfile: true);
           return;
         }
         final staff = user.teamMembers;
@@ -2809,7 +2810,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               ),
               icon: const Icon(Icons.edit_outlined, size: 16),
               label: const Text('Edit Studio Profile & Location', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-              onPressed: () => EditProfileDialog.show(context, repository: repo),
+              onPressed: () => EditProfileDialog.show(context, repository: repo, isStudioProfile: true),
             ),
           ],
         ),
@@ -3957,6 +3958,49 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                       child: Text(b.clientAddress, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
                     ),
                   ],
+                ),
+              ],
+              if (b.clientUnitOrGateCode != null && b.clientUnitOrGateCode!.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Row(
+                  key: const Key('detailer_booking_gate_code'),
+                  children: [
+                    const Icon(Icons.vpn_key_outlined, size: 14, color: AppTheme.primary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Gate / Unit Code: ${b.clientUnitOrGateCode}',
+                        style: const TextStyle(color: AppTheme.primary, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (b.clientAddress.isNotEmpty || (b.latitude != null && b.longitude != null)) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    key: const Key('detailer_booking_navigate_btn'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.primary,
+                      side: const BorderSide(color: AppTheme.primary),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    icon: const Icon(Icons.navigation_rounded, size: 15),
+                    label: const Text(
+                      'Navigate',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                    onPressed: () {
+                      MapLauncherService.launchNavigation(
+                        latitude: b.latitude,
+                        longitude: b.longitude,
+                        address: b.clientAddress,
+                      );
+                    },
+                  ),
                 ),
               ],
               if (b.clientNotes != null && b.clientNotes!.isNotEmpty) ...[
@@ -8865,6 +8909,44 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 const Icon(Icons.phone_outlined, size: 12, color: AppTheme.textMuted),
                 const SizedBox(width: 4),
                 Text(b.clientPhone, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+              ],
+            ),
+          ],
+          if (b.clientAddress.isNotEmpty || (b.latitude != null && b.longitude != null)) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                if (b.clientAddress.isNotEmpty) ...[
+                  const Icon(Icons.location_on_outlined, size: 12, color: AppTheme.textMuted),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      b.clientAddress,
+                      style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ] else
+                  const Spacer(),
+                const SizedBox(width: 6),
+                OutlinedButton.icon(
+                  key: const Key('calendar_booking_navigate_btn'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.primary,
+                    side: const BorderSide(color: AppTheme.primary),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  icon: const Icon(Icons.navigation_rounded, size: 12),
+                  label: const Text('Navigate', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  onPressed: () {
+                    MapLauncherService.launchNavigation(
+                      latitude: b.latitude,
+                      longitude: b.longitude,
+                      address: b.clientAddress,
+                    );
+                  },
+                ),
               ],
             ),
           ],

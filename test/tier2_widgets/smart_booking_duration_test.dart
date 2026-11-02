@@ -220,7 +220,7 @@ void main() {
         customTimeSlots: ['8:00 AM - 11:00 AM', '11:00 AM - 2:00 PM', '2:00 PM - 5:00 PM'],
       ));
 
-      final monday = DateTime(2026, 11, 2); // Monday
+      final monday = DateTime(2026, 11, 9); // Future Monday
 
       // 6-hour package (360 mins) in a shop that opens at 8am and closes at 5pm (9 total hours)
       const sixHourPkg = ServicePackage(
@@ -612,7 +612,7 @@ void main() {
         bufferMinutesBetweenJobs: 30,
       ));
 
-      final monday = DateTime(2026, 11, 2); // Monday
+      final monday = DateTime(2026, 11, 9); // Future Monday
 
       // 1.5-hour package (90 mins)
       const onePointFiveHourPkg = ServicePackage(

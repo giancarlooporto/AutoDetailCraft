@@ -20,6 +20,7 @@ import 'r2_storage_service.dart';
 import '../models/calendar_availability_block.dart';
 import '../models/shift_request.dart';
 import 'owner_pin_security.dart';
+import 'location_service.dart';
 
 const Set<String> _legacyMockJobIds = {
   'job_01', 'job_02', 'job_03', 'job_04', 'job_05', 'job_06', 'job_07'
@@ -43,6 +44,34 @@ class JobRepository extends ChangeNotifier {
   List<CalendarAvailabilityBlock> _availabilityBlocks = [];
   DetailerCalendarPreferences _calendarPreferences = DetailerCalendarPreferences.defaults();
   final Map<String, DetailerCalendarPreferences> _detailerPreferencesMap = {};
+  final Map<String, double> _detailerDistanceCache = {};
+  LocationCoordinates? _currentUserGpsLocation;
+
+  LocationCoordinates? get currentUserGpsLocation => _currentUserGpsLocation;
+  double? getDistanceToDetailer(String detailerId) {
+    if (_detailerDistanceCache.containsKey(detailerId)) {
+      return _detailerDistanceCache[detailerId];
+    }
+    if (_currentUserGpsLocation != null) {
+      final matches = publicDetailers.where((d) => d.id == detailerId);
+      if (matches.isNotEmpty) {
+        final detailer = matches.first;
+        final sLat = detailer.effectiveStudioLatitude;
+        final sLon = detailer.effectiveStudioLongitude;
+        if (sLat != null && sLon != null) {
+          final dist = LocationService.calculateDistanceMiles(
+            _currentUserGpsLocation!.latitude,
+            _currentUserGpsLocation!.longitude,
+            sLat,
+            sLon,
+          );
+          _detailerDistanceCache[detailerId] = dist;
+          return dist;
+        }
+      }
+    }
+    return null;
+  }
   List<ShiftRequest> _shiftRequests = [];
   String? _activeTeamMemberId; // null or 'founder' = shop owner (Founder)
   bool _isStaffSession = false; // true = authenticated via staff PIN or staff credentials directly
@@ -111,10 +140,46 @@ class JobRepository extends ChangeNotifier {
   bool get isDetailerWorkbenchMode => _currentUser.role == UserRole.detailer;
   set isDetailerWorkbenchMode(bool value) {
     if (value) {
-      _currentUser = _currentUser.copyWith(role: UserRole.detailer, isVerifiedHost: true);
+      UserProfile nextUser = _currentUser.copyWith(role: UserRole.detailer, isVerifiedHost: true);
+      final bool isStudioAddressUnset = nextUser.studioStreetAddress.trim().isEmpty ||
+          nextUser.studioCity.trim().isEmpty;
+      final bool hasClientHomeAddress = nextUser.streetAddress.trim().isNotEmpty ||
+          nextUser.city.trim().isNotEmpty;
+
+      if (isStudioAddressUnset && hasClientHomeAddress) {
+        nextUser = nextUser.copyWith(
+          studioStreetAddress: nextUser.studioStreetAddress.trim().isNotEmpty
+              ? nextUser.studioStreetAddress
+              : nextUser.streetAddress,
+          studioUnitOrApt: nextUser.studioUnitOrApt.trim().isNotEmpty
+              ? nextUser.studioUnitOrApt
+              : nextUser.unitOrApt,
+          studioCity: nextUser.studioCity.trim().isNotEmpty
+              ? nextUser.studioCity
+              : nextUser.city,
+          studioState: nextUser.studioState.trim().isNotEmpty
+              ? nextUser.studioState
+              : nextUser.state,
+          studioPostalCode: nextUser.studioPostalCode.trim().isNotEmpty
+              ? nextUser.studioPostalCode
+              : nextUser.postalCode,
+          studioLatitude: nextUser.studioLatitude ?? nextUser.latitude,
+          studioLongitude: nextUser.studioLongitude ?? nextUser.longitude,
+          location: nextUser.location.trim().isNotEmpty
+              ? nextUser.location
+              : (nextUser.city.trim().isNotEmpty
+                  ? (nextUser.state.trim().isNotEmpty
+                      ? '${nextUser.city}, ${nextUser.state}'
+                      : nextUser.city)
+                  : ''),
+        );
+      }
+      _currentUser = nextUser;
+      LocalStorageService.saveCurrentUser(_currentUser);
       LocalStorageService.saveWorkbenchMode('studio');
     } else {
       _currentUser = _currentUser.copyWith(role: UserRole.client);
+      LocalStorageService.saveCurrentUser(_currentUser);
       LocalStorageService.saveWorkbenchMode('garage');
     }
     notifyListeners();
@@ -1529,9 +1594,23 @@ class JobRepository extends ChangeNotifier {
   List<String> get activeCitiesWithDetailers {
     final cities = <String>{'All Locations'};
     for (final d in _publicDetailers) {
-      if (d.location.isNotEmpty) cities.add(d.location);
+      if (d.studioCity.isNotEmpty) {
+        cities.add(d.studioState.isNotEmpty ? '${d.studioCity}, ${d.studioState}' : d.studioCity);
+      } else if (d.city.isNotEmpty) {
+        cities.add(d.state.isNotEmpty ? '${d.city}, ${d.state}' : d.city);
+      } else if (d.location.isNotEmpty) {
+        cities.add(d.location);
+      }
     }
-    if (_currentUser.location.isNotEmpty) {
+    if (_currentUser.studioCity.isNotEmpty) {
+      cities.add(_currentUser.studioState.isNotEmpty
+          ? '${_currentUser.studioCity}, ${_currentUser.studioState}'
+          : _currentUser.studioCity);
+    } else if (_currentUser.city.isNotEmpty) {
+      cities.add(_currentUser.state.isNotEmpty
+          ? '${_currentUser.city}, ${_currentUser.state}'
+          : _currentUser.city);
+    } else if (_currentUser.location.isNotEmpty) {
       cities.add(_currentUser.location);
     }
     return cities.toList();
@@ -1540,7 +1619,9 @@ class JobRepository extends ChangeNotifier {
   List<DetailJob> get filteredJobs {
     final list = _jobs.where((job) {
       if (_selectedLocationCity != 'All Locations' &&
-          !job.author.location.toLowerCase().contains(_selectedLocationCity.toLowerCase())) {
+          !job.author.location.toLowerCase().contains(_selectedLocationCity.toLowerCase()) &&
+          !job.author.studioCity.toLowerCase().contains(_selectedLocationCity.toLowerCase()) &&
+          !job.author.city.toLowerCase().contains(_selectedLocationCity.toLowerCase())) {
         return false;
       }
 
@@ -1552,8 +1633,22 @@ class JobRepository extends ChangeNotifier {
         final matchAuthor = job.author.displayName.toLowerCase().contains(q);
         final matchBusiness = job.author.businessName.toLowerCase().contains(q);
         final matchLocation = job.author.location.toLowerCase().contains(q);
+        final matchCity = job.author.city.toLowerCase().contains(q) ||
+            job.author.studioCity.toLowerCase().contains(q);
+        final matchPostal = job.author.postalCode.toLowerCase().contains(q) ||
+            job.author.studioPostalCode.toLowerCase().contains(q);
+        final matchState = job.author.state.toLowerCase().contains(q) ||
+            job.author.studioState.toLowerCase().contains(q);
 
-        if (!matchVehicle && !matchColor && !matchTitle && !matchAuthor && !matchBusiness && !matchLocation) {
+        if (!matchVehicle &&
+            !matchColor &&
+            !matchTitle &&
+            !matchAuthor &&
+            !matchBusiness &&
+            !matchLocation &&
+            !matchCity &&
+            !matchPostal &&
+            !matchState) {
           return false;
         }
       }
@@ -1606,11 +1701,13 @@ class JobRepository extends ChangeNotifier {
     return score;
   }
 
-  // Filtered detailers list for Explore search, sorted descending by Composite Rank Score
+  // Filtered detailers list for Explore search, sorted by proximity or Composite Rank Score
   List<UserProfile> get filteredDetailers {
     final list = publicDetailers.where((detailer) {
       if (_selectedLocationCity != 'All Locations' &&
-          !detailer.location.toLowerCase().contains(_selectedLocationCity.toLowerCase())) {
+          !detailer.location.toLowerCase().contains(_selectedLocationCity.toLowerCase()) &&
+          !detailer.studioCity.toLowerCase().contains(_selectedLocationCity.toLowerCase()) &&
+          !detailer.city.toLowerCase().contains(_selectedLocationCity.toLowerCase())) {
         return false;
       }
 
@@ -1620,18 +1717,44 @@ class JobRepository extends ChangeNotifier {
         final matchBusiness = detailer.businessName.toLowerCase().contains(q);
         final matchLocation = detailer.location.toLowerCase().contains(q);
         final matchBio = detailer.bio.toLowerCase().contains(q);
+        final matchCity = detailer.city.toLowerCase().contains(q) ||
+            detailer.studioCity.toLowerCase().contains(q);
+        final matchPostal = detailer.postalCode.toLowerCase().contains(q) ||
+            detailer.studioPostalCode.toLowerCase().contains(q);
+        final matchState = detailer.state.toLowerCase().contains(q) ||
+            detailer.studioState.toLowerCase().contains(q);
         final matchServices = detailer.servicePackages.any((p) =>
             p.title.toLowerCase().contains(q) ||
             p.description.toLowerCase().contains(q) ||
             p.includes.any((inc) => inc.toLowerCase().contains(q)));
 
-        if (!matchName && !matchBusiness && !matchLocation && !matchBio && !matchServices) {
+        if (!matchName &&
+            !matchBusiness &&
+            !matchLocation &&
+            !matchBio &&
+            !matchServices &&
+            !matchCity &&
+            !matchPostal &&
+            !matchState) {
           return false;
         }
       }
 
       return true;
     }).toList();
+
+    // If GPS proximity sort is active, rank ascending by distance
+    if (_currentUserGpsLocation != null) {
+      list.sort((a, b) {
+        final distA = getDistanceToDetailer(a.id);
+        final distB = getDistanceToDetailer(b.id);
+        if (distA == null && distB == null) return 0;
+        if (distA == null) return 1;
+        if (distB == null) return -1;
+        return distA.compareTo(distB);
+      });
+      return list;
+    }
 
     // Rank detailers descending by Composite Score
     list.sort((a, b) => calculateDetailerCompositeScore(b).compareTo(calculateDetailerCompositeScore(a)));
@@ -1660,10 +1783,14 @@ class JobRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  void searchDetailers(String query) => setSearchQuery(query);
+
   void clearFilters() {
     _selectedServiceType = 'All Services';
     _selectedLocationCity = 'All Locations';
     _searchQuery = '';
+    _currentUserGpsLocation = null;
+    _detailerDistanceCache.clear();
     notifyListeners();
   }
 
@@ -1788,19 +1915,171 @@ class JobRepository extends ChangeNotifier {
   }
 
   // Detailer / Host Promotion / Mode Toggle
-  void toggleHostMode({UserRole? targetRole}) {
+  Future<void> toggleHostMode({UserRole? targetRole}) async {
     final newRole = targetRole ?? (_currentUser.role == UserRole.detailer ? UserRole.client : UserRole.detailer);
     final isNowHost = newRole == UserRole.detailer;
-    _currentUser = _currentUser.copyWith(
+    UserProfile nextUser = _currentUser.copyWith(
       role: newRole,
       isVerifiedHost: isNowHost,
     );
+
+    // Auto-carryover: If activating detailer host mode and studio address is unset,
+    // automatically inherit the client's home address into the studio profile.
+    if (isNowHost) {
+      final bool isStudioAddressUnset = nextUser.studioStreetAddress.trim().isEmpty ||
+          nextUser.studioCity.trim().isEmpty;
+      final bool hasClientHomeAddress = nextUser.streetAddress.trim().isNotEmpty ||
+          nextUser.city.trim().isNotEmpty;
+
+      if (isStudioAddressUnset && hasClientHomeAddress) {
+        nextUser = nextUser.copyWith(
+          studioStreetAddress: nextUser.studioStreetAddress.trim().isNotEmpty
+              ? nextUser.studioStreetAddress
+              : nextUser.streetAddress,
+          studioUnitOrApt: nextUser.studioUnitOrApt.trim().isNotEmpty
+              ? nextUser.studioUnitOrApt
+              : nextUser.unitOrApt,
+          studioCity: nextUser.studioCity.trim().isNotEmpty
+              ? nextUser.studioCity
+              : nextUser.city,
+          studioState: nextUser.studioState.trim().isNotEmpty
+              ? nextUser.studioState
+              : nextUser.state,
+          studioPostalCode: nextUser.studioPostalCode.trim().isNotEmpty
+              ? nextUser.studioPostalCode
+              : nextUser.postalCode,
+          studioLatitude: nextUser.studioLatitude ?? nextUser.latitude,
+          studioLongitude: nextUser.studioLongitude ?? nextUser.longitude,
+          location: nextUser.location.trim().isNotEmpty
+              ? nextUser.location
+              : (nextUser.city.trim().isNotEmpty
+                  ? (nextUser.state.trim().isNotEmpty
+                      ? '${nextUser.city}, ${nextUser.state}'
+                      : nextUser.city)
+                  : ''),
+        );
+      }
+    }
+
+    _currentUser = nextUser;
     LocalStorageService.saveWorkbenchMode(isNowHost ? 'studio' : 'garage');
     if (isNowHost) {
       _isLoggedIn = true;
       LocalStorageService.saveIsGuest(false);
     }
-    _persistUser();
+    LocalStorageService.saveCurrentUser(_currentUser);
+    notifyListeners();
+    try {
+      await _persistUser();
+    } catch (_) {}
+    try {
+      await _refreshPublicDetailersFromCloud();
+    } catch (_) {}
+  }
+
+  /// Activates Detailer / Studio mode and carries over the client's home address
+  /// to the studio profile if the studio address is unset.
+  Future<void> enableDetailerMode({UserRole? targetRole}) async {
+    await toggleHostMode(targetRole: targetRole ?? UserRole.detailer);
+  }
+
+  /// Updates commercial studio address fields independently without overwriting
+  /// or mutating the client's private home address.
+  Future<void> updateStudioAddress({
+    String? streetAddress,
+    String? street,
+    String unitOrApt = '',
+    String unit = '',
+    required String city,
+    required String state,
+    required String postalCode,
+    double? latitude,
+    double? longitude,
+  }) async {
+    final finalStreet = (streetAddress ?? street ?? '').trim();
+    final finalUnit = unitOrApt.trim().isNotEmpty ? unitOrApt.trim() : unit.trim();
+    final formattedLoc = (city.trim().isNotEmpty && state.trim().isNotEmpty)
+        ? '${city.trim()}, ${state.trim()}'
+        : (city.trim().isNotEmpty ? city.trim() : _currentUser.location);
+
+    final updated = _currentUser.copyWith(
+      studioStreetAddress: finalStreet,
+      studioUnitOrApt: finalUnit,
+      studioCity: city.trim(),
+      studioState: state.trim(),
+      studioPostalCode: postalCode.trim(),
+      studioLatitude: latitude,
+      studioLongitude: longitude,
+      location: formattedLoc,
+    );
+    await updateCurrentUser(updated);
+  }
+
+  /// Updates private client home address fields independently without mutating
+  /// or overwriting the commercial studio address.
+  Future<void> updateClientAddress({
+    String? streetAddress,
+    String? street,
+    String unitOrApt = '',
+    String unit = '',
+    required String city,
+    required String state,
+    required String postalCode,
+    double? latitude,
+    double? longitude,
+  }) async {
+    final finalStreet = (streetAddress ?? street ?? '').trim();
+    final finalUnit = unitOrApt.trim().isNotEmpty ? unitOrApt.trim() : unit.trim();
+    final updated = _currentUser.copyWith(
+      streetAddress: finalStreet,
+      unitOrApt: finalUnit,
+      city: city.trim(),
+      state: state.trim(),
+      postalCode: postalCode.trim(),
+      latitude: latitude,
+      longitude: longitude,
+      location: (_currentUser.role == UserRole.client && city.trim().isNotEmpty)
+          ? (state.trim().isNotEmpty ? '${city.trim()}, ${state.trim()}' : city.trim())
+          : _currentUser.location,
+    );
+    await updateCurrentUser(updated);
+  }
+
+  /// Convenience alias for updating profile and persisting address changes.
+  Future<void> updateProfile(UserProfile updated) async {
+    await updateCurrentUser(updated);
+  }
+
+  /// Calculates distances and sorts public detailers in ascending proximity from coordinates.
+  Future<void> sortDetailersByProximity(double userLat, double userLon) async {
+    _currentUserGpsLocation = LocationCoordinates(latitude: userLat, longitude: userLon);
+    _detailerDistanceCache.clear();
+
+    for (final detailer in publicDetailers) {
+      final sLat = detailer.effectiveStudioLatitude;
+      final sLon = detailer.effectiveStudioLongitude;
+      if (sLat != null && sLon != null) {
+        final dist = LocationService.calculateDistanceMiles(userLat, userLon, sLat, sLon);
+        _detailerDistanceCache[detailer.id] = dist;
+      }
+    }
+
+    _publicDetailers.sort((a, b) {
+      final distA = _detailerDistanceCache[a.id];
+      final distB = _detailerDistanceCache[b.id];
+      if (distA == null && distB == null) return 0;
+      if (distA == null) return 1;
+      if (distB == null) return -1;
+      return distA.compareTo(distB);
+    });
+
+    notifyListeners();
+  }
+
+  /// Clears GPS proximity sort and cached distances.
+  void clearProximitySort() {
+    _currentUserGpsLocation = null;
+    _detailerDistanceCache.clear();
     notifyListeners();
   }
 
@@ -1895,6 +2174,13 @@ class JobRepository extends ChangeNotifier {
       certifications: [],
       servicePackages: [],
       teamMembers: [],
+      studioStreetAddress: '',
+      studioUnitOrApt: '',
+      studioCity: '',
+      studioState: '',
+      studioPostalCode: '',
+      studioLatitude: null,
+      studioLongitude: null,
     );
     _ownerPinHash = null;
     await LocalStorageService.saveOwnerPinHash(null);

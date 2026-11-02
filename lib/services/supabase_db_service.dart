@@ -117,6 +117,13 @@ class SupabaseDbService {
     List<TeamMember> team = const [],
   }) => buildUserProfileFromMap(res, garage: garage, team: team);
 
+  static double? _parseCoordinate(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
   static UserProfile? buildUserProfileFromMap(
     Map<String, dynamic> res, {
     List<UserVehicle> garage = const [],
@@ -250,6 +257,22 @@ class SupabaseDbService {
         reviewCount: res['review_count'] as int? ?? 0,
         ownerPinHash: ownerPinHash,
         isStudioPaused: ((res['is_studio_paused'] ?? res['isStudioPaused']) as bool?) ?? isPausedFromRadius,
+        // Structured client address
+        streetAddress: (res['street_address'] ?? res['streetAddress']) as String? ?? '',
+        unitOrApt: (res['unit_or_apt'] ?? res['unitOrApt']) as String? ?? '',
+        city: (res['city'] ?? '') as String? ?? '',
+        state: (res['state'] ?? '') as String? ?? '',
+        postalCode: (res['postal_code'] ?? res['postalCode']) as String? ?? '',
+        latitude: _parseCoordinate(res['latitude'] ?? res['lat']),
+        longitude: _parseCoordinate(res['longitude'] ?? res['lng']),
+        // Commercial studio address
+        studioStreetAddress: (res['studio_street_address'] ?? res['studioStreetAddress']) as String? ?? '',
+        studioUnitOrApt: (res['studio_unit_or_apt'] ?? res['studioUnitOrApt']) as String? ?? '',
+        studioCity: (res['studio_city'] ?? res['studioCity']) as String? ?? '',
+        studioState: (res['studio_state'] ?? res['studioState']) as String? ?? '',
+        studioPostalCode: (res['studio_postal_code'] ?? res['studioPostalCode']) as String? ?? '',
+        studioLatitude: _parseCoordinate(res['studio_latitude'] ?? res['studioLatitude']),
+        studioLongitude: _parseCoordinate(res['studio_longitude'] ?? res['studioLongitude']),
       );
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error parsing UserProfile: $e');
@@ -369,6 +392,20 @@ class SupabaseDbService {
         'total_jobs_count': user.totalJobsCount,
         'starting_price': user.startingPrice,
         'is_studio_paused': user.isStudioPaused,
+        'street_address': user.streetAddress,
+        'unit_or_apt': user.unitOrApt,
+        'city': user.city,
+        'state': user.state,
+        'postal_code': user.postalCode,
+        'latitude': user.latitude,
+        'longitude': user.longitude,
+        'studio_street_address': user.studioStreetAddress,
+        'studio_unit_or_apt': user.studioUnitOrApt,
+        'studio_city': user.studioCity,
+        'studio_state': user.studioState,
+        'studio_postal_code': user.studioPostalCode,
+        'studio_latitude': user.studioLatitude,
+        'studio_longitude': user.studioLongitude,
         'service_packages': user.servicePackages.map((p) => p.toJson()).toList(),
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
@@ -382,7 +419,9 @@ class SupabaseDbService {
             (msg.contains('column') && msg.contains('schema cache')) ||
             msg.contains('is_insurance_verified') ||
             msg.contains('insurance_policy_number') ||
-            msg.contains('is_studio_paused');
+            msg.contains('is_studio_paused') ||
+            msg.contains('street_address') ||
+            msg.contains('studio_street_address');
         if (isSchemaError) {
           if (kDebugMode) {
             print('[SupabaseDbService] Profile upsert schema mismatch (${pe.code}: ${pe.message}). Retrying without optional fields...');
@@ -390,7 +429,21 @@ class SupabaseDbService {
           final fallbackPayload = Map<String, dynamic>.from(fullPayload)
             ..remove('is_insurance_verified')
             ..remove('insurance_policy_number')
-            ..remove('is_studio_paused');
+            ..remove('is_studio_paused')
+            ..remove('street_address')
+            ..remove('unit_or_apt')
+            ..remove('city')
+            ..remove('state')
+            ..remove('postal_code')
+            ..remove('latitude')
+            ..remove('longitude')
+            ..remove('studio_street_address')
+            ..remove('studio_unit_or_apt')
+            ..remove('studio_city')
+            ..remove('studio_state')
+            ..remove('studio_postal_code')
+            ..remove('studio_latitude')
+            ..remove('studio_longitude');
           await client.from('profiles').upsert(fallbackPayload);
           if (kDebugMode) {
             print('[SupabaseDbService] Fallback profile upsert succeeded.');
@@ -407,13 +460,30 @@ class SupabaseDbService {
             eStr.contains('42703') ||
             eStr.contains('is_insurance_verified') ||
             eStr.contains('insurance_policy_number') ||
+            eStr.contains('street_address') ||
+            eStr.contains('studio_street_address') ||
             eStr.contains('schema cache')) {
           if (kDebugMode) {
-            print('[SupabaseDbService] Retrying profile upsert without insurance fields due to: $e');
+            print('[SupabaseDbService] Retrying profile upsert without optional location fields due to: $e');
           }
           final fallbackPayload = Map<String, dynamic>.from(fullPayload)
             ..remove('is_insurance_verified')
-            ..remove('insurance_policy_number');
+            ..remove('insurance_policy_number')
+            ..remove('is_studio_paused')
+            ..remove('street_address')
+            ..remove('unit_or_apt')
+            ..remove('city')
+            ..remove('state')
+            ..remove('postal_code')
+            ..remove('latitude')
+            ..remove('longitude')
+            ..remove('studio_street_address')
+            ..remove('studio_unit_or_apt')
+            ..remove('studio_city')
+            ..remove('studio_state')
+            ..remove('studio_postal_code')
+            ..remove('studio_latitude')
+            ..remove('studio_longitude');
           await client.from('profiles').upsert(fallbackPayload);
           if (kDebugMode) {
             print('[SupabaseDbService] Fallback profile upsert succeeded.');
@@ -1519,6 +1589,10 @@ class SupabaseDbService {
         'location_type': booking.locationType.name,
         'service_location_type': booking.locationType.name,
         'client_address': booking.clientAddress,
+        if (booking.clientUnitOrGateCode != null)
+          'client_unit_or_gate_code': booking.clientUnitOrGateCode,
+        if (booking.latitude != null) 'latitude': booking.latitude,
+        if (booking.longitude != null) 'longitude': booking.longitude,
         'scheduled_date': '${booking.scheduledDate.year.toString().padLeft(4, '0')}-${booking.scheduledDate.month.toString().padLeft(2, '0')}-${booking.scheduledDate.day.toString().padLeft(2, '0')}',
         'scheduled_time_slot': booking.scheduledTimeSlot,
         'total_price': booking.totalPrice,
@@ -1661,6 +1735,9 @@ class SupabaseDbService {
         }
         if (map['isMultiDay'] == null && map['is_multi_day'] != null) {
           map['isMultiDay'] = map['is_multi_day'];
+        }
+        if (map['clientUnitOrGateCode'] == null && map['client_unit_or_gate_code'] != null) {
+          map['clientUnitOrGateCode'] = map['client_unit_or_gate_code'];
         }
         bookings.add(BookingAppointment.fromJson(map));
       }
