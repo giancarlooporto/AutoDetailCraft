@@ -620,6 +620,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () {
+              widget.repository.setBookingsTabIndex(0);
               widget.repository.setActiveTab(1);
               Navigator.of(ctx).pop();
               if (Navigator.of(context).canPop()) {

@@ -111,7 +111,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
         final screens = [
           FeedScreen(repository: widget.repository),
-          BookingsListScreen(repository: widget.repository),
+          BookingsListScreen(
+            repository: widget.repository,
+            initialTabIndex: widget.repository.bookingsTabIndex,
+          ),
           MessagesScreen(repository: widget.repository),
           ProfileScreen(repository: widget.repository),
         ];
@@ -183,7 +186,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                                     label: 'Bookings',
                                     icon: Icons.calendar_month_rounded,
                                     isSelected: currentIndex == 1,
-                                    onTap: () => widget.repository.setActiveTab(1),
+                                    onTap: () {
+                                      widget.repository.setBookingsTabIndex(0);
+                                      widget.repository.setActiveTab(1);
+                                    },
                                   ),
                                   const SizedBox(width: 8),
                                   _buildDesktopNavTab(
@@ -218,7 +224,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   ? null
                   : NavigationBar(
                       selectedIndex: currentIndex,
-                      onDestinationSelected: (idx) => widget.repository.setActiveTab(idx),
+                      onDestinationSelected: (idx) {
+                        if (idx == 1) {
+                          widget.repository.setBookingsTabIndex(0);
+                        }
+                        widget.repository.setActiveTab(idx);
+                      },
                       destinations: [
                         const NavigationDestination(
                           icon: Icon(Icons.explore_outlined),

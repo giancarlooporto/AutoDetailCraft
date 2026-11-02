@@ -11,6 +11,7 @@ import 'auth_modal.dart';
 import 'edit_profile_dialog.dart';
 import '../widgets/job_recipe_card.dart';
 import 'detailer_workbench_view.dart';
+import '../services/local_storage_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   final JobRepository repository;
@@ -31,13 +32,31 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   void initState() {
     super.initState();
     _clientTabController = TabController(length: 2, vsync: this);
+    _loadSavedClientProfileTab();
+    _clientTabController.addListener(_onClientTabChanged);
     if (widget.repository.isLoggedIn || SupabaseAuthService.isLoggedIn) {
       widget.repository.refreshGarage();
     }
   }
 
+  void _onClientTabChanged() {
+    if (!_clientTabController.indexIsChanging) {
+      LocalStorageService.saveClientProfileTabIndex(_clientTabController.index);
+    }
+  }
+
+  Future<void> _loadSavedClientProfileTab() async {
+    final savedTab = await LocalStorageService.loadClientProfileTabIndex();
+    if (mounted && savedTab >= 0 && savedTab < _clientTabController.length) {
+      setState(() {
+        _clientTabController.index = savedTab;
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _clientTabController.removeListener(_onClientTabChanged);
     _clientTabController.dispose();
     super.dispose();
   }
@@ -1073,6 +1092,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   delegate: _SliverTabBarDelegate(
                     TabBar(
                       controller: _clientTabController,
+                      onTap: (index) => LocalStorageService.saveClientProfileTabIndex(index),
                       labelColor: AppTheme.primary,
                       unselectedLabelColor: AppTheme.textSecondary,
                       indicatorColor: AppTheme.primary,

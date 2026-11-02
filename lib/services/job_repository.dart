@@ -61,6 +61,7 @@ class JobRepository extends ChangeNotifier {
   String _selectedLocationCity = 'All Locations';
   String _searchQuery = '';
   int _activeTabIndex = 0;
+  int _bookingsTabIndex = 0;
   bool _isLoggedIn = false;
   bool _isInitialized = false;
   bool _isInitializing = false;
@@ -91,6 +92,21 @@ class JobRepository extends ChangeNotifier {
   set isLoggedIn(bool value) => _isLoggedIn = value;
   bool get isGuestMode => !_isLoggedIn;
   int get activeTabIndex => _activeTabIndex;
+
+  int get bookingsTabIndex => _bookingsTabIndex;
+  void setBookingsTabIndex(int index) {
+    if (_bookingsTabIndex != index) {
+      _bookingsTabIndex = index;
+      LocalStorageService.saveClientBookingsTab(index);
+      notifyListeners();
+    } else {
+      LocalStorageService.saveClientBookingsTab(index);
+    }
+  }
+
+  bool get hasDetailerMode =>
+      _currentUser.role == UserRole.detailer ||
+      _currentUser.businessName.trim().isNotEmpty;
 
   bool get isDetailerWorkbenchMode => _currentUser.role == UserRole.detailer;
   set isDetailerWorkbenchMode(bool value) {
@@ -162,8 +178,9 @@ class JobRepository extends ChangeNotifier {
         _seedSampleData();
       }
 
-      // 1. Load active tab index
+      // 1. Load active tab index & subtab indices
       _activeTabIndex = await LocalStorageService.loadActiveTab();
+      _bookingsTabIndex = await LocalStorageService.loadClientBookingsTab();
 
       // 2. Check auth state (Supabase or stored session)
       final isGuest = await LocalStorageService.loadIsGuest();
@@ -893,15 +910,23 @@ class JobRepository extends ChangeNotifier {
       await LocalStorageService.saveOwnerPinHash(_ownerPinHash);
     }
 
-    // Only keep in studio workbench mode if user explicitly has a detailer/superAdmin role AND a registered business name
-    final isExplicitStudio = (_currentUser.role == UserRole.detailer || _currentUser.role == UserRole.superAdmin) &&
-        _currentUser.businessName.trim().isNotEmpty;
-    if (isExplicitStudio) {
-      _currentUser = _currentUser.copyWith(role: UserRole.detailer, isVerifiedHost: true);
+    // Routing defaults on login:
+    // If account has detailer mode -> default to My Studio (Detailer Workbench) at tab 3.
+    // If standard client account (no detailer mode) -> default to My Garage at tab 3.
+    final hasDetailer = hasDetailerMode;
+
+    if (hasDetailer) {
+      final role = _currentUser.role == UserRole.superAdmin ? UserRole.superAdmin : UserRole.detailer;
+      _currentUser = _currentUser.copyWith(role: role, isVerifiedHost: true);
       await LocalStorageService.saveWorkbenchMode('studio');
+      _activeTabIndex = 3;
+      await LocalStorageService.saveActiveTab(3);
     } else {
       _currentUser = _currentUser.copyWith(role: UserRole.client);
       await LocalStorageService.saveWorkbenchMode('garage');
+      _activeTabIndex = 3;
+      await LocalStorageService.saveActiveTab(3);
+      await LocalStorageService.saveClientProfileTabIndex(0);
     }
 
     await LocalStorageService.saveCurrentUser(_currentUser);
@@ -965,6 +990,10 @@ class JobRepository extends ChangeNotifier {
     await LocalStorageService.saveActiveTeamMemberId(null);
     await LocalStorageService.logoutSession();
     await LocalStorageService.saveWorkbenchMode('garage');
+    _activeTabIndex = 0;
+    await LocalStorageService.saveActiveTab(0);
+    await LocalStorageService.saveClientBookingsTab(0);
+    await LocalStorageService.saveClientProfileTabIndex(0);
     _conversations = [];
     await LocalStorageService.saveConversations([]);
     await LocalStorageService.saveGarageVehicles([]);
@@ -1021,6 +1050,10 @@ class JobRepository extends ChangeNotifier {
     await LocalStorageService.saveActiveTeamMemberId(null);
     await LocalStorageService.deleteAccountData(userId);
     await LocalStorageService.saveWorkbenchMode('garage');
+    _activeTabIndex = 0;
+    await LocalStorageService.saveActiveTab(0);
+    await LocalStorageService.saveClientBookingsTab(0);
+    await LocalStorageService.saveClientProfileTabIndex(0);
 
     // 4. Reset all in-memory repository collections to fresh blank state
     _jobs = [];
@@ -1046,6 +1079,8 @@ class JobRepository extends ChangeNotifier {
       _activeTabIndex = index;
       LocalStorageService.saveActiveTab(index);
       notifyListeners();
+    } else {
+      LocalStorageService.saveActiveTab(index);
     }
   }
 
@@ -4359,6 +4394,8 @@ class JobRepository extends ChangeNotifier {
     await LocalStorageService.saveActiveTeamMemberId(matchedMember.id);
     await LocalStorageService.saveWorkbenchMode('studio');
     await LocalStorageService.saveIsGuest(false);
+    _activeTabIndex = 3;
+    await LocalStorageService.saveActiveTab(3);
     _persistUser();
 
     notifyListeners();
@@ -4497,6 +4534,8 @@ class JobRepository extends ChangeNotifier {
     await LocalStorageService.saveActiveTeamMemberId(updatedMember.id);
     await LocalStorageService.saveWorkbenchMode('studio');
     await LocalStorageService.saveIsGuest(false);
+    _activeTabIndex = 3;
+    await LocalStorageService.saveActiveTab(3);
     _persistUser();
 
     notifyListeners();

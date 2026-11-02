@@ -46,6 +46,18 @@ class LocalStorageService {
   static const String _ownerPinKey = 'adc_owner_pin_v1';
   static const String _isOwnerLockedKey = 'adc_is_owner_locked_v1';
   static const String _ownerAutoLockMinutesKey = 'adc_owner_auto_lock_minutes_v1';
+  static const String _clientBookingsTabKey = 'adc_client_bookings_tab_v1';
+  static const String _clientProfileTabKey = 'adc_client_profile_tab_v1';
+  static const String _selectedServicePackageIdKey = 'adc_selected_service_package_id_v1';
+  static const String _selectedStudioBookingIdKey = 'adc_selected_studio_booking_id_v1';
+  static const String _selectedStudioConversationIdKey = 'adc_selected_studio_conversation_id_v1';
+  static const String _selectedPortfolioJobIdKey = 'adc_selected_portfolio_job_id_v1';
+  static const String _selectedTeamMemberSectionIdKey = 'adc_selected_team_member_section_id_v1';
+  static const String _selectedSettingsCategoryKey = 'adc_selected_settings_category_v1';
+  static const String _studioBookingFilterKey = 'adc_studio_booking_filter_v1';
+  static const String _selectedCalendarTeamMemberIdKey = 'adc_selected_calendar_team_member_id_v1';
+  static const String _studioMobileStepKey = 'adc_studio_mobile_step_v1';
+  static const String _selectedCalendarDateKey = 'adc_selected_calendar_date_v1';
 
   // Site Access Gate
   static Future<bool> isSiteUnlocked() async {
@@ -494,6 +506,232 @@ class LocalStorageService {
     } catch (_) {
       return null;
     }
+  }
+
+  // Client Bookings Tab Index (0: All, 1: Upcoming, etc.)
+  static Future<void> saveClientBookingsTab(int index) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_clientBookingsTabKey, index);
+    } catch (_) {}
+  }
+
+  static Future<int> loadClientBookingsTab() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_clientBookingsTabKey) ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  // Client Profile Subtab Index (0: My Garage, 1: Saved Recipes)
+  static Future<void> saveClientProfileTabIndex(int index) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_clientProfileTabKey, index);
+    } catch (_) {}
+  }
+
+  static Future<int> loadClientProfileTabIndex() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_clientProfileTabKey) ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  // Selected Service Package ID in Studio Services Hub
+  static Future<void> saveSelectedServicePackageId(String? id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (id == null) {
+        await prefs.remove(_selectedServicePackageIdKey);
+      } else {
+        await prefs.setString(_selectedServicePackageIdKey, id);
+      }
+    } catch (_) {}
+  }
+
+  static Future<String?> loadSelectedServicePackageId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_selectedServicePackageIdKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Selected Studio Booking ID in Studio Booked Hub
+  static Future<void> saveSelectedStudioBookingId(String? id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (id == null) {
+        await prefs.remove(_selectedStudioBookingIdKey);
+      } else {
+        await prefs.setString(_selectedStudioBookingIdKey, id);
+      }
+    } catch (_) {}
+  }
+
+  static Future<String?> loadSelectedStudioBookingId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_selectedStudioBookingIdKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Selected Studio Conversation ID in Studio Messages Hub
+  static Future<void> saveSelectedStudioConversationId(String? id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (id == null) {
+        await prefs.remove(_selectedStudioConversationIdKey);
+      } else {
+        await prefs.setString(_selectedStudioConversationIdKey, id);
+      }
+    } catch (_) {}
+  }
+
+  static Future<String?> loadSelectedStudioConversationId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_selectedStudioConversationIdKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Selected Portfolio Job ID in Studio Portfolio Hub
+  static Future<void> saveSelectedPortfolioJobId(String? id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (id == null) {
+        await prefs.remove(_selectedPortfolioJobIdKey);
+      } else {
+        await prefs.setString(_selectedPortfolioJobIdKey, id);
+      }
+    } catch (_) {}
+  }
+
+  static Future<String?> loadSelectedPortfolioJobId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_selectedPortfolioJobIdKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Selected Team Member ID in Studio Teams Hub
+  static Future<void> saveSelectedTeamMemberSectionId(String? id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (id == null) {
+        await prefs.remove(_selectedTeamMemberSectionIdKey);
+      } else {
+        await prefs.setString(_selectedTeamMemberSectionIdKey, id);
+      }
+    } catch (_) {}
+  }
+
+  static Future<String?> loadSelectedTeamMemberSectionId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_selectedTeamMemberSectionIdKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Selected Settings Category in Studio Settings Hub ('SHOP_MODE', 'STUDIO_PROFILE', 'ACCOUNT')
+  static Future<void> saveSelectedSettingsCategory(String category) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_selectedSettingsCategoryKey, category);
+    } catch (_) {}
+  }
+
+  static Future<String?> loadSelectedSettingsCategory() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_selectedSettingsCategoryKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Studio Booking Filter ('ALL', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')
+  static Future<void> saveStudioBookingFilter(String filter) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_studioBookingFilterKey, filter);
+    } catch (_) {}
+  }
+
+  static Future<String?> loadStudioBookingFilter() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_studioBookingFilterKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Selected Calendar Team Member ID ('all', 'founder', or member ID)
+  static Future<void> saveSelectedCalendarTeamMemberId(String id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_selectedCalendarTeamMemberIdKey, id);
+    } catch (_) {}
+  }
+
+  static Future<String?> loadSelectedCalendarTeamMemberId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_selectedCalendarTeamMemberIdKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Studio Mobile Step (0 = Hub list, 1 = Items list, 2 = Inspector)
+  static Future<void> saveStudioMobileStep(int step) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_studioMobileStepKey, step);
+    } catch (_) {}
+  }
+
+  static Future<int?> loadStudioMobileStep() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_studioMobileStepKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Selected Calendar Date in Studio Calendar Hub
+  static Future<void> saveSelectedCalendarDate(DateTime date) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_selectedCalendarDateKey, date.toIso8601String());
+    } catch (_) {}
+  }
+
+  static Future<DateTime?> loadSelectedCalendarDate() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final dateStr = prefs.getString(_selectedCalendarDateKey);
+      if (dateStr != null && dateStr.isNotEmpty) {
+        return DateTime.tryParse(dateStr);
+      }
+    } catch (_) {}
+    return null;
   }
 
   // Save Service Packages (adc_service_packages_v1)

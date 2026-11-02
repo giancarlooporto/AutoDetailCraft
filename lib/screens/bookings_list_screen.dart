@@ -857,8 +857,9 @@ class BookingsListScreen extends StatelessWidget {
             b.status == BookingStatus.cancelled).toList();
 
         return DefaultTabController(
+          key: ValueKey(initialTabIndex),
           length: 5,
-          initialIndex: (initialTabIndex >= 0 && initialTabIndex < 5) ? initialTabIndex : 1,
+          initialIndex: (initialTabIndex >= 0 && initialTabIndex < 5) ? initialTabIndex : 0,
           child: LayoutBuilder(
             builder: (context, constraints) {
               return Scaffold(
@@ -874,6 +875,7 @@ class BookingsListScreen extends StatelessWidget {
                   bottom: TabBar(
                     isScrollable: true,
                     tabAlignment: TabAlignment.start,
+                    onTap: (index) => repository.setBookingsTabIndex(index),
                     labelPadding: const EdgeInsets.symmetric(horizontal: 8),
                     indicatorColor: AppTheme.primary,
                     labelColor: AppTheme.primary,

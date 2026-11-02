@@ -134,9 +134,8 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
       _selectedHub = StudioHubSection.calendar;
       _selectedCalendarDate = widget.initialCalendarDate!;
       _calendarDisplayMonth = DateTime(_selectedCalendarDate.year, _selectedCalendarDate.month, 1);
-    } else {
-      _loadSavedHubSection();
     }
+    _loadSavedHubSection();
     widget.repository.addListener(_onRepoChanged);
     widget.repository.loadConversations();
     _ensureSelection();
@@ -165,19 +164,57 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     final savedName = await LocalStorageService.loadStudioHubSection();
     final savedCategory = await LocalStorageService.loadInventoryCategoryFilter();
     final savedInvId = await LocalStorageService.loadSelectedInventoryId();
+    final savedPkgId = await LocalStorageService.loadSelectedServicePackageId();
+    final savedBookingId = await LocalStorageService.loadSelectedStudioBookingId();
+    final savedConvId = await LocalStorageService.loadSelectedStudioConversationId();
+    final savedJobId = await LocalStorageService.loadSelectedPortfolioJobId();
+    final savedTeamId = await LocalStorageService.loadSelectedTeamMemberSectionId();
+    final savedSettingsCat = await LocalStorageService.loadSelectedSettingsCategory();
+    final savedBookingFilter = await LocalStorageService.loadStudioBookingFilter();
+    final savedCalendarMemberId = await LocalStorageService.loadSelectedCalendarTeamMemberId();
+    final savedCalendarDate = await LocalStorageService.loadSelectedCalendarDate();
+
     if (mounted) {
       setState(() {
-        if (savedName != null && widget.initialCalendarDate == null) {
+        if (savedName != null && widget.initialHubSection == null && widget.initialCalendarDate == null) {
           final match = StudioHubSection.values.where((s) => s.name == savedName);
           if (match.isNotEmpty) {
             _selectedHub = match.first;
           }
+        }
+        if (savedCalendarDate != null && widget.initialCalendarDate == null) {
+          _selectedCalendarDate = savedCalendarDate;
+          _calendarDisplayMonth = DateTime(savedCalendarDate.year, savedCalendarDate.month, 1);
         }
         if (savedCategory != null && (savedCategory == 'HARDWARE' || savedCategory == 'CHEMICALS' || savedCategory == 'RECIPE')) {
           _inventoryCategoryFilter = savedCategory;
         }
         if (savedInvId != null && savedInvId.isNotEmpty) {
           _selectedInventoryId = savedInvId;
+        }
+        if (savedPkgId != null && savedPkgId.isNotEmpty) {
+          _selectedServicePackageId = savedPkgId;
+        }
+        if (savedBookingId != null && savedBookingId.isNotEmpty) {
+          _selectedStudioBookingId = savedBookingId;
+        }
+        if (savedConvId != null && savedConvId.isNotEmpty) {
+          _selectedStudioConversationId = savedConvId;
+        }
+        if (savedJobId != null && savedJobId.isNotEmpty) {
+          _selectedPortfolioJobId = savedJobId;
+        }
+        if (savedTeamId != null && savedTeamId.isNotEmpty) {
+          _selectedTeamMemberId = savedTeamId;
+        }
+        if (savedSettingsCat != null && savedSettingsCat.isNotEmpty) {
+          _selectedSettingsCategory = savedSettingsCat;
+        }
+        if (savedBookingFilter != null && savedBookingFilter.isNotEmpty) {
+          _studioBookingFilter = savedBookingFilter;
+        }
+        if (savedCalendarMemberId != null && savedCalendarMemberId.isNotEmpty) {
+          _selectedCalendarTeamMemberId = savedCalendarMemberId;
         }
         _ensureSelection();
       });
@@ -352,6 +389,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               final myJobs = widget.repository.getJobsByDetailer(widget.repository.currentUser.id);
               if (myJobs.isNotEmpty) {
                 _selectedPortfolioJobId = myJobs.first.id;
+                LocalStorageService.saveSelectedPortfolioJobId(myJobs.first.id);
                 if (isMobile) _mobileStep = 2;
               }
             });
@@ -365,6 +403,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           availableRecipes: widget.repository.recipeItems,
           onSave: (pkg) {
             widget.repository.addServicePackage(pkg);
+            LocalStorageService.saveSelectedServicePackageId(pkg.id);
             setState(() {
               _selectedServicePackageId = pkg.id;
               if (isMobile) _mobileStep = 2;
@@ -1445,6 +1484,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 ],
               ),
               onTap: () {
+                LocalStorageService.saveSelectedTeamMemberSectionId('founder');
                 setState(() {
                   _selectedTeamMemberId = 'founder';
                   if (isMobile) _mobileStep = 2;
@@ -1538,6 +1578,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   ],
                 ),
                 onTap: () {
+                  LocalStorageService.saveSelectedTeamMemberSectionId(member.id);
                   setState(() {
                     _selectedTeamMemberId = member.id;
                     if (isMobile) _mobileStep = 2;
@@ -1644,6 +1685,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 ],
               ),
               onTap: () {
+                LocalStorageService.saveSelectedPortfolioJobId(job.id);
                 setState(() {
                   _selectedPortfolioJobId = job.id;
                   if (isMobile) _mobileStep = 2;
@@ -1744,8 +1786,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 ],
               ),
               onTap: () {
+                final newId = isSelected ? null : pkg.id;
+                LocalStorageService.saveSelectedServicePackageId(newId);
                 setState(() {
-                  _selectedServicePackageId = isSelected ? null : pkg.id;
+                  _selectedServicePackageId = newId;
                   if (isMobile && !isSelected) _mobileStep = 2;
                 });
               },
@@ -1989,6 +2033,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           ],
           onChanged: (newId) {
             if (newId != null) {
+              LocalStorageService.saveSelectedCalendarTeamMemberId(newId);
               setState(() {
                 _selectedCalendarTeamMemberId = newId;
               });
@@ -2263,6 +2308,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               onTap: () {
                 setState(() {
                   _selectedCalendarDate = cellDate;
+                  LocalStorageService.saveSelectedCalendarDate(cellDate);
                   if (isMobile) _mobileStep = 2;
                 });
               },
@@ -2643,6 +2689,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               key: ValueKey('settings_option_${opt.id.toLowerCase()}'),
               borderRadius: BorderRadius.circular(10),
               onTap: () {
+                LocalStorageService.saveSelectedSettingsCategory(opt.id);
                 setState(() {
                   _selectedSettingsCategory = opt.id;
                   if (isMobile) _mobileStep = 2;
@@ -3626,6 +3673,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         child: InkWell(
                           borderRadius: BorderRadius.circular(10),
                           onTap: () {
+                            LocalStorageService.saveSelectedStudioBookingId(b.id);
                             setState(() {
                               _selectedStudioBookingId = b.id;
                               if (isMobile) _mobileStep = 2;
@@ -3741,7 +3789,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     final isSelected = _studioBookingFilter == key;
     return InkWell(
       borderRadius: BorderRadius.circular(6),
-      onTap: () => setState(() => _studioBookingFilter = key),
+      onTap: () {
+        LocalStorageService.saveStudioBookingFilter(key);
+        setState(() => _studioBookingFilter = key);
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
@@ -4102,6 +4153,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     icon: const Icon(Icons.calendar_month_rounded, size: 16),
                     label: const Text('View in Calendar'),
                     onPressed: () {
+                      LocalStorageService.saveStudioHubSection(StudioHubSection.calendar.name);
                       setState(() {
                         _selectedHub = StudioHubSection.calendar;
                         _selectedCalendarDate = b.scheduledDate;
@@ -4394,6 +4446,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                                   style: const TextStyle(fontSize: 10, color: AppTheme.textMuted),
                                 ),
                           onTap: () {
+                            LocalStorageService.saveSelectedStudioConversationId(c.id);
                             setState(() {
                               _selectedStudioConversationId = c.id;
                               if (isMobile) _mobileStep = 2;
@@ -7992,7 +8045,10 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                 ),
                 if (_canViewAllCalendar) ...[
                   InkWell(
-                    onTap: () => setState(() => _selectedCalendarTeamMemberId = 'all'),
+                    onTap: () {
+                      LocalStorageService.saveSelectedCalendarTeamMemberId('all');
+                      setState(() => _selectedCalendarTeamMemberId = 'all');
+                    },
                     child: const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       child: Text('Back to All Team', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary)),
@@ -8523,6 +8579,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                   const SizedBox(width: 6),
                   InkWell(
                     onTap: () {
+                      LocalStorageService.saveSelectedCalendarTeamMemberId(m.id);
                       setState(() {
                         _selectedCalendarTeamMemberId = m.id;
                       });
