@@ -12,8 +12,13 @@ typedef ClientBookingsScreen = BookingsListScreen;
 
 class BookingsListScreen extends StatelessWidget {
   final JobRepository repository;
+  final int initialTabIndex;
 
-  const BookingsListScreen({super.key, required this.repository});
+  const BookingsListScreen({
+    super.key,
+    required this.repository,
+    this.initialTabIndex = 1,
+  });
 
   void _showBookingDetailsModal(BuildContext context, BookingAppointment initialBooking) {
     showModalBottomSheet(
@@ -340,10 +345,13 @@ class BookingsListScreen extends StatelessWidget {
                             const SizedBox(width: 16),
                             TextButton.icon(
                               onPressed: () async {
+                                final confirmed = await _showCancelConfirmDialog(context, currentBooking);
+                                if (!confirmed) return;
+
                                 await repository.cancelBooking(currentBooking.id);
                                 if (ctx.mounted) Navigator.pop(ctx);
                                 if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
+                                  ScaffoldMessenger.maybeOf(context)?.showSnackBar(
                                     SnackBar(
                                       behavior: SnackBarBehavior.floating,
                                       backgroundColor: AppTheme.surface,
@@ -378,6 +386,57 @@ class BookingsListScreen extends StatelessWidget {
         },
       ),
     );
+  }
+
+  Future<bool> _showCancelConfirmDialog(BuildContext context, BookingAppointment booking) async {
+    final studioName = booking.detailerBusinessName.trim().isNotEmpty
+        ? booking.detailerBusinessName.trim()
+        : (booking.detailerName.trim().isNotEmpty ? booking.detailerName.trim() : 'the detailing studio');
+    final packageTitle = booking.package.title.trim().isNotEmpty ? '"${booking.package.title.trim()}"' : 'your appointment';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppTheme.border),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Color(0xFFFF5252), size: 22),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Cancel Reservation?',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to cancel your appointment for $packageTitle with $studioName?\n\nYour reserved time slot will be released, and any deposit held in escrow will be processed according to studio policy.',
+          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx, false),
+            child: const Text('Keep Appointment', style: TextStyle(color: AppTheme.textMuted)),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFF5252),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            icon: const Icon(Icons.cancel_outlined, size: 16),
+            label: const Text('Confirm Cancel', style: TextStyle(fontWeight: FontWeight.bold)),
+            onPressed: () => Navigator.pop(dlgCtx, true),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
   }
 
   void _showRescheduleDialog(BuildContext context, JobRepository repo, BookingAppointment booking) async {
@@ -554,33 +613,51 @@ class BookingsListScreen extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 16,
-                      backgroundImage: booking.detailerAvatar.isNotEmpty ? NetworkImage(booking.detailerAvatar) : null,
-                      child: booking.detailerAvatar.isEmpty ? const Icon(Icons.storefront_rounded, size: 16) : null,
-                    ),
-                    const SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(booking.detailerBusinessName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                        Text(booking.locationType.label, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-                      ],
-                    ),
-                  ],
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: booking.status.statusColor.withAlpha(25),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: booking.status.statusColor.withAlpha(90)),
+                Expanded(
+                  flex: 3,
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 16,
+                        backgroundImage: booking.detailerAvatar.isNotEmpty ? NetworkImage(booking.detailerAvatar) : null,
+                        child: booking.detailerAvatar.isEmpty ? const Icon(Icons.storefront_rounded, size: 16) : null,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              booking.detailerBusinessName,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              booking.locationType.label,
+                              style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  child: Text(
-                    booking.status.label,
-                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: booking.status.statusColor),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  flex: 2,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: booking.status.statusColor.withAlpha(25),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: booking.status.statusColor.withAlpha(90)),
+                    ),
+                    child: Text(
+                      booking.status.label,
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: booking.status.statusColor),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ),
               ],
@@ -606,11 +683,15 @@ class BookingsListScreen extends StatelessWidget {
                 const SizedBox(width: 8),
                 const Icon(Icons.access_time_rounded, size: 14, color: AppTheme.textMuted),
                 const SizedBox(width: 4),
-                Text(
-                  (booking.isMultiDay || booking.package.isMultiDay)
-                      ? '${booking.startTime ?? 'Drop-off'} → ${booking.endTime ?? 'Ready'}'
-                      : booking.scheduledTimeSlot,
-                  style: const TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
+                Flexible(
+                  flex: 2,
+                  child: Text(
+                    (booking.isMultiDay || booking.package.isMultiDay)
+                        ? '${booking.startTime ?? 'Drop-off'} → ${booking.endTime ?? 'Ready'}'
+                        : booking.scheduledTimeSlot,
+                    style: const TextStyle(fontSize: 11.5, color: AppTheme.textMuted),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
                 Offstage(offstage: true, child: Text(booking.scheduledTimeSlot)),
                 const SizedBox(width: 10),
@@ -776,8 +857,8 @@ class BookingsListScreen extends StatelessWidget {
             b.status == BookingStatus.cancelled).toList();
 
         return DefaultTabController(
-          length: 4,
-          initialIndex: 0,
+          length: 5,
+          initialIndex: (initialTabIndex >= 0 && initialTabIndex < 5) ? initialTabIndex : 1,
           child: LayoutBuilder(
             builder: (context, constraints) {
               return Scaffold(
@@ -792,12 +873,15 @@ class BookingsListScreen extends StatelessWidget {
                   ],
                   bottom: TabBar(
                     isScrollable: true,
+                    tabAlignment: TabAlignment.start,
+                    labelPadding: const EdgeInsets.symmetric(horizontal: 8),
                     indicatorColor: AppTheme.primary,
                     labelColor: AppTheme.primary,
                     unselectedLabelColor: AppTheme.textMuted,
                     labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
                     unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal, fontSize: 12.5),
                     tabs: [
+                      Tab(text: 'All (${allBookings.length})'),
                       Tab(text: 'Upcoming (${upcoming.length})'),
                       Tab(text: 'In Progress (${inProgress.length})'),
                       Tab(text: 'Completed (${completed.length})'),
@@ -816,6 +900,13 @@ class BookingsListScreen extends StatelessWidget {
                         Expanded(
                           child: TabBarView(
                             children: [
+                              _buildBookingsTabList(
+                                context,
+                                allBookings,
+                                emptyTitle: 'No Bookings Found',
+                                emptySubtitle: 'All your booked detailing appointments will appear here.',
+                                emptyIcon: Icons.calendar_month_outlined,
+                              ),
                               _buildBookingsTabList(
                                 context,
                                 upcoming,
