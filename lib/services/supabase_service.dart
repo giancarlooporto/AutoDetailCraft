@@ -7,6 +7,13 @@ class SupabaseService {
   static const String supabaseAnonKey = 'sb_publishable_sK8zo59KFsJXNqktwxWdmA_Yu_3mnhy';
   static const String vehiclePhotosBucket = 'vehicle-photos';
 
+  /// Public Google Maps Platform client key (Places API New + Geocoding API).
+  /// Supports compile-time override via `--dart-define=GOOGLE_MAPS_API_KEY=...`.
+  static const String googleMapsApiKey = String.fromEnvironment(
+    'GOOGLE_MAPS_API_KEY',
+    defaultValue: 'AIzaSyBaSDM1RrXUaBDlBq4Do_lrCfOnAqv6hlc',
+  );
+
   static bool _isInitialized = false;
   static bool get isInitialized => _isInitialized;
 

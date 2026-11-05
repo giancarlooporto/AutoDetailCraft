@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../core/theme/app_theme.dart';
@@ -8,6 +9,7 @@ import '../services/job_repository.dart';
 import '../services/supabase_auth_service.dart';
 import '../services/mock_data_service.dart';
 import '../services/map_launcher_service.dart';
+import '../services/places_autocomplete_service.dart';
 import 'auth_modal.dart';
 import 'vehicle_editor_dialog.dart';
 
@@ -61,6 +63,14 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   final _tempStateCtrl = TextEditingController();
   final _tempZipCtrl = TextEditingController();
   final _gateCodeNotesCtrl = TextEditingController();
+
+  // --- Session-Token Temporary Location Autocomplete State ---
+  Timer? _tempAutocompleteDebounce;
+  late String _tempPlacesSessionToken;
+  List<PlacePrediction> _tempAddressPredictions = const [];
+  bool _isFetchingTempPredictions = false;
+  double? _tempResolvedLatitude;
+  double? _tempResolvedLongitude;
 
   List<String> get _timeSlots {
     final hours = widget.repository.getHoursForDate(_selectedDate, detailerId: widget.detailer.id);
@@ -168,6 +178,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   @override
   void initState() {
     super.initState();
+    _tempPlacesSessionToken = PlacesAutocompleteService.generateSessionToken();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         ScaffoldMessenger.maybeOf(context)?.clearSnackBars();
@@ -246,6 +257,105 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     _adjustSelectedSlotIfBlocked();
     widget.repository.refreshAvailabilityBlocks(detailerId: widget.detailer.id);
     widget.repository.refreshDetailerPreferences(widget.detailer.id);
+  }
+
+  void _invalidateTempResolvedCoordinates() {
+    if (_tempResolvedLatitude != null || _tempResolvedLongitude != null) {
+      setState(() {
+        _tempResolvedLatitude = null;
+        _tempResolvedLongitude = null;
+      });
+    }
+  }
+
+  void _onTempStreetChanged(String value) {
+    _tempAutocompleteDebounce?.cancel();
+    final trimmed = value.trim();
+    if (trimmed.length < 3) {
+      if (_tempAddressPredictions.isNotEmpty ||
+          _isFetchingTempPredictions ||
+          _tempResolvedLatitude != null ||
+          _tempResolvedLongitude != null) {
+        setState(() {
+          _tempAddressPredictions = const [];
+          _isFetchingTempPredictions = false;
+          _tempResolvedLatitude = null;
+          _tempResolvedLongitude = null;
+        });
+      }
+      return;
+    }
+
+    if (_tempResolvedLatitude != null || _tempResolvedLongitude != null) {
+      setState(() {
+        _tempResolvedLatitude = null;
+        _tempResolvedLongitude = null;
+      });
+    }
+
+    _tempAutocompleteDebounce = Timer(const Duration(milliseconds: 300), () async {
+      if (!mounted) return;
+      setState(() => _isFetchingTempPredictions = true);
+      final token = _tempPlacesSessionToken;
+      final results = await PlacesAutocompleteService.fetchAutocompleteSuggestions(
+        trimmed,
+        sessionToken: token,
+      );
+      if (!mounted || _tempStreetCtrl.text.trim() != trimmed) return;
+      setState(() {
+        _tempAddressPredictions = results;
+        _isFetchingTempPredictions = false;
+      });
+    });
+  }
+
+  Future<void> _onSelectTempPrediction(PlacePrediction prediction) async {
+    _tempAutocompleteDebounce?.cancel();
+    final activeToken = _tempPlacesSessionToken;
+
+    setState(() {
+      _tempAddressPredictions = const [];
+      _isFetchingTempPredictions = true;
+    });
+
+    final details = await PlacesAutocompleteService.fetchPlaceDetails(
+      prediction.placeId,
+      sessionToken: activeToken,
+    );
+
+    // Rotate session token immediately after completing a Place Details lookup
+    _tempPlacesSessionToken = PlacesAutocompleteService.generateSessionToken();
+
+    if (!mounted) return;
+
+    setState(() {
+      _isFetchingTempPredictions = false;
+      if (details != null) {
+        _tempStreetCtrl.text = details.streetAddress.isNotEmpty
+            ? details.streetAddress
+            : prediction.mainText;
+        if (details.unitOrApt.isNotEmpty) {
+          _tempUnitCtrl.text = details.unitOrApt;
+        }
+        if (details.city.isNotEmpty) {
+          _tempCityCtrl.text = details.city;
+        }
+        if (details.state.isNotEmpty) {
+          _tempStateCtrl.text = details.state;
+        }
+        if (details.postalCode.isNotEmpty) {
+          _tempZipCtrl.text = details.postalCode;
+        }
+        _tempResolvedLatitude = details.latitude;
+        _tempResolvedLongitude = details.longitude;
+      } else {
+        _tempStreetCtrl.text = prediction.mainText.isNotEmpty
+            ? prediction.mainText
+            : prediction.description;
+        _tempResolvedLatitude = null;
+        _tempResolvedLongitude = null;
+      }
+    });
   }
 
   void _onRepoChanged() {
@@ -385,6 +495,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
 
   @override
   void dispose() {
+    _tempAutocompleteDebounce?.cancel();
     if (widget.repository.activeStudioDetailerId == widget.detailer.id) {
       widget.repository.activeStudioDetailerId = null;
     }
@@ -559,8 +670,8 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         effectiveUnitOrGate = gateNotes.isNotEmpty
             ? gateNotes
             : (_tempUnitCtrl.text.trim().isNotEmpty ? _tempUnitCtrl.text.trim() : null);
-        effectiveLat = null;
-        effectiveLon = null;
+        effectiveLat = _tempResolvedLatitude;
+        effectiveLon = _tempResolvedLongitude;
       }
       if (effectiveAddress.isEmpty) {
         effectiveAddress = _addressCtrl.text.trim().isNotEmpty ? _addressCtrl.text.trim() : 'Client Location';
@@ -2524,11 +2635,81 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
               TextField(
                 key: const Key('checkout_temp_street_field'),
                 controller: _tempStreetCtrl,
-                decoration: const InputDecoration(
+                onChanged: _onTempStreetChanged,
+                decoration: InputDecoration(
                   labelText: 'Street Address',
-                  prefixIcon: Icon(Icons.home_outlined),
+                  prefixIcon: const Icon(Icons.home_outlined),
+                  suffixIcon: _isFetchingTempPredictions
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
+                          ),
+                        )
+                      : null,
                 ),
               ),
+              if (_tempAddressPredictions.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Container(
+                  key: const Key('checkout_temp_autocomplete_dropdown'),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.primary.withAlpha(120)),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: _tempAddressPredictions.asMap().entries.map((entry) {
+                      final idx = entry.key;
+                      final pred = entry.value;
+                      return InkWell(
+                        key: Key('checkout_temp_prediction_item_$idx'),
+                        onTap: () => _onSelectTempPrediction(pred),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.place_rounded, size: 16, color: AppTheme.primary),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      pred.mainText.isNotEmpty ? pred.mainText : pred.description,
+                                      style: const TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    if (pred.secondaryText.isNotEmpty)
+                                      Text(
+                                        pred.secondaryText,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppTheme.textSecondary,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
               TextField(
                 key: const Key('checkout_temp_unit_field'),
@@ -2546,6 +2727,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                     child: TextField(
                       key: const Key('checkout_temp_city_field'),
                       controller: _tempCityCtrl,
+                      onChanged: (_) => _invalidateTempResolvedCoordinates(),
                       decoration: const InputDecoration(labelText: 'City'),
                     ),
                   ),
@@ -2555,6 +2737,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                     child: TextField(
                       key: const Key('checkout_temp_state_field'),
                       controller: _tempStateCtrl,
+                      onChanged: (_) => _invalidateTempResolvedCoordinates(),
                       decoration: const InputDecoration(labelText: 'State'),
                     ),
                   ),
@@ -2564,6 +2747,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
                     child: TextField(
                       key: const Key('checkout_temp_zip_field'),
                       controller: _tempZipCtrl,
+                      onChanged: (_) => _invalidateTempResolvedCoordinates(),
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(labelText: 'ZIP Code'),
                     ),

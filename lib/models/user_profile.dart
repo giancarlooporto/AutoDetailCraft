@@ -345,6 +345,7 @@ class UserProfile {
     String? postalCode,
     double? latitude,
     double? longitude,
+    bool clearCoordinates = false,
     String? studioStreetAddress,
     String? studioUnitOrApt,
     String? studioCity,
@@ -352,6 +353,7 @@ class UserProfile {
     String? studioPostalCode,
     double? studioLatitude,
     double? studioLongitude,
+    bool clearStudioCoordinates = false,
   }) {
     return UserProfile(
       id: id ?? this.id,
@@ -389,15 +391,15 @@ class UserProfile {
       city: city ?? this.city,
       state: state ?? this.state,
       postalCode: postalCode ?? this.postalCode,
-      latitude: latitude ?? this.latitude,
-      longitude: longitude ?? this.longitude,
+      latitude: clearCoordinates ? null : (latitude ?? this.latitude),
+      longitude: clearCoordinates ? null : (longitude ?? this.longitude),
       studioStreetAddress: studioStreetAddress ?? this.studioStreetAddress,
       studioUnitOrApt: studioUnitOrApt ?? this.studioUnitOrApt,
       studioCity: studioCity ?? this.studioCity,
       studioState: studioState ?? this.studioState,
       studioPostalCode: studioPostalCode ?? this.studioPostalCode,
-      studioLatitude: studioLatitude ?? this.studioLatitude,
-      studioLongitude: studioLongitude ?? this.studioLongitude,
+      studioLatitude: clearStudioCoordinates ? null : (studioLatitude ?? this.studioLatitude),
+      studioLongitude: clearStudioCoordinates ? null : (studioLongitude ?? this.studioLongitude),
     );
   }
 

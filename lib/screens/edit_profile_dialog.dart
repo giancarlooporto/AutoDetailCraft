@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
 import '../services/job_repository.dart';
 import '../services/image_picker_service.dart';
+import '../services/places_autocomplete_service.dart';
 import '../services/supabase_service.dart';
 
 class EditProfileDialog extends StatefulWidget {
@@ -50,6 +52,14 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
   late TextEditingController _stateCtrl;
   late TextEditingController _zipCtrl;
 
+  // Session-Token Address Autocomplete State
+  Timer? _autocompleteDebounce;
+  late String _placesSessionToken;
+  List<PlacePrediction> _addressPredictions = const [];
+  bool _isFetchingPredictions = false;
+  double? _resolvedLatitude;
+  double? _resolvedLongitude;
+
   late String _avatarUrl;
   Uint8List? _avatarBytes;
   late String _coverUrl;
@@ -61,6 +71,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
   @override
   void initState() {
     super.initState();
+    _placesSessionToken = PlacesAutocompleteService.generateSessionToken();
     final user = widget.repository.currentUser;
     _nameCtrl = TextEditingController(text: user.displayName);
     _businessCtrl = TextEditingController(text: user.businessName);
@@ -85,6 +96,8 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
       _zipCtrl = TextEditingController(
         text: user.studioPostalCode.isNotEmpty ? user.studioPostalCode : user.postalCode,
       );
+      _resolvedLatitude = user.studioLatitude;
+      _resolvedLongitude = user.studioLongitude;
     } else {
       _streetCtrl = TextEditingController(text: user.streetAddress);
       _unitCtrl = TextEditingController(text: user.unitOrApt);
@@ -95,6 +108,8 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
         text: user.state.isNotEmpty ? user.state : (user.location.contains(',') ? user.location.split(',')[1].trim() : ''),
       );
       _zipCtrl = TextEditingController(text: user.postalCode);
+      _resolvedLatitude = user.latitude;
+      _resolvedLongitude = user.longitude;
     }
 
     _avatarUrl = user.avatarUrl;
@@ -105,6 +120,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
 
   @override
   void dispose() {
+    _autocompleteDebounce?.cancel();
     _nameCtrl.dispose();
     _businessCtrl.dispose();
     _locationCtrl.dispose();
@@ -117,6 +133,105 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
     _stateCtrl.dispose();
     _zipCtrl.dispose();
     super.dispose();
+  }
+
+  void _invalidateResolvedCoordinates() {
+    if (_resolvedLatitude != null || _resolvedLongitude != null) {
+      setState(() {
+        _resolvedLatitude = null;
+        _resolvedLongitude = null;
+      });
+    }
+  }
+
+  void _onStreetChanged(String value) {
+    _autocompleteDebounce?.cancel();
+    final trimmed = value.trim();
+    if (trimmed.length < 3) {
+      if (_addressPredictions.isNotEmpty ||
+          _isFetchingPredictions ||
+          _resolvedLatitude != null ||
+          _resolvedLongitude != null) {
+        setState(() {
+          _addressPredictions = const [];
+          _isFetchingPredictions = false;
+          _resolvedLatitude = null;
+          _resolvedLongitude = null;
+        });
+      }
+      return;
+    }
+
+    if (_resolvedLatitude != null || _resolvedLongitude != null) {
+      setState(() {
+        _resolvedLatitude = null;
+        _resolvedLongitude = null;
+      });
+    }
+
+    _autocompleteDebounce = Timer(const Duration(milliseconds: 300), () async {
+      if (!mounted) return;
+      setState(() => _isFetchingPredictions = true);
+      final token = _placesSessionToken;
+      final results = await PlacesAutocompleteService.fetchAutocompleteSuggestions(
+        trimmed,
+        sessionToken: token,
+      );
+      if (!mounted || _streetCtrl.text.trim() != trimmed) return;
+      setState(() {
+        _addressPredictions = results;
+        _isFetchingPredictions = false;
+      });
+    });
+  }
+
+  Future<void> _onSelectPrediction(PlacePrediction prediction) async {
+    _autocompleteDebounce?.cancel();
+    final activeToken = _placesSessionToken;
+
+    setState(() {
+      _addressPredictions = const [];
+      _isFetchingPredictions = true;
+    });
+
+    final details = await PlacesAutocompleteService.fetchPlaceDetails(
+      prediction.placeId,
+      sessionToken: activeToken,
+    );
+
+    // Rotate session token immediately after completing a Place Details lookup
+    _placesSessionToken = PlacesAutocompleteService.generateSessionToken();
+
+    if (!mounted) return;
+
+    setState(() {
+      _isFetchingPredictions = false;
+      if (details != null) {
+        _streetCtrl.text = details.streetAddress.isNotEmpty
+            ? details.streetAddress
+            : prediction.mainText;
+        if (details.unitOrApt.isNotEmpty) {
+          _unitCtrl.text = details.unitOrApt;
+        }
+        if (details.city.isNotEmpty) {
+          _cityCtrl.text = details.city;
+        }
+        if (details.state.isNotEmpty) {
+          _stateCtrl.text = details.state;
+        }
+        if (details.postalCode.isNotEmpty) {
+          _zipCtrl.text = details.postalCode;
+        }
+        _resolvedLatitude = details.latitude;
+        _resolvedLongitude = details.longitude;
+      } else {
+        _streetCtrl.text = prediction.mainText.isNotEmpty
+            ? prediction.mainText
+            : prediction.description;
+        _resolvedLatitude = null;
+        _resolvedLongitude = null;
+      }
+    });
   }
 
   Future<void> _pickNewAvatar() async {
@@ -252,6 +367,9 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
         studioCity: city,
         studioState: state,
         studioPostalCode: zip,
+        studioLatitude: _resolvedLatitude,
+        studioLongitude: _resolvedLongitude,
+        clearStudioCoordinates: _resolvedLatitude == null || _resolvedLongitude == null,
         location: composedCityState.isNotEmpty ? composedCityState : (_locationCtrl.text.trim().isNotEmpty ? _locationCtrl.text.trim() : currentUser.location),
         bio: _bioCtrl.text.trim(),
         phone: _phoneCtrl.text.trim(),
@@ -270,6 +388,9 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
         city: city,
         state: state,
         postalCode: zip,
+        latitude: _resolvedLatitude,
+        longitude: _resolvedLongitude,
+        clearCoordinates: _resolvedLatitude == null || _resolvedLongitude == null,
         location: composedCityState.isNotEmpty ? composedCityState : (_locationCtrl.text.trim().isNotEmpty ? _locationCtrl.text.trim() : currentUser.location),
         bio: _bioCtrl.text.trim(),
         phone: _phoneCtrl.text.trim(),
@@ -405,7 +526,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
               ),
               const SizedBox(height: 12),
 
-              // Dedicated Address Fields (100% Offline Manual Entry)
+              // Dedicated Address Fields (with Session-Token Autocomplete + Manual Fallback)
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -424,10 +545,36 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                           color: AppTheme.primary,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          widget.isStudioProfile ? 'Commercial Studio / Shop Address' : 'Personal Residential Address',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                        Expanded(
+                          child: Text(
+                            widget.isStudioProfile ? 'Commercial Studio / Shop Address' : 'Personal Residential Address',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
+                        if (_resolvedLatitude != null && _resolvedLongitude != null) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            key: const Key('edit_profile_verified_coords_badge'),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary.withAlpha(30),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: AppTheme.primary.withAlpha(80)),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.verified_rounded, size: 11, color: AppTheme.primary),
+                                SizedBox(width: 3),
+                                Text(
+                                  'GPS Verified',
+                                  style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -441,12 +588,82 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                     TextFormField(
                       key: const Key('edit_profile_street_input'),
                       controller: _streetCtrl,
+                      onChanged: _onStreetChanged,
                       decoration: InputDecoration(
                         labelText: widget.isStudioProfile ? 'Studio Street Address' : 'Street Address',
                         hintText: 'e.g. 1200 S Congress Ave',
                         prefixIcon: const Icon(Icons.location_on_outlined, size: 18),
+                        suffixIcon: _isFetchingPredictions
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
+                                ),
+                              )
+                            : null,
                       ),
                     ),
+                    if (_addressPredictions.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        key: const Key('edit_profile_autocomplete_dropdown'),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surface,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppTheme.primary.withAlpha(120)),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: _addressPredictions.asMap().entries.map((entry) {
+                            final idx = entry.key;
+                            final pred = entry.value;
+                            return InkWell(
+                              key: Key('edit_profile_prediction_item_$idx'),
+                              onTap: () => _onSelectPrediction(pred),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.place_rounded, size: 16, color: AppTheme.primary),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            pred.mainText.isNotEmpty ? pred.mainText : pred.description,
+                                            style: const TextStyle(
+                                              fontSize: 12.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          if (pred.secondaryText.isNotEmpty)
+                                            Text(
+                                              pred.secondaryText,
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                color: AppTheme.textSecondary,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     TextFormField(
                       key: const Key('edit_profile_unit_input'),
@@ -466,6 +683,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                           child: TextFormField(
                             key: const Key('edit_profile_city_input'),
                             controller: _cityCtrl,
+                            onChanged: (_) => _invalidateResolvedCoordinates(),
                             decoration: const InputDecoration(
                               labelText: 'City',
                               hintText: 'e.g. Austin',
@@ -479,6 +697,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                           child: TextFormField(
                             key: const Key('edit_profile_state_input'),
                             controller: _stateCtrl,
+                            onChanged: (_) => _invalidateResolvedCoordinates(),
                             textCapitalization: TextCapitalization.characters,
                             decoration: const InputDecoration(
                               labelText: 'State',
@@ -492,6 +711,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                           child: TextFormField(
                             key: const Key('edit_profile_zip_input'),
                             controller: _zipCtrl,
+                            onChanged: (_) => _invalidateResolvedCoordinates(),
                             keyboardType: TextInputType.number,
                             decoration: const InputDecoration(
                               labelText: 'Postal Code',
