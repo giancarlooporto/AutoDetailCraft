@@ -241,8 +241,8 @@ void main() {
       }
     });
 
-    test('2.2 Valid coordinates take precedence over address string', () {
-      const address = '123 False Address Way, Nowhere, USA';
+    test('2.2 Address string is used as primary destination while valid coordinates are passed as center', () {
+      const address = '800 Energy Way, Apt 703, Chula Vista, CA 91911';
       final url = MapLauncherService.buildNavigationUrl(
         latitude: 30.2672,
         longitude: -97.7431,
@@ -250,8 +250,10 @@ void main() {
         platform: TargetPlatform.iOS,
       );
 
-      expect(url, equals('https://maps.apple.com/?daddr=30.2672,-97.7431'));
-      expect(url, isNot(contains('False%20Address')));
+      expect(
+        url,
+        equals('https://maps.apple.com/?daddr=800%20Energy%20Way%2C%20Apt%20703%2C%20Chula%20Vista%2C%20CA%2091911&center=30.2672,-97.7431'),
+      );
     });
 
     test('2.3 Non-finite coordinates (NaN, Infinity, -Infinity) fall back cleanly to address', () {

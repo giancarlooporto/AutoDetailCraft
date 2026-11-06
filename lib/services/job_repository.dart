@@ -824,7 +824,11 @@ class JobRepository extends ChangeNotifier {
             existing.assignedTeamMemberName != b.assignedTeamMemberName ||
             existing.totalPrice != b.totalPrice ||
             existing.durationMinutes != b.durationMinutes ||
-            existing.isMultiDay != b.isMultiDay) {
+            existing.isMultiDay != b.isMultiDay ||
+            existing.clientAddress != b.clientAddress ||
+            existing.clientUnitOrGateCode != b.clientUnitOrGateCode ||
+            existing.latitude != b.latitude ||
+            existing.longitude != b.longitude) {
           bookingMap[b.id] = existing.copyWith(
             status: b.status,
             scheduledDate: b.scheduledDate,
@@ -835,6 +839,9 @@ class JobRepository extends ChangeNotifier {
             clientEmail: b.clientEmail.isNotEmpty ? b.clientEmail : existing.clientEmail,
             vehicleYearMakeModel: b.vehicleYearMakeModel.isNotEmpty ? b.vehicleYearMakeModel : existing.vehicleYearMakeModel,
             clientAddress: b.clientAddress.isNotEmpty ? b.clientAddress : existing.clientAddress,
+            clientUnitOrGateCode: b.clientUnitOrGateCode ?? existing.clientUnitOrGateCode,
+            latitude: b.latitude ?? existing.latitude,
+            longitude: b.longitude ?? existing.longitude,
             assignedTeamMemberId: b.assignedTeamMemberId ?? existing.assignedTeamMemberId,
             assignedTeamMemberName: b.assignedTeamMemberName ?? existing.assignedTeamMemberName,
             startTime: b.startTime ?? existing.startTime,
@@ -5517,6 +5524,9 @@ class JobRepository extends ChangeNotifier {
         }
         if (map['clientAddress'] == null && map['client_address'] != null) {
           map['clientAddress'] = map['client_address'];
+        }
+        if (map['clientUnitOrGateCode'] == null && map['client_unit_or_gate_code'] != null) {
+          map['clientUnitOrGateCode'] = map['client_unit_or_gate_code'];
         }
         if (map['totalPrice'] == null && map['total_price'] != null) {
           map['totalPrice'] = map['total_price'];

@@ -251,6 +251,20 @@ class UserProfile {
     this.studioLongitude,
   });
 
+  static bool _streetContainsUnitSegment(String street, String unit) {
+    final cleanStreet = street.trim();
+    final cleanUnit = unit.trim();
+    if (cleanStreet.isEmpty || cleanUnit.isEmpty) return false;
+    final withoutLeadingNum = cleanStreet.replaceFirst(
+      RegExp(r'^(\d+(?:-[0-9A-Za-z]+|[A-Za-z])?)\s+'),
+      '',
+    );
+    return RegExp(
+      '(?:^|[\\s,])${RegExp.escape(cleanUnit)}(?:\$|[\\s,])',
+      caseSensitive: false,
+    ).hasMatch(withoutLeadingNum);
+  }
+
   /// Formatted single-line client home address for checkout display and cards
   String get formattedClientAddress {
     final stateZip = [
@@ -261,9 +275,11 @@ class UserProfile {
       if (city.isNotEmpty) city,
       if (stateZip.isNotEmpty) stateZip,
     ].join(', ');
+    final includeUnit = unitOrApt.isNotEmpty &&
+        !_streetContainsUnitSegment(streetAddress, unitOrApt);
     final parts = [
       if (streetAddress.isNotEmpty) streetAddress,
-      if (unitOrApt.isNotEmpty) unitOrApt,
+      if (includeUnit) unitOrApt,
       if (cityStateZip.isNotEmpty) cityStateZip,
     ];
     if (parts.isNotEmpty) return parts.join(', ');
@@ -280,9 +296,11 @@ class UserProfile {
       if (studioCity.isNotEmpty) studioCity,
       if (stateZip.isNotEmpty) stateZip,
     ].join(', ');
+    final includeStudioUnit = studioUnitOrApt.isNotEmpty &&
+        !_streetContainsUnitSegment(studioStreetAddress, studioUnitOrApt);
     final parts = [
       if (studioStreetAddress.isNotEmpty) studioStreetAddress,
-      if (studioUnitOrApt.isNotEmpty) studioUnitOrApt,
+      if (includeStudioUnit) studioUnitOrApt,
       if (cityStateZip.isNotEmpty) cityStateZip,
     ];
     if (parts.isNotEmpty) return parts.join(', ');

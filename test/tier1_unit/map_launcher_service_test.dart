@@ -53,14 +53,41 @@ void main() {
     });
 
     // 3. Coordinate vs. Address Fallback
-    test('3.1 Coordinates take precedence over address when both provided', () {
+    test('3.1 Address takes precedence as primary destination with center coordinates when both provided', () {
       final url = MapLauncherService.buildNavigationUrl(
         latitude: 30.2672,
         longitude: -97.7431,
         address: '1200 S Congress Ave, Austin, TX',
         platform: TargetPlatform.android,
       );
-      expect(url, contains('destination=30.2672,-97.7431'));
+      expect(url, contains('destination=1200%20S%20Congress%20Ave%2C%20Austin%2C%20TX'));
+      expect(url, contains('center=30.2672,-97.7431'));
+    });
+
+    test('3.1b Preserves explicit apartment number (Apt 703) in destination instead of raw coordinates that reverse-geocode to unit 4105', () {
+      final appleUrl = MapLauncherService.buildNavigationUrl(
+        latitude: 32.6177,
+        longitude: -117.0570,
+        address: '800 Energy Way, Chula Vista, CA 91911',
+        unitOrApt: 'Apt 703',
+        platform: TargetPlatform.iOS,
+      );
+      expect(
+        appleUrl,
+        equals('https://maps.apple.com/?daddr=800%20Energy%20Way%2C%20Apt%20703%2C%20Chula%20Vista%2C%20CA%2091911&center=32.6177,-117.057'),
+      );
+
+      final googleUrl = MapLauncherService.buildNavigationUrl(
+        latitude: 32.6177,
+        longitude: -117.0570,
+        address: '800 Energy Way, Apt 703, Chula Vista, CA 91911',
+        unitOrApt: 'Apt 703',
+        platform: TargetPlatform.android,
+      );
+      expect(
+        googleUrl,
+        equals('https://www.google.com/maps/dir/?api=1&destination=800%20Energy%20Way%2C%20Apt%20703%2C%20Chula%20Vista%2C%20CA%2091911&center=32.6177,-117.057'),
+      );
     });
 
     test('3.2 Falls back to address when coordinates are null', () {

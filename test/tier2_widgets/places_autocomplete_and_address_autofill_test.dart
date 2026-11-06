@@ -17,7 +17,9 @@ import 'package:detail_craft/models/booking_models.dart';
 import 'package:detail_craft/models/user_profile.dart';
 import 'package:detail_craft/models/user_vehicle.dart';
 import 'package:detail_craft/screens/booking_flow_screen.dart';
+import 'package:detail_craft/screens/detailer_workbench_view.dart';
 import 'package:detail_craft/screens/edit_profile_dialog.dart';
+import 'package:detail_craft/services/map_launcher_service.dart';
 import 'package:detail_craft/services/places_autocomplete_service.dart';
 import 'package:detail_craft/services/supabase_service.dart';
 import '../core/mock_http_client.dart';
@@ -517,6 +519,63 @@ void main() {
       expect(preds.length, 1);
       expect(preds.first.mainText, '800 Energy Way');
       expect(preds.first.secondaryText, 'Chula Vista, CA 91911');
+    });
+
+    test('1.12 Preserves user-typed house number (800) and inline apartment (Apt 703) when Photon/Nominatim returns a mapped complex feature with housenumber 4105', () async {
+      final photonQueries = <String>[];
+      final mockClient = MockClient((request) async {
+        if (request.url.host == 'photon.komoot.io') {
+          final q = request.url.queryParameters['q'] ?? '';
+          photonQueries.add(q);
+          return http.Response(
+            jsonEncode({
+              'features': [
+                {
+                  'geometry': {
+                    'coordinates': [-117.0570, 32.6177],
+                  },
+                  'properties': {
+                    'osm_type': 'W',
+                    'osm_id': 410500,
+                    'housenumber': '4105',
+                    'street': 'Energy Way',
+                    'city': 'Chula Vista',
+                    'state': 'California',
+                    'postcode': '91911',
+                    'countrycode': 'US',
+                  },
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      PlacesAutocompleteService.setMockProviders(httpClient: mockClient);
+
+      final preds = await PlacesAutocompleteService.fetchAutocompleteSuggestions(
+        '800 Energy Way Apt 703',
+        sessionToken: 'tok-apt-703',
+      );
+
+      // Must strip inline Apt 703 before querying Photon
+      expect(photonQueries, ['800 Energy Way']);
+      expect(preds, isNotEmpty);
+      expect(preds.first.mainText, equals('800 Energy Way'));
+      expect(preds.first.description, contains('800 Energy Way'));
+      expect(preds.first.description, contains('Apt 703'));
+      expect(preds.first.description, isNot(contains('4105')));
+
+      final details = await PlacesAutocompleteService.fetchPlaceDetails(
+        preds.first.placeId,
+        sessionToken: 'tok-apt-703',
+      );
+      expect(details, isNotNull);
+      expect(details!.streetAddress, equals('800 Energy Way'));
+      expect(details.unitOrApt, equals('Apt 703'));
+      expect(details.formattedAddress, isNot(contains('4105')));
     });
   });
 
@@ -1245,6 +1304,125 @@ void main() {
         expect(booking.clientAddress, equals('777 Manual Override Way, Round Rock, TX 78664'));
         expect(booking.latitude, isNull, reason: 'Stale Step 1 coordinates must be cleared on manual Step 1 edit');
         expect(booking.longitude, isNull, reason: 'Stale Step 1 coordinates must be cleared on manual Step 1 edit');
+      } finally {
+        tearDownMockImageHttpClient();
+      }
+    });
+
+    testWidgets('3.6 End-to-end: Typing "800 Energy Way Apt 703" in Step 1 preserves Apt 703 on booking and Detailer Workbench Navigate launches with Apt 703 (never 4105)', (tester) async {
+      tester.view.physicalSize = const Size(1200, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+      setupMockImageHttpClient();
+
+      final launchedUrls = <String>[];
+      MapLauncherService.setMockPlatform(TargetPlatform.iOS);
+      MapLauncherService.setMockLauncher((url) async {
+        launchedUrls.add(url);
+        return true;
+      });
+      addTearDown(() => MapLauncherService.resetMockLauncher());
+
+      PlacesAutocompleteService.setMockProviders(
+        autocompleteProvider: (input, token) async {
+          return const [
+            PlacePrediction(
+              placeId: 'place_energy_way',
+              description: '800 Energy Way, Chula Vista, CA 91911',
+              mainText: '800 Energy Way',
+              secondaryText: 'Chula Vista, CA 91911',
+            ),
+          ];
+        },
+        placeDetailsProvider: (placeId, token) async => const ResolvedPlaceDetails(
+          placeId: 'place_energy_way',
+          formattedAddress: '800 Energy Way, Chula Vista, CA 91911',
+          streetAddress: '800 Energy Way',
+          city: 'Chula Vista',
+          state: 'CA',
+          postalCode: '91911',
+          latitude: 32.6177,
+          longitude: -117.0570,
+        ),
+      );
+
+      try {
+        final repo = await TestHarness.createSession(
+          isLoggedIn: true,
+          currentUser: testClientUser,
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: Scaffold(
+              body: BookingFlowScreen(
+                detailer: testStudioDetailer,
+                repository: repo,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Advance Step 0 -> Step 1
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // Client types inline apartment in Step 1 address field and selects autocomplete suggestion
+        final step1AddressField = find.byKey(const Key('step1_mobile_address_field'));
+        await tester.enterText(step1AddressField, '800 Energy Way Apt 703');
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('step1_prediction_item_0')));
+        await tester.pumpAndSettle();
+
+        // Advance Step 1 -> Step 2
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // Confirm booking
+        final confirmBtn = find.text('Reserve & Book').evaluate().isNotEmpty
+            ? find.text('Reserve & Book')
+            : find.text('Confirm & Request Booking');
+        await tester.tap(confirmBtn);
+        await tester.pumpAndSettle();
+
+        final booking = repo.bookings.last;
+        expect(booking.clientAddress, equals('800 Energy Way, Apt 703, Chula Vista, CA 91911'));
+        expect(booking.clientUnitOrGateCode, equals('Apt 703'));
+
+        // Switch to Detailer Workbench and press Navigate on the booking
+        final detailerRepo = await TestHarness.createSession(
+          isLoggedIn: true,
+          currentUser: testStudioDetailer.copyWith(role: UserRole.detailer),
+        );
+        detailerRepo.addBooking(booking);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            key: UniqueKey(),
+            theme: AppTheme.darkTheme,
+            home: Scaffold(
+              body: DetailerWorkbenchView(
+                repository: detailerRepo,
+                initialHubSection: StudioHubSection.booked,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final navBtn = find.byKey(const Key('detailer_booking_navigate_btn'));
+        expect(navBtn, findsOneWidget);
+        await tester.tap(navBtn);
+        await tester.pumpAndSettle();
+
+        expect(launchedUrls, isNotEmpty);
+        expect(launchedUrls.first, contains('daddr=800%20Energy%20Way%2C%20Apt%20703%2C%20Chula%20Vista%2C%20CA%2091911'));
+        expect(launchedUrls.first, contains('center=32.6177,-117.057'));
+        expect(launchedUrls.first, isNot(contains('4105')));
       } finally {
         tearDownMockImageHttpClient();
       }

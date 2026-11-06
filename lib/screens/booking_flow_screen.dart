@@ -338,23 +338,50 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
 
     if (!mounted || reqId != _tempAutocompleteRequestSeq) return;
 
+    final inlineExtraction = PlacesAutocompleteService.extractInlineUnitOrApt(_tempStreetCtrl.text);
+    final existingUnit = _tempUnitCtrl.text.trim();
+    final preservedUnit = inlineExtraction.unitOrApt.isNotEmpty
+        ? inlineExtraction.unitOrApt
+        : (existingUnit.isNotEmpty
+            ? existingUnit
+            : (details?.unitOrApt ?? ''));
+
     setState(() {
       _isFetchingTempPredictions = false;
       if (details != null) {
-        _addressCtrl.text = details.formattedAddress.isNotEmpty
-            ? details.formattedAddress
-            : prediction.description;
-        _tempStreetCtrl.text = details.streetAddress.isNotEmpty
+        final street = details.streetAddress.isNotEmpty
             ? details.streetAddress
             : prediction.mainText;
-        if (details.unitOrApt.isNotEmpty) {
-          _tempUnitCtrl.text = details.unitOrApt;
+        _tempStreetCtrl.text = street;
+        if (preservedUnit.isNotEmpty) {
+          _tempUnitCtrl.text = preservedUnit;
         }
         _tempCityCtrl.text = details.city;
         _tempStateCtrl.text = details.state;
         _tempZipCtrl.text = details.postalCode;
         _tempResolvedLatitude = details.latitude;
         _tempResolvedLongitude = details.longitude;
+
+        final stateZip = [
+          if (details.state.isNotEmpty) details.state,
+          if (details.postalCode.isNotEmpty) details.postalCode,
+        ].join(' ');
+        final cityStateZip = [
+          if (details.city.isNotEmpty) details.city,
+          if (stateZip.isNotEmpty) stateZip,
+        ].join(', ');
+        final includeUnit = preservedUnit.isNotEmpty &&
+            !PlacesAutocompleteService.containsAddressSegment(street, preservedUnit);
+        final composedParts = [
+          if (street.isNotEmpty) street,
+          if (includeUnit) preservedUnit,
+          if (cityStateZip.isNotEmpty) cityStateZip,
+        ];
+        _addressCtrl.text = composedParts.isNotEmpty
+            ? composedParts.join(', ')
+            : (details.formattedAddress.isNotEmpty
+                ? details.formattedAddress
+                : prediction.description);
       } else {
         _addressCtrl.text = prediction.description.isNotEmpty
             ? prediction.description
@@ -362,6 +389,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         _tempStreetCtrl.text = prediction.mainText.isNotEmpty
             ? prediction.mainText
             : prediction.description;
+        if (preservedUnit.isNotEmpty) {
+          _tempUnitCtrl.text = preservedUnit;
+        }
         _tempResolvedLatitude = null;
         _tempResolvedLongitude = null;
       }
@@ -373,13 +403,26 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     final reqId = ++_step1AutocompleteRequestSeq;
     final trimmed = value.trim();
     final savedHomeFormatted = widget.repository.currentUser.formattedClientAddress.trim();
+    final savedHomeUnit = widget.repository.currentUser.unitOrApt.trim();
 
     setState(() {
       _tempResolvedLatitude = null;
       _tempResolvedLongitude = null;
       if (trimmed.isNotEmpty && trimmed != savedHomeFormatted) {
         _useTemporaryLocation = true;
-        _tempStreetCtrl.text = trimmed;
+        final inlineExtraction = PlacesAutocompleteService.extractInlineUnitOrApt(trimmed);
+        if (inlineExtraction.unitOrApt.isNotEmpty) {
+          _tempStreetCtrl.text = inlineExtraction.cleanedQuery;
+          _tempUnitCtrl.text = inlineExtraction.unitOrApt;
+          if (_gateCodeNotesCtrl.text.trim() == savedHomeUnit) {
+            _gateCodeNotesCtrl.text = inlineExtraction.unitOrApt;
+          }
+        } else {
+          _tempStreetCtrl.text = trimmed;
+          if (_gateCodeNotesCtrl.text.trim() == savedHomeUnit && savedHomeUnit.isNotEmpty) {
+            _gateCodeNotesCtrl.clear();
+          }
+        }
         _tempCityCtrl.clear();
         _tempStateCtrl.clear();
         _tempZipCtrl.clear();
@@ -429,24 +472,56 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
 
     if (!mounted || reqId != _step1AutocompleteRequestSeq) return;
 
+    final inlineExtraction = PlacesAutocompleteService.extractInlineUnitOrApt(_addressCtrl.text);
+    final existingTempUnit = _tempUnitCtrl.text.trim();
+    final preservedUnit = inlineExtraction.unitOrApt.isNotEmpty
+        ? inlineExtraction.unitOrApt
+        : (existingTempUnit.isNotEmpty
+            ? existingTempUnit
+            : (details?.unitOrApt ?? ''));
+    final savedHomeUnit = widget.repository.currentUser.unitOrApt.trim();
+
     setState(() {
       _isFetchingStep1Predictions = false;
       _useTemporaryLocation = true;
       if (details != null) {
-        _addressCtrl.text = details.formattedAddress.isNotEmpty
-            ? details.formattedAddress
-            : prediction.description;
-        _tempStreetCtrl.text = details.streetAddress.isNotEmpty
+        final street = details.streetAddress.isNotEmpty
             ? details.streetAddress
             : prediction.mainText;
-        if (details.unitOrApt.isNotEmpty) {
-          _tempUnitCtrl.text = details.unitOrApt;
+        _tempStreetCtrl.text = street;
+        if (preservedUnit.isNotEmpty) {
+          _tempUnitCtrl.text = preservedUnit;
+          if (_gateCodeNotesCtrl.text.trim().isEmpty ||
+              _gateCodeNotesCtrl.text.trim() == savedHomeUnit) {
+            _gateCodeNotesCtrl.text = preservedUnit;
+          }
         }
         _tempCityCtrl.text = details.city;
         _tempStateCtrl.text = details.state;
         _tempZipCtrl.text = details.postalCode;
         _tempResolvedLatitude = details.latitude;
         _tempResolvedLongitude = details.longitude;
+
+        final stateZip = [
+          if (details.state.isNotEmpty) details.state,
+          if (details.postalCode.isNotEmpty) details.postalCode,
+        ].join(' ');
+        final cityStateZip = [
+          if (details.city.isNotEmpty) details.city,
+          if (stateZip.isNotEmpty) stateZip,
+        ].join(', ');
+        final includeUnit = preservedUnit.isNotEmpty &&
+            !PlacesAutocompleteService.containsAddressSegment(street, preservedUnit);
+        final composedParts = [
+          if (street.isNotEmpty) street,
+          if (includeUnit) preservedUnit,
+          if (cityStateZip.isNotEmpty) cityStateZip,
+        ];
+        _addressCtrl.text = composedParts.isNotEmpty
+            ? composedParts.join(', ')
+            : (details.formattedAddress.isNotEmpty
+                ? details.formattedAddress
+                : prediction.description);
       } else {
         _addressCtrl.text = prediction.description.isNotEmpty
             ? prediction.description
@@ -454,6 +529,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         _tempStreetCtrl.text = prediction.mainText.isNotEmpty
             ? prediction.mainText
             : prediction.description;
+        if (preservedUnit.isNotEmpty) {
+          _tempUnitCtrl.text = preservedUnit;
+        }
         _tempResolvedLatitude = null;
         _tempResolvedLongitude = null;
       }
@@ -746,9 +824,18 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
       // Mobile Detailing
       final gateNotes = _gateCodeNotesCtrl.text.trim();
       if (!_useTemporaryLocation && (user.hasClientAddress || user.formattedClientAddress.isNotEmpty)) {
-        effectiveAddress = user.formattedClientAddress.isNotEmpty
+        var baseAddress = user.formattedClientAddress.isNotEmpty
             ? user.formattedClientAddress
             : _addressCtrl.text.trim();
+        if (gateNotes.isNotEmpty &&
+            PlacesAutocompleteService.isUnitOrAptIdentifier(gateNotes)) {
+          if (user.streetAddress.isNotEmpty) {
+            baseAddress = user.copyWith(unitOrApt: gateNotes).formattedClientAddress;
+          } else {
+            baseAddress = MapLauncherService.composeNavigationAddress(baseAddress, gateNotes);
+          }
+        }
+        effectiveAddress = baseAddress;
         effectiveUnitOrGate = gateNotes.isNotEmpty
             ? gateNotes
             : (user.unitOrApt.isNotEmpty ? user.unitOrApt : null);
@@ -756,6 +843,27 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         effectiveLon = user.longitude;
       } else {
         // Temporary Location
+        final rawTempStreet = _tempStreetCtrl.text.trim();
+        final rawTempUnit = _tempUnitCtrl.text.trim();
+        final inlineTemp = PlacesAutocompleteService.extractInlineUnitOrApt(rawTempStreet);
+        final effectiveTempStreet = inlineTemp.unitOrApt.isNotEmpty
+            ? inlineTemp.cleanedQuery
+            : rawTempStreet;
+        var effectiveTempUnit = inlineTemp.unitOrApt.isNotEmpty
+            ? inlineTemp.unitOrApt
+            : rawTempUnit;
+        final isStaleAutoGateNote = gateNotes.isNotEmpty &&
+            effectiveTempUnit != gateNotes &&
+            (gateNotes == user.unitOrApt.trim() ||
+                (effectiveTempUnit.isNotEmpty &&
+                    PlacesAutocompleteService.isUnitOrAptIdentifier(gateNotes)));
+        final cleanedGateNotes = isStaleAutoGateNote ? '' : gateNotes;
+        if (effectiveTempUnit.isEmpty &&
+            cleanedGateNotes.isNotEmpty &&
+            PlacesAutocompleteService.isUnitOrAptIdentifier(cleanedGateNotes)) {
+          effectiveTempUnit = cleanedGateNotes;
+        }
+
         final tempStateZip = [
           if (_tempStateCtrl.text.trim().isNotEmpty) _tempStateCtrl.text.trim(),
           if (_tempZipCtrl.text.trim().isNotEmpty) _tempZipCtrl.text.trim(),
@@ -764,15 +872,26 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           if (_tempCityCtrl.text.trim().isNotEmpty) _tempCityCtrl.text.trim(),
           if (tempStateZip.isNotEmpty) tempStateZip,
         ].join(', ');
-        final tempParts = [
-          if (_tempStreetCtrl.text.trim().isNotEmpty) _tempStreetCtrl.text.trim(),
-          if (_tempUnitCtrl.text.trim().isNotEmpty) _tempUnitCtrl.text.trim(),
-          if (tempCityStateZip.isNotEmpty) tempCityStateZip,
-        ];
-        effectiveAddress = tempParts.isNotEmpty ? tempParts.join(', ') : _addressCtrl.text.trim();
-        effectiveUnitOrGate = gateNotes.isNotEmpty
-            ? gateNotes
-            : (_tempUnitCtrl.text.trim().isNotEmpty ? _tempUnitCtrl.text.trim() : null);
+        final includeTempUnit = effectiveTempUnit.isNotEmpty &&
+            !PlacesAutocompleteService.containsAddressSegment(effectiveTempStreet, effectiveTempUnit);
+        if (tempCityStateZip.isEmpty &&
+            effectiveTempStreet.contains(',') &&
+            includeTempUnit) {
+          final firstComma = effectiveTempStreet.indexOf(',');
+          final streetPart = effectiveTempStreet.substring(0, firstComma).trim();
+          final restPart = effectiveTempStreet.substring(firstComma + 1).trim();
+          effectiveAddress = '$streetPart, $effectiveTempUnit, $restPart';
+        } else {
+          final tempParts = [
+            if (effectiveTempStreet.isNotEmpty) effectiveTempStreet,
+            if (includeTempUnit) effectiveTempUnit,
+            if (tempCityStateZip.isNotEmpty) tempCityStateZip,
+          ];
+          effectiveAddress = tempParts.isNotEmpty ? tempParts.join(', ') : _addressCtrl.text.trim();
+        }
+        effectiveUnitOrGate = cleanedGateNotes.isNotEmpty
+            ? cleanedGateNotes
+            : (effectiveTempUnit.isNotEmpty ? effectiveTempUnit : null);
         effectiveLat = _tempResolvedLatitude;
         effectiveLon = _tempResolvedLongitude;
       }

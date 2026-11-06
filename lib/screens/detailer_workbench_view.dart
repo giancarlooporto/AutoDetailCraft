@@ -3998,6 +3998,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                         latitude: b.latitude,
                         longitude: b.longitude,
                         address: b.clientAddress,
+                        unitOrApt: b.clientUnitOrGateCode,
                       );
                     },
                   ),
@@ -8912,6 +8913,22 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               ],
             ),
           ],
+          if (b.clientUnitOrGateCode != null && b.clientUnitOrGateCode!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.vpn_key_outlined, size: 12, color: AppTheme.primary),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Gate / Unit: ${b.clientUnitOrGateCode}',
+                    style: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (b.clientAddress.isNotEmpty || (b.latitude != null && b.longitude != null)) ...[
             const SizedBox(height: 6),
             Row(
@@ -8944,6 +8961,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                       latitude: b.latitude,
                       longitude: b.longitude,
                       address: b.clientAddress,
+                      unitOrApt: b.clientUnitOrGateCode,
                     );
                   },
                 ),

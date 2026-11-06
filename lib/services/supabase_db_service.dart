@@ -1620,20 +1620,52 @@ class SupabaseDbService {
         if (kDebugMode) print('[SupabaseDbService] Booking saved to Supabase: ${booking.id}');
         return true;
       } on PostgrestException catch (pe) {
-        if (pe.code == 'PGRST204' || pe.code == '42703' || pe.message.contains('package') || pe.message.contains('location_type')) {
-          // Schema drift fallback: try alternate column naming if schema uses package_data or service_location_type
+        final msg = '${pe.message} ${pe.details ?? ''} ${pe.hint ?? ''}'.toLowerCase();
+        if (pe.code == 'PGRST204' ||
+            pe.code == '42703' ||
+            msg.contains('package') ||
+            msg.contains('location_type') ||
+            msg.contains('client_unit_or_gate_code') ||
+            msg.contains('latitude') ||
+            msg.contains('longitude') ||
+            msg.contains('schema cache')) {
+          // Schema drift fallback: try alternate column naming and strip optional location columns if needed
           final fallbackPayload = Map<String, dynamic>.from(basePayload);
-          fallbackPayload.remove('package');
-          fallbackPayload.remove('location_type');
-          fallbackPayload['package_data'] = booking.package.toJson();
-          fallbackPayload['service_location_type'] = booking.locationType.name;
-          await client.from('bookings').upsert({
-            ...fallbackPayload,
-            if (booking.assignedTeamMemberId != null)
-              'assigned_team_member_id': booking.assignedTeamMemberId,
-            if (booking.assignedTeamMemberName != null)
-              'assigned_team_member_name': booking.assignedTeamMemberName,
-          });
+          if (msg.contains('package')) {
+            fallbackPayload.remove('package');
+            fallbackPayload['package_data'] = booking.package.toJson();
+          }
+          if (msg.contains('location_type')) {
+            fallbackPayload.remove('location_type');
+            fallbackPayload['service_location_type'] = booking.locationType.name;
+          }
+          if (msg.contains('client_unit_or_gate_code') ||
+              msg.contains('latitude') ||
+              msg.contains('longitude')) {
+            fallbackPayload
+              ..remove('client_unit_or_gate_code')
+              ..remove('latitude')
+              ..remove('longitude');
+          }
+          try {
+            await client.from('bookings').upsert({
+              ...fallbackPayload,
+              if (booking.assignedTeamMemberId != null)
+                'assigned_team_member_id': booking.assignedTeamMemberId,
+              if (booking.assignedTeamMemberName != null)
+                'assigned_team_member_name': booking.assignedTeamMemberName,
+            });
+          } on PostgrestException catch (_) {
+            fallbackPayload
+              ..remove('package')
+              ..remove('location_type')
+              ..remove('client_unit_or_gate_code')
+              ..remove('latitude')
+              ..remove('longitude');
+            fallbackPayload['package_data'] = booking.package.toJson();
+            fallbackPayload['service_location_type'] = booking.locationType.name;
+            await client.from('bookings').upsert(fallbackPayload);
+          }
           if (kDebugMode) print('[SupabaseDbService] Booking saved with fallback schema: ${booking.id}');
           return true;
         } else {

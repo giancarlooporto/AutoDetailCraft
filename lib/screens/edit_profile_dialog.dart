@@ -207,14 +207,22 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
 
     if (!mounted || reqId != _autocompleteRequestSeq) return;
 
+    final inlineExtraction = PlacesAutocompleteService.extractInlineUnitOrApt(_streetCtrl.text);
+    final existingUnit = _unitCtrl.text.trim();
+    final preservedUnit = inlineExtraction.unitOrApt.isNotEmpty
+        ? inlineExtraction.unitOrApt
+        : (existingUnit.isNotEmpty
+            ? existingUnit
+            : (details?.unitOrApt ?? ''));
+
     setState(() {
       _isFetchingPredictions = false;
       if (details != null) {
         _streetCtrl.text = details.streetAddress.isNotEmpty
             ? details.streetAddress
             : prediction.mainText;
-        if (details.unitOrApt.isNotEmpty) {
-          _unitCtrl.text = details.unitOrApt;
+        if (preservedUnit.isNotEmpty) {
+          _unitCtrl.text = preservedUnit;
         }
         _cityCtrl.text = details.city;
         _stateCtrl.text = details.state;
@@ -225,6 +233,9 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
         _streetCtrl.text = prediction.mainText.isNotEmpty
             ? prediction.mainText
             : prediction.description;
+        if (preservedUnit.isNotEmpty) {
+          _unitCtrl.text = preservedUnit;
+        }
         _resolvedLatitude = null;
         _resolvedLongitude = null;
       }
@@ -340,10 +351,21 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
       return;
     }
 
+    final currentUser = widget.repository.currentUser;
+    final savedUnit = widget.isStudioProfile
+        ? currentUser.studioUnitOrApt.trim()
+        : currentUser.unitOrApt.trim();
     final city = _cityCtrl.text.trim();
     final state = _stateCtrl.text.trim();
-    final street = _streetCtrl.text.trim();
-    final unit = _unitCtrl.text.trim();
+    final rawStreet = _streetCtrl.text.trim();
+    final rawUnit = _unitCtrl.text.trim();
+    final inlineExtraction = PlacesAutocompleteService.extractInlineUnitOrApt(rawStreet);
+    final street = inlineExtraction.unitOrApt.isNotEmpty
+        ? inlineExtraction.cleanedQuery
+        : rawStreet;
+    final unit = (inlineExtraction.unitOrApt.isNotEmpty && (rawUnit.isEmpty || rawUnit == savedUnit))
+        ? inlineExtraction.unitOrApt
+        : (rawUnit.isNotEmpty ? rawUnit : inlineExtraction.unitOrApt);
     final zip = _zipCtrl.text.trim();
 
     // Auto-compose legacy location field for backward compatibility
@@ -352,7 +374,6 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
       if (state.isNotEmpty) state,
     ].join(', ');
 
-    final currentUser = widget.repository.currentUser;
     final UserProfile updated;
 
     if (widget.isStudioProfile) {

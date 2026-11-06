@@ -99,6 +99,7 @@ class PlacesAutocompleteService {
   /// In-memory cache of resolved place details keyed by placeId for fallback providers
   /// that return full address components and coordinates during autocomplete search.
   static final Map<String, ResolvedPlaceDetails> _cachedDetailsByPlaceId = {};
+  static final Map<String, String> _inlineUnitByPlaceId = {};
 
   /// Sets mock providers so widget and unit tests run deterministically offline.
   static void setMockProviders({
@@ -113,6 +114,7 @@ class PlacesAutocompleteService {
     _mockHttpClient = httpClient;
     _cachedDetailsByPlaceId.clear();
     _geocodeSearchDetailsByPlaceId.clear();
+    _inlineUnitByPlaceId.clear();
   }
 
   /// Resets all mock providers back to live production behavior.
@@ -122,6 +124,7 @@ class PlacesAutocompleteService {
     _mockHttpClient = null;
     _cachedDetailsByPlaceId.clear();
     _geocodeSearchDetailsByPlaceId.clear();
+    _inlineUnitByPlaceId.clear();
   }
 
   /// Generates a RFC-4122 compliant UUID v4 session token so all keystrokes
@@ -217,6 +220,36 @@ class PlacesAutocompleteService {
     required String apiKey,
     required http.Client client,
   }) async {
+    final inline = extractInlineUnitOrApt(trimmed);
+    final direct = await _queryGooglePlacesNewEndpoint(
+      trimmed,
+      extractedUnitOrApt: inline.unitOrApt,
+      sessionToken: sessionToken,
+      apiKey: apiKey,
+      client: client,
+    );
+    if (direct.isNotEmpty) {
+      return direct;
+    }
+    if (inline.unitOrApt.isNotEmpty && inline.cleanedQuery != trimmed) {
+      return await _queryGooglePlacesNewEndpoint(
+        inline.cleanedQuery,
+        extractedUnitOrApt: inline.unitOrApt,
+        sessionToken: sessionToken,
+        apiKey: apiKey,
+        client: client,
+      );
+    }
+    return const [];
+  }
+
+  static Future<List<PlacePrediction>> _queryGooglePlacesNewEndpoint(
+    String queryText, {
+    required String extractedUnitOrApt,
+    required String sessionToken,
+    required String apiKey,
+    required http.Client client,
+  }) async {
     try {
       final url = Uri.parse('https://places.googleapis.com/v1/places:autocomplete');
       final response = await client
@@ -229,7 +262,7 @@ class PlacesAutocompleteService {
                   'suggestions.placePrediction.placeId,suggestions.placePrediction.place,suggestions.placePrediction.text,suggestions.placePrediction.structuredFormat',
             },
             body: jsonEncode({
-              'input': trimmed,
+              'input': queryText,
               'sessionToken': sessionToken,
             }),
           )
@@ -282,6 +315,21 @@ class PlacesAutocompleteService {
                 secondaryText = fullText.split(',').skip(1).join(',').trim();
               }
 
+              if (extractedUnitOrApt.isNotEmpty) {
+                final cleanId = placeId.startsWith('places/')
+                    ? placeId.substring('places/'.length)
+                    : placeId;
+                _inlineUnitByPlaceId[placeId] = extractedUnitOrApt;
+                _inlineUnitByPlaceId[cleanId] = extractedUnitOrApt;
+                if (!containsAddressSegment(fullText, extractedUnitOrApt)) {
+                  fullText = [
+                    if (mainText.isNotEmpty) mainText,
+                    extractedUnitOrApt,
+                    if (secondaryText.isNotEmpty) secondaryText,
+                  ].join(', ');
+                }
+              }
+
               if (fullText.isNotEmpty) {
                 results.add(
                   PlacePrediction(
@@ -328,7 +376,7 @@ class PlacesAutocompleteService {
       }
     }
 
-      // 2. Check pre-resolved details cache (from Photon / Nominatim)
+    // 2. Check pre-resolved details cache (from Photon / Nominatim)
     final cached = _cachedDetailsByPlaceId[trimmedId];
     if (cached != null) {
       return cached;
@@ -342,6 +390,7 @@ class PlacesAutocompleteService {
       final cleanId = trimmedId.startsWith('places/')
           ? trimmedId.substring('places/'.length)
           : trimmedId;
+      final inlineUnit = _inlineUnitByPlaceId[cleanId] ?? _inlineUnitByPlaceId[trimmedId] ?? '';
 
       try {
         final uri = Uri.parse(
@@ -363,7 +412,11 @@ class PlacesAutocompleteService {
         if (response.statusCode == 200) {
           final decoded = jsonDecode(response.body);
           if (decoded is Map<String, dynamic>) {
-            return parsePlacesNewDetailsJson(decoded, fallbackPlaceId: cleanId);
+            return parsePlacesNewDetailsJson(
+              decoded,
+              fallbackPlaceId: cleanId,
+              fallbackUnitOrApt: inlineUnit,
+            );
           }
         }
       } catch (e) {
@@ -373,7 +426,12 @@ class PlacesAutocompleteService {
       }
 
       // Fallback to Geocoding API by place_id, or pre-parsed geocode search result
-      final geocodeDetails = await _fallbackGeocodePlaceDetails(cleanId, apiKey, client);
+      final geocodeDetails = await _fallbackGeocodePlaceDetails(
+        cleanId,
+        apiKey,
+        client,
+        fallbackUnitOrApt: inlineUnit,
+      );
       if (geocodeDetails != null) {
         return geocodeDetails;
       }
@@ -396,6 +454,7 @@ class PlacesAutocompleteService {
   static ResolvedPlaceDetails parsePlacesNewDetailsJson(
     Map<String, dynamic> json, {
     String fallbackPlaceId = '',
+    String fallbackUnitOrApt = '',
   }) {
     final id = (json['id'] ?? fallbackPlaceId).toString();
     final formattedAddress = (json['formattedAddress'] ?? '').toString().trim();
@@ -465,11 +524,15 @@ class PlacesAutocompleteService {
       if (lngVal is num) longitude = lngVal.toDouble();
     }
 
+    final effectiveUnit = fallbackUnitOrApt.trim().isNotEmpty
+        ? fallbackUnitOrApt.trim()
+        : subpremise;
+
     return ResolvedPlaceDetails(
       placeId: id,
       formattedAddress: formattedAddress,
       streetAddress: streetAddress,
-      unitOrApt: subpremise,
+      unitOrApt: effectiveUnit,
       city: city,
       state: state,
       postalCode: postalCode,
@@ -484,9 +547,13 @@ class PlacesAutocompleteService {
     http.Client client,
   ) async {
     try {
+      final inline = extractInlineUnitOrApt(query);
+      final effectiveQuery = inline.cleanedQuery;
+      final extractedUnit = inline.unitOrApt;
+
       final uri = Uri.parse(
         'https://maps.googleapis.com/maps/api/geocode/json'
-        '?address=${Uri.encodeQueryComponent(query)}'
+        '?address=${Uri.encodeQueryComponent(effectiveQuery)}'
         '&key=${Uri.encodeQueryComponent(apiKey)}',
       );
       final response = await client.get(uri).timeout(const Duration(seconds: 4));
@@ -504,6 +571,21 @@ class PlacesAutocompleteService {
         final formatted = (item['formatted_address'] ?? '').toString().trim();
         if (placeId.isEmpty || formatted.isEmpty) continue;
 
+        if (extractedUnit.isNotEmpty) {
+          _inlineUnitByPlaceId[placeId] = extractedUnit;
+        }
+
+        final parts = formatted.split(',');
+        final mainText = parts.first.trim();
+        final secondaryText = parts.length > 1 ? parts.skip(1).join(',').trim() : '';
+        final description = (extractedUnit.isNotEmpty && !containsAddressSegment(formatted, extractedUnit))
+            ? [
+                if (mainText.isNotEmpty) mainText,
+                extractedUnit,
+                if (secondaryText.isNotEmpty) secondaryText,
+              ].join(', ')
+            : formatted;
+
         final components = item['address_components'] as List<dynamic>?;
         final geometry = item['geometry'];
         if ((components != null && components.isNotEmpty) || geometry is Map) {
@@ -519,7 +601,7 @@ class PlacesAutocompleteService {
           _geocodeSearchDetailsByPlaceId[placeId] = parsePlacesNewDetailsJson(
             {
               'id': placeId,
-              'formattedAddress': formatted,
+              'formattedAddress': description,
               'addressComponents': components ?? const [],
               'location': {
                 'latitude': lat,
@@ -527,17 +609,14 @@ class PlacesAutocompleteService {
               },
             },
             fallbackPlaceId: placeId,
+            fallbackUnitOrApt: extractedUnit,
           );
         }
-
-        final parts = formatted.split(',');
-        final mainText = parts.first.trim();
-        final secondaryText = parts.length > 1 ? parts.skip(1).join(',').trim() : '';
 
         predictions.add(
           PlacePrediction(
             placeId: placeId,
-            description: formatted,
+            description: description,
             mainText: mainText,
             secondaryText: secondaryText,
           ),
@@ -552,8 +631,9 @@ class PlacesAutocompleteService {
   static Future<ResolvedPlaceDetails?> _fallbackGeocodePlaceDetails(
     String placeId,
     String apiKey,
-    http.Client client,
-  ) async {
+    http.Client client, {
+    String fallbackUnitOrApt = '',
+  }) async {
     try {
       final uri = Uri.parse(
         'https://maps.googleapis.com/maps/api/geocode/json'
@@ -596,10 +676,87 @@ class PlacesAutocompleteService {
           },
         },
         fallbackPlaceId: placeId,
+        fallbackUnitOrApt: fallbackUnitOrApt,
       );
     } catch (_) {
       return null;
     }
+  }
+
+  static const String _singleUnitPatternStr =
+      r'(?:(?:apt|apartment|unit|suite|ste|bldg|building|fl|floor|rm|room)\.?\s*#?\s*(?!(?:st|street|ave|avenue|rd|road|dr|drive|blvd|boulevard|ln|lane|way|ct|court|pl|place|cir|circle|pkwy|parkway|ter|terrace|trl|trail|hwy|highway)\b)[A-Za-z0-9\-]+|#\s*[A-Za-z0-9\-]+)';
+
+  static const String _compoundUnitPatternStr =
+      '$_singleUnitPatternStr(?:\\s*,?\\s*$_singleUnitPatternStr)*';
+
+  static final RegExp _inlineUnitRegex = RegExp(
+    '(?:,\\s*|\\s+)($_compoundUnitPatternStr)(?=\\s*(?:,|\$|\\s+[A-Za-z]))',
+    caseSensitive: false,
+  );
+
+  static final RegExp _unitIdentifierRegex = RegExp(
+    '^$_compoundUnitPatternStr\$',
+    caseSensitive: false,
+  );
+
+  static final RegExp _leadingHouseNumRegex = RegExp(
+    r'^(\d+(?:-[0-9A-Za-z]+|[A-Za-z])?)\s+',
+  );
+
+  /// Returns true if [address] already contains [segment] as a distinct token/segment
+  /// outside of the leading street house number (preventing false positives like
+  /// house number "1200" or "800" matching unit "200" or "80").
+  static bool containsAddressSegment(String address, String segment) {
+    final cleanAddr = address.trim();
+    final cleanSeg = segment.trim();
+    if (cleanAddr.isEmpty || cleanSeg.isEmpty) return false;
+    final withoutLeadingNum = cleanAddr.replaceFirst(_leadingHouseNumRegex, '');
+    final boundaryPattern = RegExp(
+      '(?:^|[\\s,])${RegExp.escape(cleanSeg)}(?:\$|[\\s,])',
+      caseSensitive: false,
+    );
+    return boundaryPattern.hasMatch(withoutLeadingNum);
+  }
+
+  /// Extracts an inline apartment/unit/suite/building/floor designator (e.g., "Apt 703",
+  /// "Bldg 4 Apt 703", "Unit 4B", "Suite 200", "Fl 7", "#703") from a street or full
+  /// address string, returning both the cleaned address query (without the unit) and
+  /// the extracted unit string.
+  static ({String cleanedQuery, String unitOrApt}) extractInlineUnitOrApt(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) {
+      return (cleanedQuery: '', unitOrApt: '');
+    }
+    final match = _inlineUnitRegex.firstMatch(trimmed);
+    if (match == null) {
+      return (cleanedQuery: trimmed, unitOrApt: '');
+    }
+    final extractedUnit = (match.group(1) ?? '').trim();
+    final before = trimmed.substring(0, match.start).trim();
+    final after = trimmed.substring(match.end).trim();
+    String cleaned;
+    if (before.isNotEmpty && after.isNotEmpty) {
+      cleaned = after.startsWith(',') ? '$before$after' : '$before, $after';
+    } else {
+      cleaned = '$before$after'.trim();
+    }
+    cleaned = cleaned
+        .replaceAll(RegExp(r',\s*,+'), ',')
+        .replaceAll(RegExp(r'^,\s*|,\s*$'), '')
+        .trim();
+    return (
+      cleanedQuery: cleaned.isNotEmpty ? cleaned : trimmed,
+      unitOrApt: extractedUnit,
+    );
+  }
+
+  /// Returns true if [value] is an apartment/unit/suite/building/floor identifier
+  /// (e.g. "Apt 703", "Bldg 4 Apt 703", "Unit 4B", "Suite 100", "Fl 7", "#703")
+  /// rather than multi-word gate/parking instructions.
+  static bool isUnitOrAptIdentifier(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return false;
+    return _unitIdentifierRegex.hasMatch(trimmed);
   }
 
   /// Builds a 3-character prefix retry query when the last word has >= 4 alphabetic characters
@@ -624,20 +781,25 @@ class PlacesAutocompleteService {
     String query,
     http.Client client,
   ) async {
+    final inline = extractInlineUnitOrApt(query);
+    final effectiveQuery = inline.cleanedQuery;
+
     final directResults = await _queryPhotonEndpoint(
-      query,
-      originalUserQuery: query,
+      effectiveQuery,
+      originalUserQuery: effectiveQuery,
+      extractedUnitOrApt: inline.unitOrApt,
       client: client,
     );
     if (directResults.isNotEmpty) {
       return directResults;
     }
 
-    final retryQuery = _buildTypoPrefixRetryQuery(query);
+    final retryQuery = _buildTypoPrefixRetryQuery(effectiveQuery);
     if (retryQuery != null) {
       final prefixResults = await _queryPhotonEndpoint(
         retryQuery,
-        originalUserQuery: query,
+        originalUserQuery: effectiveQuery,
+        extractedUnitOrApt: inline.unitOrApt,
         client: client,
       );
       if (prefixResults.isNotEmpty) {
@@ -648,9 +810,32 @@ class PlacesAutocompleteService {
     return const [];
   }
 
+  static String _stripLeadingHouseNumberFromRoute({
+    required String rawRoute,
+    required bool isFromFallbackName,
+    required String userLeadingHouseNum,
+    required String houseNumRaw,
+  }) {
+    final trimmed = rawRoute.trim();
+    if (trimmed.isEmpty) return '';
+    if (userLeadingHouseNum.isNotEmpty &&
+        trimmed.toLowerCase().startsWith('${userLeadingHouseNum.toLowerCase()} ')) {
+      return trimmed.substring(userLeadingHouseNum.length).trim();
+    }
+    if (houseNumRaw.isNotEmpty &&
+        trimmed.toLowerCase().startsWith('${houseNumRaw.toLowerCase()} ')) {
+      return trimmed.substring(houseNumRaw.length).trim();
+    }
+    if (isFromFallbackName && userLeadingHouseNum.isNotEmpty) {
+      return trimmed.replaceFirst(_leadingHouseNumRegex, '').trim();
+    }
+    return trimmed;
+  }
+
   static Future<List<PlacePrediction>> _queryPhotonEndpoint(
     String searchQuery, {
     required String originalUserQuery,
+    String extractedUnitOrApt = '',
     required http.Client client,
   }) async {
     try {
@@ -667,7 +852,7 @@ class PlacesAutocompleteService {
       final features = decoded['features'] as List<dynamic>?;
       if (features == null || features.isEmpty) return const [];
 
-      final leadingNumMatch = RegExp(r'^(\d+[A-Za-z]?)\s+').firstMatch(originalUserQuery.trim());
+      final leadingNumMatch = _leadingHouseNumRegex.firstMatch(originalUserQuery.trim());
       final userLeadingHouseNum = leadingNumMatch?.group(1) ?? '';
 
       final usPredictions = <PlacePrediction>[];
@@ -685,7 +870,7 @@ class PlacesAutocompleteService {
         final houseNumRaw = (props['housenumber'] ?? '').toString().trim();
         final streetRaw = (props['street'] ?? '').toString().trim();
         final nameRaw = (props['name'] ?? '').toString().trim();
-        final safeName = RegExp(r'^\d+[A-Za-z]?$').hasMatch(nameRaw) ? '' : nameRaw;
+        final safeName = RegExp(r'^\d+(?:-[0-9A-Za-z]+|[A-Za-z])?$').hasMatch(nameRaw) ? '' : nameRaw;
 
         final city = (props['city'] ??
                 props['town'] ??
@@ -700,8 +885,16 @@ class PlacesAutocompleteService {
         final postalCode = (props['postcode'] ?? '').toString().trim();
         final countryCode = (props['countrycode'] ?? '').toString().trim().toUpperCase();
 
-        final effectiveHouseNum = houseNumRaw.isNotEmpty ? houseNumRaw : userLeadingHouseNum;
-        final effectiveRoute = streetRaw.isNotEmpty ? streetRaw : safeName;
+        // Always prioritize the user's explicitly typed leading house number (e.g. "800" or "41-05")
+        // so Photon never overwrites it with a different mapped building number (e.g. "4105") on the same street.
+        final effectiveHouseNum = userLeadingHouseNum.isNotEmpty ? userLeadingHouseNum : houseNumRaw;
+        final rawRoute = streetRaw.isNotEmpty ? streetRaw : safeName;
+        final effectiveRoute = _stripLeadingHouseNumberFromRoute(
+          rawRoute: rawRoute,
+          isFromFallbackName: streetRaw.isEmpty,
+          userLeadingHouseNum: userLeadingHouseNum,
+          houseNumRaw: houseNumRaw,
+        );
         if (effectiveRoute.isEmpty && city.isEmpty) continue;
         // If user typed a street number (e.g. "800 enegy"), skip city-only features without a street/route name
         if (userLeadingHouseNum.isNotEmpty && effectiveRoute.isEmpty) continue;
@@ -709,7 +902,7 @@ class PlacesAutocompleteService {
         String streetAddress = '';
         if (effectiveHouseNum.isNotEmpty &&
             effectiveRoute.isNotEmpty &&
-            !effectiveRoute.startsWith(effectiveHouseNum)) {
+            !effectiveRoute.toLowerCase().startsWith('${effectiveHouseNum.toLowerCase()} ')) {
           streetAddress = '$effectiveHouseNum $effectiveRoute';
         } else if (effectiveRoute.isNotEmpty) {
           streetAddress = effectiveRoute;
@@ -729,6 +922,7 @@ class PlacesAutocompleteService {
 
         final description = [
           mainText,
+          if (extractedUnitOrApt.isNotEmpty) extractedUnitOrApt,
           if (secondaryText.isNotEmpty) secondaryText,
         ].join(', ');
 
@@ -751,6 +945,7 @@ class PlacesAutocompleteService {
           placeId: placeId,
           formattedAddress: description,
           streetAddress: streetAddress,
+          unitOrApt: extractedUnitOrApt,
           city: city,
           state: state,
           postalCode: postalCode,
@@ -785,20 +980,25 @@ class PlacesAutocompleteService {
     String query,
     http.Client client,
   ) async {
+    final inline = extractInlineUnitOrApt(query);
+    final effectiveQuery = inline.cleanedQuery;
+
     final directResults = await _queryNominatimEndpoint(
-      query,
-      originalUserQuery: query,
+      effectiveQuery,
+      originalUserQuery: effectiveQuery,
+      extractedUnitOrApt: inline.unitOrApt,
       client: client,
     );
     if (directResults.isNotEmpty) {
       return directResults;
     }
 
-    final retryQuery = _buildTypoPrefixRetryQuery(query);
+    final retryQuery = _buildTypoPrefixRetryQuery(effectiveQuery);
     if (retryQuery != null) {
       return await _queryNominatimEndpoint(
         retryQuery,
-        originalUserQuery: query,
+        originalUserQuery: effectiveQuery,
+        extractedUnitOrApt: inline.unitOrApt,
         client: client,
       );
     }
@@ -809,6 +1009,7 @@ class PlacesAutocompleteService {
   static Future<List<PlacePrediction>> _queryNominatimEndpoint(
     String searchQuery, {
     required String originalUserQuery,
+    String extractedUnitOrApt = '',
     required http.Client client,
   }) async {
     try {
@@ -823,7 +1024,7 @@ class PlacesAutocompleteService {
       final decoded = jsonDecode(response.body);
       if (decoded is! List) return const [];
 
-      final leadingNumMatch = RegExp(r'^(\d+[A-Za-z]?)\s+').firstMatch(originalUserQuery.trim());
+      final leadingNumMatch = _leadingHouseNumRegex.firstMatch(originalUserQuery.trim());
       final userLeadingHouseNum = leadingNumMatch?.group(1) ?? '';
 
       final predictions = <PlacePrediction>[];
@@ -836,13 +1037,20 @@ class PlacesAutocompleteService {
 
         final houseNumRaw = (address['house_number'] ?? '').toString().trim();
         final rawItemName = (item['name'] ?? '').toString().trim();
-        final safeItemName = RegExp(r'^\d+[A-Za-z]?$').hasMatch(rawItemName) ? '' : rawItemName;
-        final roadRaw = (address['road'] ??
+        final safeItemName = RegExp(r'^\d+(?:-[0-9A-Za-z]+|[A-Za-z])?$').hasMatch(rawItemName) ? '' : rawItemName;
+        final explicitRoad = (address['road'] ??
                 address['pedestrian'] ??
                 address['street'] ??
-                safeItemName)
+                '')
             .toString()
             .trim();
+        final rawRoad = explicitRoad.isNotEmpty ? explicitRoad : safeItemName;
+        final roadRaw = _stripLeadingHouseNumberFromRoute(
+          rawRoute: rawRoad,
+          isFromFallbackName: explicitRoad.isEmpty,
+          userLeadingHouseNum: userLeadingHouseNum,
+          houseNumRaw: houseNumRaw,
+        );
         final city = (address['city'] ??
                 address['town'] ??
                 address['village'] ??
@@ -859,18 +1067,18 @@ class PlacesAutocompleteService {
             : _normalizeUsState(stateRaw);
         final postalCode = (address['postcode'] ?? '').toString().trim();
 
-        final effectiveHouseNum = houseNumRaw.isNotEmpty ? houseNumRaw : userLeadingHouseNum;
+        final effectiveHouseNum = userLeadingHouseNum.isNotEmpty ? userLeadingHouseNum : houseNumRaw;
         String streetAddress = '';
         if (effectiveHouseNum.isNotEmpty &&
             roadRaw.isNotEmpty &&
-            !roadRaw.startsWith(effectiveHouseNum)) {
+            !roadRaw.toLowerCase().startsWith('${effectiveHouseNum.toLowerCase()} ')) {
           streetAddress = '$effectiveHouseNum $roadRaw';
         } else if (roadRaw.isNotEmpty) {
           streetAddress = roadRaw;
         } else {
           final displayName = (item['display_name'] ?? '').toString().trim();
           final firstPart = displayName.split(',').first.trim();
-          if (!RegExp(r'^\d+[A-Za-z]?$').hasMatch(firstPart)) {
+          if (!RegExp(r'^\d+(?:-[0-9A-Za-z]+|[A-Za-z])?$').hasMatch(firstPart)) {
             streetAddress = firstPart;
           }
         }
@@ -887,6 +1095,7 @@ class PlacesAutocompleteService {
 
         final description = [
           streetAddress,
+          if (extractedUnitOrApt.isNotEmpty) extractedUnitOrApt,
           if (secondaryText.isNotEmpty) secondaryText,
         ].join(', ');
 
@@ -898,6 +1107,7 @@ class PlacesAutocompleteService {
           placeId: placeId,
           formattedAddress: description,
           streetAddress: streetAddress,
+          unitOrApt: extractedUnitOrApt,
           city: city,
           state: state,
           postalCode: postalCode,

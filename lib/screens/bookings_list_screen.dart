@@ -325,10 +325,15 @@ class BookingsListScreen extends StatelessWidget {
                                             : currentBooking.clientAddress))
                                     : currentBooking.clientAddress;
 
+                                final targetUnit = isShop
+                                    ? detailer?.studioUnitOrApt
+                                    : currentBooking.clientUnitOrGateCode;
+
                                 final success = await MapLauncherService.launchNavigation(
                                   latitude: targetLat,
                                   longitude: targetLon,
                                   address: targetAddress,
+                                  unitOrApt: targetUnit,
                                 );
 
                                 if (!success && context.mounted) {
