@@ -1,7 +1,9 @@
 #!/bin/bash
 set -e
-echo "Cloning Flutter stable SDK..."
-git clone -b stable --depth 1 https://github.com/flutter/flutter.git
+if [ ! -d "flutter" ]; then
+  echo "Cloning Flutter stable SDK..."
+  git clone -b stable --depth 1 https://github.com/flutter/flutter.git
+fi
 export PATH="$PATH:`pwd`/flutter/bin"
 flutter --version
 flutter config --no-analytics

@@ -96,6 +96,10 @@ class PlacesAutocompleteService {
   /// Optional injectable HTTP client for testing raw JSON parsing and fallback paths.
   static http.Client? _mockHttpClient;
 
+  /// In-memory cache of resolved place details keyed by placeId for fallback providers
+  /// that return full address components and coordinates during autocomplete search.
+  static final Map<String, ResolvedPlaceDetails> _cachedDetailsByPlaceId = {};
+
   /// Sets mock providers so widget and unit tests run deterministically offline.
   static void setMockProviders({
     Future<List<PlacePrediction>> Function(String input, String sessionToken)?
@@ -107,6 +111,8 @@ class PlacesAutocompleteService {
     _mockAutocompleteProvider = autocompleteProvider;
     _mockPlaceDetailsProvider = placeDetailsProvider;
     _mockHttpClient = httpClient;
+    _cachedDetailsByPlaceId.clear();
+    _geocodeSearchDetailsByPlaceId.clear();
   }
 
   /// Resets all mock providers back to live production behavior.
@@ -114,6 +120,8 @@ class PlacesAutocompleteService {
     _mockAutocompleteProvider = null;
     _mockPlaceDetailsProvider = null;
     _mockHttpClient = null;
+    _cachedDetailsByPlaceId.clear();
+    _geocodeSearchDetailsByPlaceId.clear();
   }
 
   /// Generates a RFC-4122 compliant UUID v4 session token so all keystrokes
@@ -161,7 +169,55 @@ class PlacesAutocompleteService {
 
     final client = _mockHttpClient ?? http.Client();
     try {
-      // 2. Primary: Google Places API (New) Autocomplete
+      // 2. Primary (Tier 1): Google Places API (New) Autocomplete
+      final placesNewResults = await _fetchGooglePlacesNewPredictions(
+        trimmed,
+        sessionToken: sessionToken,
+        apiKey: apiKey,
+        client: client,
+      );
+      if (placesNewResults.isNotEmpty) {
+        return placesNewResults;
+      }
+
+      // 3. Secondary (Tier 2): Google Geocoding API
+      final geocodeResults = await _fallbackGeocodePredictions(
+        trimmed,
+        apiKey,
+        client,
+      );
+      if (geocodeResults.isNotEmpty) {
+        return geocodeResults;
+      }
+
+      // 4. Tertiary (Tier 3): Zero-key CORS-enabled OpenStreetMap Photon / Nominatim fallback
+      //    Ensures dropdown suggestions still appear when Google API key HTTP referrer
+      //    restrictions block non-www, localhost, preview URLs, or native apps.
+      final photonResults = await _fallbackPhotonPredictions(trimmed, client);
+      if (photonResults.isNotEmpty) {
+        return photonResults;
+      }
+
+      return await _fallbackNominatimPredictions(trimmed, client);
+    } catch (e) {
+      if (kDebugMode) {
+        print('[PlacesAutocompleteService] Autocomplete fallback error: $e');
+      }
+      return const [];
+    } finally {
+      if (_mockHttpClient == null) {
+        client.close();
+      }
+    }
+  }
+
+  static Future<List<PlacePrediction>> _fetchGooglePlacesNewPredictions(
+    String trimmed, {
+    required String sessionToken,
+    required String apiKey,
+    required http.Client client,
+  }) async {
+    try {
       final url = Uri.parse('https://places.googleapis.com/v1/places:autocomplete');
       final response = await client
           .post(
@@ -169,6 +225,8 @@ class PlacesAutocompleteService {
             headers: {
               'Content-Type': 'application/json',
               'X-Goog-Api-Key': apiKey,
+              'X-Goog-FieldMask':
+                  'suggestions.placePrediction.placeId,suggestions.placePrediction.place,suggestions.placePrediction.text,suggestions.placePrediction.structuredFormat',
             },
             body: jsonEncode({
               'input': trimmed,
@@ -241,19 +299,12 @@ class PlacesAutocompleteService {
           }
         }
       }
-
-      // 3. Fallback: Google Geocoding API
-      return await _fallbackGeocodePredictions(trimmed, apiKey, client);
     } catch (e) {
       if (kDebugMode) {
-        print('[PlacesAutocompleteService] Autocomplete network fallback: $e');
-      }
-      return const [];
-    } finally {
-      if (_mockHttpClient == null) {
-        client.close();
+        print('[PlacesAutocompleteService] Places API (New) autocomplete error: $e');
       }
     }
+    return const [];
   }
 
   /// Resolves structured street, city, state, postal code, and exact lat/lng
@@ -277,6 +328,12 @@ class PlacesAutocompleteService {
       }
     }
 
+      // 2. Check pre-resolved details cache (from Photon / Nominatim)
+    final cached = _cachedDetailsByPlaceId[trimmedId];
+    if (cached != null) {
+      return cached;
+    }
+
     final apiKey = SupabaseService.googleMapsApiKey.trim();
     if (apiKey.isEmpty) return null;
 
@@ -286,43 +343,54 @@ class PlacesAutocompleteService {
           ? trimmedId.substring('places/'.length)
           : trimmedId;
 
-      final uri = Uri.parse(
-        'https://places.googleapis.com/v1/places/${Uri.encodeComponent(cleanId)}'
-        '?fields=id,formattedAddress,addressComponents,location'
-        '&sessionToken=${Uri.encodeQueryComponent(sessionToken)}',
-      );
+      try {
+        final uri = Uri.parse(
+          'https://places.googleapis.com/v1/places/${Uri.encodeComponent(cleanId)}'
+          '?fields=id,formattedAddress,addressComponents,location'
+          '&sessionToken=${Uri.encodeQueryComponent(sessionToken)}',
+        );
 
-      final response = await client
-          .get(
-            uri,
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Goog-Api-Key': apiKey,
-              'X-Goog-FieldMask': 'id,formattedAddress,addressComponents,location',
-            },
-          )
-          .timeout(const Duration(seconds: 4));
+        final response = await client
+            .get(
+              uri,
+              headers: {
+                'X-Goog-Api-Key': apiKey,
+                'X-Goog-FieldMask': 'id,formattedAddress,addressComponents,location',
+              },
+            )
+            .timeout(const Duration(seconds: 4));
 
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) {
-          return parsePlacesNewDetailsJson(decoded, fallbackPlaceId: cleanId);
+        if (response.statusCode == 200) {
+          final decoded = jsonDecode(response.body);
+          if (decoded is Map<String, dynamic>) {
+            return parsePlacesNewDetailsJson(decoded, fallbackPlaceId: cleanId);
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('[PlacesAutocompleteService] Places API (New) details error: $e');
         }
       }
 
-      // Fallback to Geocoding API by place_id
-      return await _fallbackGeocodePlaceDetails(cleanId, apiKey, client);
+      // Fallback to Geocoding API by place_id, or pre-parsed geocode search result
+      final geocodeDetails = await _fallbackGeocodePlaceDetails(cleanId, apiKey, client);
+      if (geocodeDetails != null) {
+        return geocodeDetails;
+      }
+      return _geocodeSearchDetailsByPlaceId[cleanId] ?? _geocodeSearchDetailsByPlaceId[trimmedId];
     } catch (e) {
       if (kDebugMode) {
         print('[PlacesAutocompleteService] Place details error: $e');
       }
-      return null;
+      return _geocodeSearchDetailsByPlaceId[trimmedId];
     } finally {
       if (_mockHttpClient == null) {
         client.close();
       }
     }
   }
+
+  static final Map<String, ResolvedPlaceDetails> _geocodeSearchDetailsByPlaceId = {};
 
   /// Parses a Google Places API (New) Place Details JSON payload into [ResolvedPlaceDetails].
   static ResolvedPlaceDetails parsePlacesNewDetailsJson(
@@ -436,6 +504,32 @@ class PlacesAutocompleteService {
         final formatted = (item['formatted_address'] ?? '').toString().trim();
         if (placeId.isEmpty || formatted.isEmpty) continue;
 
+        final components = item['address_components'] as List<dynamic>?;
+        final geometry = item['geometry'];
+        if ((components != null && components.isNotEmpty) || geometry is Map) {
+          double? lat;
+          double? lng;
+          if (geometry is Map) {
+            final loc = geometry['location'];
+            if (loc is Map) {
+              if (loc['lat'] is num) lat = (loc['lat'] as num).toDouble();
+              if (loc['lng'] is num) lng = (loc['lng'] as num).toDouble();
+            }
+          }
+          _geocodeSearchDetailsByPlaceId[placeId] = parsePlacesNewDetailsJson(
+            {
+              'id': placeId,
+              'formattedAddress': formatted,
+              'addressComponents': components ?? const [],
+              'location': {
+                'latitude': lat,
+                'longitude': lng,
+              },
+            },
+            fallbackPlaceId: placeId,
+          );
+        }
+
         final parts = formatted.split(',');
         final mainText = parts.first.trim();
         final secondaryText = parts.length > 1 ? parts.skip(1).join(',').trim() : '';
@@ -506,5 +600,384 @@ class PlacesAutocompleteService {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Builds a 3-character prefix retry query when the last word has >= 4 alphabetic characters
+  /// (e.g., "800 enegy" -> "800 ene") to recover from street name typos.
+  static String? _buildTypoPrefixRetryQuery(String query) {
+    final tokens = query.trim().split(RegExp(r'\s+'));
+    if (tokens.isEmpty) return null;
+    final lastToken = tokens.last;
+    if (lastToken.length >= 4 && RegExp(r'^[A-Za-z]+$').hasMatch(lastToken)) {
+      final shortenedTokens = [
+        ...tokens.sublist(0, tokens.length - 1),
+        lastToken.substring(0, 3),
+      ];
+      return shortenedTokens.join(' ');
+    }
+    return null;
+  }
+
+  /// Tertiary zero-key CORS-enabled autocomplete fallback using Photon (OpenStreetMap).
+  /// Includes automatic prefix retry when a multi-letter word has a typo (e.g. "800 enegy" -> "800 ene").
+  static Future<List<PlacePrediction>> _fallbackPhotonPredictions(
+    String query,
+    http.Client client,
+  ) async {
+    final directResults = await _queryPhotonEndpoint(
+      query,
+      originalUserQuery: query,
+      client: client,
+    );
+    if (directResults.isNotEmpty) {
+      return directResults;
+    }
+
+    final retryQuery = _buildTypoPrefixRetryQuery(query);
+    if (retryQuery != null) {
+      final prefixResults = await _queryPhotonEndpoint(
+        retryQuery,
+        originalUserQuery: query,
+        client: client,
+      );
+      if (prefixResults.isNotEmpty) {
+        return prefixResults;
+      }
+    }
+
+    return const [];
+  }
+
+  static Future<List<PlacePrediction>> _queryPhotonEndpoint(
+    String searchQuery, {
+    required String originalUserQuery,
+    required http.Client client,
+  }) async {
+    try {
+      final uri = Uri.parse(
+        'https://photon.komoot.io/api/'
+        '?q=${Uri.encodeQueryComponent(searchQuery)}'
+        '&limit=5&lang=en',
+      );
+      final response = await client.get(uri).timeout(const Duration(seconds: 4));
+      if (response.statusCode != 200) return const [];
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) return const [];
+      final features = decoded['features'] as List<dynamic>?;
+      if (features == null || features.isEmpty) return const [];
+
+      final leadingNumMatch = RegExp(r'^(\d+[A-Za-z]?)\s+').firstMatch(originalUserQuery.trim());
+      final userLeadingHouseNum = leadingNumMatch?.group(1) ?? '';
+
+      final usPredictions = <PlacePrediction>[];
+      final otherPredictions = <PlacePrediction>[];
+      final seenDescriptions = <String>{};
+
+      for (int i = 0; i < features.length; i++) {
+        final feat = features[i];
+        if (feat is! Map) continue;
+        final props = feat['properties'];
+        if (props is! Map) continue;
+
+        final osmId = (props['osm_id'] ?? i).toString();
+        final osmType = (props['osm_type'] ?? 'N').toString();
+        final houseNumRaw = (props['housenumber'] ?? '').toString().trim();
+        final streetRaw = (props['street'] ?? '').toString().trim();
+        final nameRaw = (props['name'] ?? '').toString().trim();
+        final safeName = RegExp(r'^\d+[A-Za-z]?$').hasMatch(nameRaw) ? '' : nameRaw;
+
+        final city = (props['city'] ??
+                props['town'] ??
+                props['locality'] ??
+                props['district'] ??
+                props['county'] ??
+                '')
+            .toString()
+            .trim();
+        final stateRaw = (props['state'] ?? '').toString().trim();
+        final state = _normalizeUsState(stateRaw);
+        final postalCode = (props['postcode'] ?? '').toString().trim();
+        final countryCode = (props['countrycode'] ?? '').toString().trim().toUpperCase();
+
+        final effectiveHouseNum = houseNumRaw.isNotEmpty ? houseNumRaw : userLeadingHouseNum;
+        final effectiveRoute = streetRaw.isNotEmpty ? streetRaw : safeName;
+        if (effectiveRoute.isEmpty && city.isEmpty) continue;
+        // If user typed a street number (e.g. "800 enegy"), skip city-only features without a street/route name
+        if (userLeadingHouseNum.isNotEmpty && effectiveRoute.isEmpty) continue;
+
+        String streetAddress = '';
+        if (effectiveHouseNum.isNotEmpty &&
+            effectiveRoute.isNotEmpty &&
+            !effectiveRoute.startsWith(effectiveHouseNum)) {
+          streetAddress = '$effectiveHouseNum $effectiveRoute';
+        } else if (effectiveRoute.isNotEmpty) {
+          streetAddress = effectiveRoute;
+        }
+
+        final stateZip = [
+          if (state.isNotEmpty) state,
+          if (postalCode.isNotEmpty) postalCode,
+        ].join(' ');
+        final secondaryText = [
+          if (city.isNotEmpty) city,
+          if (stateZip.isNotEmpty) stateZip,
+        ].join(', ');
+
+        final mainText = streetAddress.isNotEmpty ? streetAddress : city;
+        if (mainText.isEmpty) continue;
+
+        final description = [
+          mainText,
+          if (secondaryText.isNotEmpty) secondaryText,
+        ].join(', ');
+
+        final dedupeKey = description.toLowerCase();
+        if (!seenDescriptions.add(dedupeKey)) continue;
+
+        double? lat;
+        double? lng;
+        final geom = feat['geometry'];
+        if (geom is Map) {
+          final coords = geom['coordinates'];
+          if (coords is List && coords.length >= 2) {
+            if (coords[0] is num) lng = (coords[0] as num).toDouble();
+            if (coords[1] is num) lat = (coords[1] as num).toDouble();
+          }
+        }
+
+        final placeId = 'photon:${osmType}_${osmId}_$i';
+        _cachedDetailsByPlaceId[placeId] = ResolvedPlaceDetails(
+          placeId: placeId,
+          formattedAddress: description,
+          streetAddress: streetAddress,
+          city: city,
+          state: state,
+          postalCode: postalCode,
+          latitude: lat,
+          longitude: lng,
+        );
+
+        final prediction = PlacePrediction(
+          placeId: placeId,
+          description: description,
+          mainText: mainText,
+          secondaryText: secondaryText,
+        );
+
+        final isUs = countryCode == 'US' || (countryCode.isEmpty && state.length == 2);
+        if (isUs) {
+          usPredictions.add(prediction);
+        } else {
+          otherPredictions.add(prediction);
+        }
+      }
+
+      return [...usPredictions, ...otherPredictions].take(5).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Quaternary zero-key CORS-enabled fallback using OpenStreetMap Nominatim.
+  /// Also supports 3-character prefix retry on last-word typos.
+  static Future<List<PlacePrediction>> _fallbackNominatimPredictions(
+    String query,
+    http.Client client,
+  ) async {
+    final directResults = await _queryNominatimEndpoint(
+      query,
+      originalUserQuery: query,
+      client: client,
+    );
+    if (directResults.isNotEmpty) {
+      return directResults;
+    }
+
+    final retryQuery = _buildTypoPrefixRetryQuery(query);
+    if (retryQuery != null) {
+      return await _queryNominatimEndpoint(
+        retryQuery,
+        originalUserQuery: query,
+        client: client,
+      );
+    }
+
+    return const [];
+  }
+
+  static Future<List<PlacePrediction>> _queryNominatimEndpoint(
+    String searchQuery, {
+    required String originalUserQuery,
+    required http.Client client,
+  }) async {
+    try {
+      final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/search'
+        '?q=${Uri.encodeQueryComponent(searchQuery)}'
+        '&format=jsonv2&addressdetails=1&limit=5',
+      );
+      final response = await client.get(uri).timeout(const Duration(seconds: 4));
+      if (response.statusCode != 200) return const [];
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is! List) return const [];
+
+      final leadingNumMatch = RegExp(r'^(\d+[A-Za-z]?)\s+').firstMatch(originalUserQuery.trim());
+      final userLeadingHouseNum = leadingNumMatch?.group(1) ?? '';
+
+      final predictions = <PlacePrediction>[];
+      for (int i = 0; i < decoded.length; i++) {
+        final item = decoded[i];
+        if (item is! Map) continue;
+
+        final rawId = (item['place_id'] ?? i).toString();
+        final address = item['address'] as Map? ?? const {};
+
+        final houseNumRaw = (address['house_number'] ?? '').toString().trim();
+        final rawItemName = (item['name'] ?? '').toString().trim();
+        final safeItemName = RegExp(r'^\d+[A-Za-z]?$').hasMatch(rawItemName) ? '' : rawItemName;
+        final roadRaw = (address['road'] ??
+                address['pedestrian'] ??
+                address['street'] ??
+                safeItemName)
+            .toString()
+            .trim();
+        final city = (address['city'] ??
+                address['town'] ??
+                address['village'] ??
+                address['suburb'] ??
+                address['county'] ??
+                '')
+            .toString()
+            .trim();
+
+        final isoState = (address['ISO3166-2-lvl4'] ?? '').toString().trim();
+        final stateRaw = (address['state'] ?? '').toString().trim();
+        final state = isoState.startsWith('US-') && isoState.length == 5
+            ? isoState.substring(3)
+            : _normalizeUsState(stateRaw);
+        final postalCode = (address['postcode'] ?? '').toString().trim();
+
+        final effectiveHouseNum = houseNumRaw.isNotEmpty ? houseNumRaw : userLeadingHouseNum;
+        String streetAddress = '';
+        if (effectiveHouseNum.isNotEmpty &&
+            roadRaw.isNotEmpty &&
+            !roadRaw.startsWith(effectiveHouseNum)) {
+          streetAddress = '$effectiveHouseNum $roadRaw';
+        } else if (roadRaw.isNotEmpty) {
+          streetAddress = roadRaw;
+        } else {
+          final displayName = (item['display_name'] ?? '').toString().trim();
+          final firstPart = displayName.split(',').first.trim();
+          if (!RegExp(r'^\d+[A-Za-z]?$').hasMatch(firstPart)) {
+            streetAddress = firstPart;
+          }
+        }
+        if (streetAddress.isEmpty) continue;
+
+        final stateZip = [
+          if (state.isNotEmpty) state,
+          if (postalCode.isNotEmpty) postalCode,
+        ].join(' ');
+        final secondaryText = [
+          if (city.isNotEmpty) city,
+          if (stateZip.isNotEmpty) stateZip,
+        ].join(', ');
+
+        final description = [
+          streetAddress,
+          if (secondaryText.isNotEmpty) secondaryText,
+        ].join(', ');
+
+        final lat = double.tryParse((item['lat'] ?? '').toString());
+        final lng = double.tryParse((item['lon'] ?? '').toString());
+
+        final placeId = 'nominatim:$rawId';
+        _cachedDetailsByPlaceId[placeId] = ResolvedPlaceDetails(
+          placeId: placeId,
+          formattedAddress: description,
+          streetAddress: streetAddress,
+          city: city,
+          state: state,
+          postalCode: postalCode,
+          latitude: lat,
+          longitude: lng,
+        );
+
+        predictions.add(
+          PlacePrediction(
+            placeId: placeId,
+            description: description,
+            mainText: streetAddress,
+            secondaryText: secondaryText,
+          ),
+        );
+      }
+
+      return predictions;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static String _normalizeUsState(String rawState) {
+    final trimmed = rawState.trim();
+    if (trimmed.isEmpty) return '';
+    if (trimmed.length == 2) return trimmed.toUpperCase();
+    const map = <String, String>{
+      'alabama': 'AL',
+      'alaska': 'AK',
+      'arizona': 'AZ',
+      'arkansas': 'AR',
+      'california': 'CA',
+      'colorado': 'CO',
+      'connecticut': 'CT',
+      'delaware': 'DE',
+      'district of columbia': 'DC',
+      'florida': 'FL',
+      'georgia': 'GA',
+      'hawaii': 'HI',
+      'idaho': 'ID',
+      'illinois': 'IL',
+      'indiana': 'IN',
+      'iowa': 'IA',
+      'kansas': 'KS',
+      'kentucky': 'KY',
+      'louisiana': 'LA',
+      'maine': 'ME',
+      'maryland': 'MD',
+      'massachusetts': 'MA',
+      'michigan': 'MI',
+      'minnesota': 'MN',
+      'mississippi': 'MS',
+      'missouri': 'MO',
+      'montana': 'MT',
+      'nebraska': 'NE',
+      'nevada': 'NV',
+      'new hampshire': 'NH',
+      'new jersey': 'NJ',
+      'new mexico': 'NM',
+      'new york': 'NY',
+      'north carolina': 'NC',
+      'north dakota': 'ND',
+      'ohio': 'OH',
+      'oklahoma': 'OK',
+      'oregon': 'OR',
+      'pennsylvania': 'PA',
+      'rhode island': 'RI',
+      'south carolina': 'SC',
+      'south dakota': 'SD',
+      'tennessee': 'TN',
+      'texas': 'TX',
+      'utah': 'UT',
+      'vermont': 'VT',
+      'virginia': 'VA',
+      'washington': 'WA',
+      'west virginia': 'WV',
+      'wisconsin': 'WI',
+      'wyoming': 'WY',
+    };
+    return map[trimmed.toLowerCase()] ?? trimmed;
   }
 }

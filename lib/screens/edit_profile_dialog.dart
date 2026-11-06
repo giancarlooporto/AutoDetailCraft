@@ -54,6 +54,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
 
   // Session-Token Address Autocomplete State
   Timer? _autocompleteDebounce;
+  int _autocompleteRequestSeq = 0;
   late String _placesSessionToken;
   List<PlacePrediction> _addressPredictions = const [];
   bool _isFetchingPredictions = false;
@@ -146,6 +147,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
 
   void _onStreetChanged(String value) {
     _autocompleteDebounce?.cancel();
+    final reqId = ++_autocompleteRequestSeq;
     final trimmed = value.trim();
     if (trimmed.length < 3) {
       if (_addressPredictions.isNotEmpty ||
@@ -170,14 +172,14 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
     }
 
     _autocompleteDebounce = Timer(const Duration(milliseconds: 300), () async {
-      if (!mounted) return;
+      if (!mounted || reqId != _autocompleteRequestSeq) return;
       setState(() => _isFetchingPredictions = true);
       final token = _placesSessionToken;
       final results = await PlacesAutocompleteService.fetchAutocompleteSuggestions(
         trimmed,
         sessionToken: token,
       );
-      if (!mounted || _streetCtrl.text.trim() != trimmed) return;
+      if (!mounted || reqId != _autocompleteRequestSeq) return;
       setState(() {
         _addressPredictions = results;
         _isFetchingPredictions = false;
@@ -187,6 +189,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
 
   Future<void> _onSelectPrediction(PlacePrediction prediction) async {
     _autocompleteDebounce?.cancel();
+    final reqId = ++_autocompleteRequestSeq;
     final activeToken = _placesSessionToken;
 
     setState(() {
@@ -202,7 +205,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
     // Rotate session token immediately after completing a Place Details lookup
     _placesSessionToken = PlacesAutocompleteService.generateSessionToken();
 
-    if (!mounted) return;
+    if (!mounted || reqId != _autocompleteRequestSeq) return;
 
     setState(() {
       _isFetchingPredictions = false;
@@ -213,15 +216,9 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
         if (details.unitOrApt.isNotEmpty) {
           _unitCtrl.text = details.unitOrApt;
         }
-        if (details.city.isNotEmpty) {
-          _cityCtrl.text = details.city;
-        }
-        if (details.state.isNotEmpty) {
-          _stateCtrl.text = details.state;
-        }
-        if (details.postalCode.isNotEmpty) {
-          _zipCtrl.text = details.postalCode;
-        }
+        _cityCtrl.text = details.city;
+        _stateCtrl.text = details.state;
+        _zipCtrl.text = details.postalCode;
         _resolvedLatitude = details.latitude;
         _resolvedLongitude = details.longitude;
       } else {

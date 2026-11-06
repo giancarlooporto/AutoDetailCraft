@@ -66,11 +66,18 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
 
   // --- Session-Token Temporary Location Autocomplete State ---
   Timer? _tempAutocompleteDebounce;
+  int _tempAutocompleteRequestSeq = 0;
   late String _tempPlacesSessionToken;
   List<PlacePrediction> _tempAddressPredictions = const [];
   bool _isFetchingTempPredictions = false;
   double? _tempResolvedLatitude;
   double? _tempResolvedLongitude;
+
+  // --- Step 1 Mobile Address Autocomplete State ---
+  Timer? _step1AutocompleteDebounce;
+  int _step1AutocompleteRequestSeq = 0;
+  List<PlacePrediction> _step1AddressPredictions = const [];
+  bool _isFetchingStep1Predictions = false;
 
   List<String> get _timeSlots {
     final hours = widget.repository.getHoursForDate(_selectedDate, detailerId: widget.detailer.id);
@@ -270,7 +277,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
 
   void _onTempStreetChanged(String value) {
     _tempAutocompleteDebounce?.cancel();
+    final reqId = ++_tempAutocompleteRequestSeq;
     final trimmed = value.trim();
+    _addressCtrl.text = trimmed;
     if (trimmed.length < 3) {
       if (_tempAddressPredictions.isNotEmpty ||
           _isFetchingTempPredictions ||
@@ -294,14 +303,14 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     }
 
     _tempAutocompleteDebounce = Timer(const Duration(milliseconds: 300), () async {
-      if (!mounted) return;
+      if (!mounted || reqId != _tempAutocompleteRequestSeq) return;
       setState(() => _isFetchingTempPredictions = true);
       final token = _tempPlacesSessionToken;
       final results = await PlacesAutocompleteService.fetchAutocompleteSuggestions(
         trimmed,
         sessionToken: token,
       );
-      if (!mounted || _tempStreetCtrl.text.trim() != trimmed) return;
+      if (!mounted || reqId != _tempAutocompleteRequestSeq) return;
       setState(() {
         _tempAddressPredictions = results;
         _isFetchingTempPredictions = false;
@@ -311,6 +320,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
 
   Future<void> _onSelectTempPrediction(PlacePrediction prediction) async {
     _tempAutocompleteDebounce?.cancel();
+    final reqId = ++_tempAutocompleteRequestSeq;
     final activeToken = _tempPlacesSessionToken;
 
     setState(() {
@@ -326,29 +336,121 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     // Rotate session token immediately after completing a Place Details lookup
     _tempPlacesSessionToken = PlacesAutocompleteService.generateSessionToken();
 
-    if (!mounted) return;
+    if (!mounted || reqId != _tempAutocompleteRequestSeq) return;
 
     setState(() {
       _isFetchingTempPredictions = false;
       if (details != null) {
+        _addressCtrl.text = details.formattedAddress.isNotEmpty
+            ? details.formattedAddress
+            : prediction.description;
         _tempStreetCtrl.text = details.streetAddress.isNotEmpty
             ? details.streetAddress
             : prediction.mainText;
         if (details.unitOrApt.isNotEmpty) {
           _tempUnitCtrl.text = details.unitOrApt;
         }
-        if (details.city.isNotEmpty) {
-          _tempCityCtrl.text = details.city;
-        }
-        if (details.state.isNotEmpty) {
-          _tempStateCtrl.text = details.state;
-        }
-        if (details.postalCode.isNotEmpty) {
-          _tempZipCtrl.text = details.postalCode;
-        }
+        _tempCityCtrl.text = details.city;
+        _tempStateCtrl.text = details.state;
+        _tempZipCtrl.text = details.postalCode;
         _tempResolvedLatitude = details.latitude;
         _tempResolvedLongitude = details.longitude;
       } else {
+        _addressCtrl.text = prediction.description.isNotEmpty
+            ? prediction.description
+            : prediction.mainText;
+        _tempStreetCtrl.text = prediction.mainText.isNotEmpty
+            ? prediction.mainText
+            : prediction.description;
+        _tempResolvedLatitude = null;
+        _tempResolvedLongitude = null;
+      }
+    });
+  }
+
+  void _onStep1AddressChanged(String value) {
+    _step1AutocompleteDebounce?.cancel();
+    final reqId = ++_step1AutocompleteRequestSeq;
+    final trimmed = value.trim();
+    final savedHomeFormatted = widget.repository.currentUser.formattedClientAddress.trim();
+
+    setState(() {
+      _tempResolvedLatitude = null;
+      _tempResolvedLongitude = null;
+      if (trimmed.isNotEmpty && trimmed != savedHomeFormatted) {
+        _useTemporaryLocation = true;
+        _tempStreetCtrl.text = trimmed;
+        _tempCityCtrl.clear();
+        _tempStateCtrl.clear();
+        _tempZipCtrl.clear();
+      }
+      if (trimmed.length < 3) {
+        _step1AddressPredictions = const [];
+        _isFetchingStep1Predictions = false;
+      }
+    });
+
+    if (trimmed.length < 3) {
+      return;
+    }
+
+    _step1AutocompleteDebounce = Timer(const Duration(milliseconds: 300), () async {
+      if (!mounted || reqId != _step1AutocompleteRequestSeq) return;
+      setState(() => _isFetchingStep1Predictions = true);
+      final token = _tempPlacesSessionToken;
+      final results = await PlacesAutocompleteService.fetchAutocompleteSuggestions(
+        trimmed,
+        sessionToken: token,
+      );
+      if (!mounted || reqId != _step1AutocompleteRequestSeq) return;
+      setState(() {
+        _step1AddressPredictions = results;
+        _isFetchingStep1Predictions = false;
+      });
+    });
+  }
+
+  Future<void> _onSelectStep1Prediction(PlacePrediction prediction) async {
+    _step1AutocompleteDebounce?.cancel();
+    final reqId = ++_step1AutocompleteRequestSeq;
+    final activeToken = _tempPlacesSessionToken;
+
+    setState(() {
+      _step1AddressPredictions = const [];
+      _isFetchingStep1Predictions = true;
+    });
+
+    final details = await PlacesAutocompleteService.fetchPlaceDetails(
+      prediction.placeId,
+      sessionToken: activeToken,
+    );
+
+    _tempPlacesSessionToken = PlacesAutocompleteService.generateSessionToken();
+
+    if (!mounted || reqId != _step1AutocompleteRequestSeq) return;
+
+    setState(() {
+      _isFetchingStep1Predictions = false;
+      _useTemporaryLocation = true;
+      if (details != null) {
+        _addressCtrl.text = details.formattedAddress.isNotEmpty
+            ? details.formattedAddress
+            : prediction.description;
+        _tempStreetCtrl.text = details.streetAddress.isNotEmpty
+            ? details.streetAddress
+            : prediction.mainText;
+        if (details.unitOrApt.isNotEmpty) {
+          _tempUnitCtrl.text = details.unitOrApt;
+        }
+        _tempCityCtrl.text = details.city;
+        _tempStateCtrl.text = details.state;
+        _tempZipCtrl.text = details.postalCode;
+        _tempResolvedLatitude = details.latitude;
+        _tempResolvedLongitude = details.longitude;
+      } else {
+        _addressCtrl.text = prediction.description.isNotEmpty
+            ? prediction.description
+            : prediction.mainText;
         _tempStreetCtrl.text = prediction.mainText.isNotEmpty
             ? prediction.mainText
             : prediction.description;
@@ -496,6 +598,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
   @override
   void dispose() {
     _tempAutocompleteDebounce?.cancel();
+    _step1AutocompleteDebounce?.cancel();
     if (widget.repository.activeStudioDetailerId == widget.detailer.id) {
       widget.repository.activeStudioDetailerId = null;
     }
@@ -1450,12 +1553,83 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         if (_locationType == ServiceLocationType.mobile) ...[
           const SizedBox(height: 12),
           TextField(
+            key: const Key('step1_mobile_address_field'),
             controller: _addressCtrl,
-            decoration: const InputDecoration(
+            onChanged: _onStep1AddressChanged,
+            decoration: InputDecoration(
               labelText: 'Your Street Address & Zip Code',
-              prefixIcon: Icon(Icons.location_on_outlined),
+              prefixIcon: const Icon(Icons.location_on_outlined),
+              suffixIcon: _isFetchingStep1Predictions
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
+                      ),
+                    )
+                  : null,
             ),
           ),
+          if (_step1AddressPredictions.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Container(
+              key: const Key('step1_address_autocomplete_dropdown'),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceLight,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.primary.withAlpha(120)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: _step1AddressPredictions.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final pred = entry.value;
+                  return InkWell(
+                    key: Key('step1_prediction_item_$idx'),
+                    onTap: () => _onSelectStep1Prediction(pred),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.place_rounded, size: 16, color: AppTheme.primary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  pred.mainText.isNotEmpty ? pred.mainText : pred.description,
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (pred.secondaryText.isNotEmpty)
+                                  Text(
+                                    pred.secondaryText,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
         ],
         const SizedBox(height: 20),
         Row(

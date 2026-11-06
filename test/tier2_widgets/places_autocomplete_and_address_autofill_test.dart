@@ -278,6 +278,246 @@ void main() {
       expect(details.latitude, closeTo(30.2655, 0.0001));
       expect(details.longitude, closeTo(-97.7398, 0.0001));
     });
+
+    test('1.6 Automatic fallback to Photon (with typo prefix retry & house number preservation) when Google returns API_KEY_HTTP_REFERRER_BLOCKED & REQUEST_DENIED', () async {
+      final photonQueries = <String>[];
+
+      final mockClient = MockClient((request) async {
+        if (request.url.host == 'places.googleapis.com') {
+          return http.Response(
+            jsonEncode({
+              'error': {
+                'code': 403,
+                'message': 'Requests from referer https://autodetailcraft.com/ are blocked.',
+                'status': 'PERMISSION_DENIED',
+              },
+            }),
+            403,
+          );
+        }
+        if (request.url.host == 'maps.googleapis.com') {
+          return http.Response(
+            jsonEncode({
+              'error_message': 'API keys with referer restrictions cannot be used with this API.',
+              'results': [],
+              'status': 'REQUEST_DENIED',
+            }),
+            200,
+          );
+        }
+        if (request.url.host == 'photon.komoot.io') {
+          final q = request.url.queryParameters['q'] ?? '';
+          photonQueries.add(q);
+          if (q == '800 enegy') {
+            // Simulate exact typo returning 0 features
+            return http.Response(
+              jsonEncode({'type': 'FeatureCollection', 'features': []}),
+              200,
+            );
+          }
+          if (q == '800 ene') {
+            // Prefix retry matches Energy Way
+            return http.Response(
+              jsonEncode({
+                'type': 'FeatureCollection',
+                'features': [
+                  {
+                    'type': 'Feature',
+                    'geometry': {
+                      'type': 'Point',
+                      'coordinates': [-80.0684, 26.7153],
+                    },
+                    'properties': {
+                      'osm_id': 987654,
+                      'osm_type': 'W',
+                      'name': 'Energy Way',
+                      'city': 'West Palm Beach',
+                      'state': 'Florida',
+                      'postcode': '33409',
+                    },
+                  },
+                ],
+              }),
+              200,
+            );
+          }
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      PlacesAutocompleteService.setMockProviders(httpClient: mockClient);
+
+      final preds = await PlacesAutocompleteService.fetchAutocompleteSuggestions(
+        '800 enegy',
+        sessionToken: 'tok-photon-retry',
+      );
+
+      expect(photonQueries, ['800 enegy', '800 ene']);
+      expect(preds.length, 1);
+      expect(preds.first.mainText, '800 Energy Way');
+      expect(preds.first.secondaryText, 'West Palm Beach, FL 33409');
+
+      final details = await PlacesAutocompleteService.fetchPlaceDetails(
+        preds.first.placeId,
+        sessionToken: 'tok-photon-retry',
+      );
+      expect(details, isNotNull);
+      expect(details!.streetAddress, '800 Energy Way');
+      expect(details.city, 'West Palm Beach');
+      expect(details.state, 'FL');
+      expect(details.postalCode, '33409');
+      expect(details.latitude, closeTo(26.7153, 0.0001));
+      expect(details.longitude, closeTo(-80.0684, 0.0001));
+    });
+
+    test('1.7 Automatic fallback to Nominatim when Google and Photon are unavailable', () async {
+      final mockClient = MockClient((request) async {
+        if (request.url.host == 'places.googleapis.com') {
+          throw Exception('CORS preflight failed');
+        }
+        if (request.url.host == 'maps.googleapis.com' ||
+            request.url.host == 'photon.komoot.io') {
+          return http.Response('Service Unavailable', 503);
+        }
+        if (request.url.host == 'nominatim.openstreetmap.org') {
+          return http.Response(
+            jsonEncode([
+              {
+                'place_id': 445566,
+                'lat': '30.2672',
+                'lon': '-97.7431',
+                'display_name': '300, West 6th Street, Austin, Texas, 78701, USA',
+                'address': {
+                  'house_number': '300',
+                  'road': 'West 6th Street',
+                  'city': 'Austin',
+                  'state': 'Texas',
+                  'ISO3166-2-lvl4': 'US-TX',
+                  'postcode': '78701',
+                },
+              },
+            ]),
+            200,
+          );
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      PlacesAutocompleteService.setMockProviders(httpClient: mockClient);
+
+      final preds = await PlacesAutocompleteService.fetchAutocompleteSuggestions(
+        '300 W 6th St',
+        sessionToken: 'tok-nominatim',
+      );
+
+      expect(preds.length, 1);
+      expect(preds.first.mainText, '300 West 6th Street');
+      expect(preds.first.secondaryText, 'Austin, TX 78701');
+
+      final details = await PlacesAutocompleteService.fetchPlaceDetails(
+        preds.first.placeId,
+        sessionToken: 'tok-nominatim',
+      );
+      expect(details, isNotNull);
+      expect(details!.streetAddress, '300 West 6th Street');
+      expect(details.city, 'Austin');
+      expect(details.state, 'TX');
+      expect(details.postalCode, '78701');
+      expect(details.latitude, closeTo(30.2672, 0.0001));
+      expect(details.longitude, closeTo(-97.7431, 0.0001));
+    });
+
+    test('1.8 Photon & Nominatim ignore bare numeric/streetless features when user types a house number, and Nominatim performs 3-char typo prefix retry', () async {
+      final nominatimQueries = <String>[];
+
+      final mockClient = MockClient((request) async {
+        if (request.url.host == 'places.googleapis.com' ||
+            request.url.host == 'maps.googleapis.com') {
+          return http.Response('Forbidden', 403);
+        }
+        if (request.url.host == 'photon.komoot.io') {
+          // Return only a city-level feature with no street and a bare numeric name "800"
+          // Both must be rejected when user typed "800 enegy"
+          return http.Response(
+            jsonEncode({
+              'type': 'FeatureCollection',
+              'features': [
+                {
+                  'type': 'Feature',
+                  'geometry': {
+                    'type': 'Point',
+                    'coordinates': [-97.7431, 30.2672],
+                  },
+                  'properties': {
+                    'osm_id': 111,
+                    'osm_type': 'N',
+                    'city': 'Austin',
+                    'state': 'Texas',
+                  },
+                },
+                {
+                  'type': 'Feature',
+                  'geometry': {
+                    'type': 'Point',
+                    'coordinates': [-97.7431, 30.2672],
+                  },
+                  'properties': {
+                    'osm_id': 222,
+                    'osm_type': 'N',
+                    'name': '800',
+                    'city': 'Austin',
+                    'state': 'Texas',
+                  },
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.host == 'nominatim.openstreetmap.org') {
+          final q = request.url.queryParameters['q'] ?? '';
+          nominatimQueries.add(q);
+          if (q == '800 enegy') {
+            return http.Response(jsonEncode([]), 200);
+          }
+          if (q == '800 ene') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'place_id': 778899,
+                  'name': '800',
+                  'lat': '32.6177',
+                  'lon': '-117.0570',
+                  'display_name': '800, Energy Way, Chula Vista, California, 91911, USA',
+                  'address': {
+                    'house_number': '800',
+                    'road': 'Energy Way',
+                    'city': 'Chula Vista',
+                    'state': 'California',
+                    'ISO3166-2-lvl4': 'US-CA',
+                    'postcode': '91911',
+                  },
+                },
+              ]),
+              200,
+            );
+          }
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      PlacesAutocompleteService.setMockProviders(httpClient: mockClient);
+
+      final preds = await PlacesAutocompleteService.fetchAutocompleteSuggestions(
+        '800 enegy',
+        sessionToken: 'tok-nom-retry',
+      );
+
+      expect(nominatimQueries, ['800 enegy', '800 ene']);
+      expect(preds.length, 1);
+      expect(preds.first.mainText, '800 Energy Way');
+      expect(preds.first.secondaryText, 'Chula Vista, CA 91911');
+    });
   });
 
   // =========================================================================
@@ -832,6 +1072,179 @@ void main() {
         expect(booking.clientAddress, contains('800 Custom Ranch Rd'));
         expect(booking.latitude, isNull, reason: 'Stale temporary latitude must be cleared on manual street edit');
         expect(booking.longitude, isNull, reason: 'Stale temporary longitude must be cleared on manual street edit');
+      } finally {
+        tearDownMockImageHttpClient();
+      }
+    });
+
+    testWidgets('3.3 Typing into Step 1 mobile address field shows autocomplete dropdown and populates Step 2 location & coordinates', (tester) async {
+      tester.view.physicalSize = const Size(900, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+      setupMockImageHttpClient();
+
+      PlacesAutocompleteService.setMockProviders(
+        autocompleteProvider: (input, token) async => [
+          const PlacePrediction(
+            placeId: 'place_step1_gym',
+            description: '900 Barton Springs Rd, Austin, TX 78704',
+            mainText: '900 Barton Springs Rd',
+            secondaryText: 'Austin, TX 78704',
+          ),
+        ],
+        placeDetailsProvider: (placeId, token) async => const ResolvedPlaceDetails(
+          placeId: 'place_step1_gym',
+          formattedAddress: '900 Barton Springs Rd, Austin, TX 78704',
+          streetAddress: '900 Barton Springs Rd',
+          city: 'Austin',
+          state: 'TX',
+          postalCode: '78704',
+          latitude: 30.2610,
+          longitude: -97.7560,
+        ),
+      );
+
+      try {
+        final repo = await TestHarness.createSession(
+          isLoggedIn: true,
+          currentUser: testClientUser,
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: Scaffold(
+              body: BookingFlowScreen(
+                detailer: testStudioDetailer,
+                repository: repo,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Advance Step 0 -> Step 1
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        final step1AddressField = find.byKey(const Key('step1_mobile_address_field'));
+        expect(step1AddressField, findsOneWidget);
+
+        await tester.enterText(step1AddressField, '900 Barton');
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('step1_address_autocomplete_dropdown')), findsOneWidget);
+        expect(find.text('900 Barton Springs Rd'), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('step1_prediction_item_0')));
+        await tester.pumpAndSettle();
+
+        // Advance Step 1 -> Step 2
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // Confirm booking
+        final confirmBtn = find.text('Reserve & Book').evaluate().isNotEmpty
+            ? find.text('Reserve & Book')
+            : find.text('Confirm & Request Booking');
+        await tester.tap(confirmBtn);
+        await tester.pumpAndSettle();
+
+        expect(repo.bookings, isNotEmpty);
+        final booking = repo.bookings.last;
+        expect(booking.clientAddress, contains('900 Barton Springs Rd'));
+        expect(booking.latitude, closeTo(30.2610, 0.0001));
+        expect(booking.longitude, closeTo(-97.7560, 0.0001));
+      } finally {
+        tearDownMockImageHttpClient();
+      }
+    });
+
+    testWidgets('3.4 Manually editing Step 1 mobile address field after selecting a Step 1 prediction clears stale coordinates and updates submitted address', (tester) async {
+      tester.view.physicalSize = const Size(900, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+      setupMockImageHttpClient();
+
+      PlacesAutocompleteService.setMockProviders(
+        autocompleteProvider: (input, token) async {
+          if (input.contains('900')) {
+            return [
+              const PlacePrediction(
+                placeId: 'place_step1_gym',
+                description: '900 Barton Springs Rd, Austin, TX 78704',
+                mainText: '900 Barton Springs Rd',
+                secondaryText: 'Austin, TX 78704',
+              ),
+            ];
+          }
+          return const [];
+        },
+        placeDetailsProvider: (placeId, token) async => const ResolvedPlaceDetails(
+          placeId: 'place_step1_gym',
+          formattedAddress: '900 Barton Springs Rd, Austin, TX 78704',
+          streetAddress: '900 Barton Springs Rd',
+          city: 'Austin',
+          state: 'TX',
+          postalCode: '78704',
+          latitude: 30.2610,
+          longitude: -97.7560,
+        ),
+      );
+
+      try {
+        final repo = await TestHarness.createSession(
+          isLoggedIn: true,
+          currentUser: testClientUser,
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: Scaffold(
+              body: BookingFlowScreen(
+                detailer: testStudioDetailer,
+                repository: repo,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Advance Step 0 -> Step 1
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        final step1AddressField = find.byKey(const Key('step1_mobile_address_field'));
+        await tester.enterText(step1AddressField, '900 Barton');
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('step1_prediction_item_0')));
+        await tester.pumpAndSettle();
+
+        // Now manually overwrite Step 1 address field without selecting a prediction
+        await tester.enterText(step1AddressField, '777 Manual Override Way, Round Rock, TX 78664');
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        // Advance Step 1 -> Step 2
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // Confirm booking
+        final confirmBtn = find.text('Reserve & Book').evaluate().isNotEmpty
+            ? find.text('Reserve & Book')
+            : find.text('Confirm & Request Booking');
+        await tester.tap(confirmBtn);
+        await tester.pumpAndSettle();
+
+        expect(repo.bookings, isNotEmpty);
+        final booking = repo.bookings.last;
+        expect(booking.clientAddress, equals('777 Manual Override Way, Round Rock, TX 78664'));
+        expect(booking.latitude, isNull, reason: 'Stale Step 1 coordinates must be cleared on manual Step 1 edit');
+        expect(booking.longitude, isNull, reason: 'Stale Step 1 coordinates must be cleared on manual Step 1 edit');
       } finally {
         tearDownMockImageHttpClient();
       }
