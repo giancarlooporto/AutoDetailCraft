@@ -315,10 +315,10 @@ class PlacesAutocompleteService {
                 secondaryText = fullText.split(',').skip(1).join(',').trim();
               }
 
+              final cleanId = placeId.startsWith('places/')
+                  ? placeId.substring('places/'.length)
+                  : placeId;
               if (extractedUnitOrApt.isNotEmpty) {
-                final cleanId = placeId.startsWith('places/')
-                    ? placeId.substring('places/'.length)
-                    : placeId;
                 _inlineUnitByPlaceId[placeId] = extractedUnitOrApt;
                 _inlineUnitByPlaceId[cleanId] = extractedUnitOrApt;
                 if (!containsAddressSegment(fullText, extractedUnitOrApt)) {
@@ -328,6 +328,9 @@ class PlacesAutocompleteService {
                     if (secondaryText.isNotEmpty) secondaryText,
                   ].join(', ');
                 }
+              } else {
+                _inlineUnitByPlaceId.remove(placeId);
+                _inlineUnitByPlaceId.remove(cleanId);
               }
 
               if (fullText.isNotEmpty) {
@@ -573,6 +576,8 @@ class PlacesAutocompleteService {
 
         if (extractedUnit.isNotEmpty) {
           _inlineUnitByPlaceId[placeId] = extractedUnit;
+        } else {
+          _inlineUnitByPlaceId.remove(placeId);
         }
 
         final parts = formatted.split(',');

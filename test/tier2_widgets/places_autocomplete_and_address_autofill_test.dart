@@ -1391,7 +1391,7 @@ void main() {
 
         final booking = repo.bookings.last;
         expect(booking.clientAddress, equals('800 Energy Way, Apt 703, Chula Vista, CA 91911'));
-        expect(booking.clientUnitOrGateCode, equals('Apt 703'));
+        expect(booking.clientUnitOrGateCode, isNull);
 
         // Switch to Detailer Workbench and press Navigate on the booking
         final detailerRepo = await TestHarness.createSession(

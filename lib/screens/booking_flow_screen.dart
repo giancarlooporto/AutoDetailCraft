@@ -217,9 +217,6 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     if (hasSavedHome) {
       _useTemporaryLocation = false;
       _addressCtrl.text = user.formattedClientAddress;
-      if (user.unitOrApt.isNotEmpty) {
-        _gateCodeNotesCtrl.text = user.unitOrApt;
-      }
     } else {
       _useTemporaryLocation = true;
       if (user.location.isNotEmpty) {
@@ -403,7 +400,6 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     final reqId = ++_step1AutocompleteRequestSeq;
     final trimmed = value.trim();
     final savedHomeFormatted = widget.repository.currentUser.formattedClientAddress.trim();
-    final savedHomeUnit = widget.repository.currentUser.unitOrApt.trim();
 
     setState(() {
       _tempResolvedLatitude = null;
@@ -414,14 +410,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         if (inlineExtraction.unitOrApt.isNotEmpty) {
           _tempStreetCtrl.text = inlineExtraction.cleanedQuery;
           _tempUnitCtrl.text = inlineExtraction.unitOrApt;
-          if (_gateCodeNotesCtrl.text.trim() == savedHomeUnit) {
-            _gateCodeNotesCtrl.text = inlineExtraction.unitOrApt;
-          }
         } else {
           _tempStreetCtrl.text = trimmed;
-          if (_gateCodeNotesCtrl.text.trim() == savedHomeUnit && savedHomeUnit.isNotEmpty) {
-            _gateCodeNotesCtrl.clear();
-          }
+          _tempUnitCtrl.clear();
         }
         _tempCityCtrl.clear();
         _tempStateCtrl.clear();
@@ -473,13 +464,9 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
     if (!mounted || reqId != _step1AutocompleteRequestSeq) return;
 
     final inlineExtraction = PlacesAutocompleteService.extractInlineUnitOrApt(_addressCtrl.text);
-    final existingTempUnit = _tempUnitCtrl.text.trim();
     final preservedUnit = inlineExtraction.unitOrApt.isNotEmpty
         ? inlineExtraction.unitOrApt
-        : (existingTempUnit.isNotEmpty
-            ? existingTempUnit
-            : (details?.unitOrApt ?? ''));
-    final savedHomeUnit = widget.repository.currentUser.unitOrApt.trim();
+        : (details?.unitOrApt ?? '');
 
     setState(() {
       _isFetchingStep1Predictions = false;
@@ -489,13 +476,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
             ? details.streetAddress
             : prediction.mainText;
         _tempStreetCtrl.text = street;
-        if (preservedUnit.isNotEmpty) {
-          _tempUnitCtrl.text = preservedUnit;
-          if (_gateCodeNotesCtrl.text.trim().isEmpty ||
-              _gateCodeNotesCtrl.text.trim() == savedHomeUnit) {
-            _gateCodeNotesCtrl.text = preservedUnit;
-          }
-        }
+        _tempUnitCtrl.text = preservedUnit;
         _tempCityCtrl.text = details.city;
         _tempStateCtrl.text = details.state;
         _tempZipCtrl.text = details.postalCode;
@@ -529,9 +510,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
         _tempStreetCtrl.text = prediction.mainText.isNotEmpty
             ? prediction.mainText
             : prediction.description;
-        if (preservedUnit.isNotEmpty) {
-          _tempUnitCtrl.text = preservedUnit;
-        }
+        _tempUnitCtrl.text = preservedUnit;
         _tempResolvedLatitude = null;
         _tempResolvedLongitude = null;
       }
@@ -836,9 +815,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           }
         }
         effectiveAddress = baseAddress;
-        effectiveUnitOrGate = gateNotes.isNotEmpty
-            ? gateNotes
-            : (user.unitOrApt.isNotEmpty ? user.unitOrApt : null);
+        effectiveUnitOrGate = gateNotes.isNotEmpty ? gateNotes : null;
         effectiveLat = user.latitude;
         effectiveLon = user.longitude;
       } else {
@@ -889,9 +866,7 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
           ];
           effectiveAddress = tempParts.isNotEmpty ? tempParts.join(', ') : _addressCtrl.text.trim();
         }
-        effectiveUnitOrGate = cleanedGateNotes.isNotEmpty
-            ? cleanedGateNotes
-            : (effectiveTempUnit.isNotEmpty ? effectiveTempUnit : null);
+        effectiveUnitOrGate = cleanedGateNotes.isNotEmpty ? cleanedGateNotes : null;
         effectiveLat = _tempResolvedLatitude;
         effectiveLon = _tempResolvedLongitude;
       }
