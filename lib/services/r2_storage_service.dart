@@ -16,6 +16,17 @@ class R2StorageService {
   static const String _region = 'auto';
   static const String _service = 's3';
 
+  /// Injectable mock upload hook for offline unit and widget tests.
+  static Future<String?> Function({
+    required String userId,
+    required Uint8List bytes,
+    String? customFileName,
+    String contentType,
+  })? mockUploadOverride;
+
+  /// Injectable mock delete hook for offline unit and widget tests.
+  static Future<bool> Function(String urlOrKey)? mockDeleteOverride;
+
   /// Generates an AWS S3 SigV4 presigned PUT URL.
   /// This requires NO custom or restricted headers (like Host) and works flawlessly across web browsers and mobile.
   static String generatePresignedPutUrl({
@@ -124,6 +135,14 @@ class R2StorageService {
     String? customFileName,
     String contentType = 'image/jpeg',
   }) async {
+    if (mockUploadOverride != null) {
+      return mockUploadOverride!(
+        userId: userId,
+        bytes: bytes,
+        customFileName: customFileName,
+        contentType: contentType,
+      );
+    }
     try {
       final fileName = customFileName ?? 'img_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final objectKey = '$userId/$fileName';
@@ -174,6 +193,9 @@ class R2StorageService {
 
   /// Permanently deletes an image from Cloudflare R2 bucket given its URL or object key.
   static Future<bool> deleteImage(String urlOrKey) async {
+    if (mockDeleteOverride != null) {
+      return mockDeleteOverride!(urlOrKey);
+    }
     try {
       final objectKey = extractObjectKey(urlOrKey) ?? urlOrKey;
       if (objectKey.isEmpty || objectKey.startsWith('http')) {

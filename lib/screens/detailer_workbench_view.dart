@@ -21,8 +21,12 @@ import '../models/calendar_availability_block.dart';
 import '../models/shift_request.dart';
 import '../models/message_model.dart';
 import '../services/local_storage_service.dart';
+import '../services/image_picker_service.dart';
+import '../services/r2_storage_service.dart';
 import '../widgets/ios_swipe_to_delete.dart';
 import '../widgets/booking_status_tracker.dart';
+import '../widgets/split_slider_widget.dart';
+import '../widgets/fullscreen_image_viewer.dart';
 import '../services/map_launcher_service.dart';
 import 'chat_screen.dart';
 
@@ -4132,6 +4136,16 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           const SizedBox(height: 14),
         ],
 
+        // 4.5 Before & After Inspection Photos (Cloudflare R2)
+        if (b.status == BookingStatus.confirmed ||
+            b.status == BookingStatus.inProgress ||
+            b.status == BookingStatus.completed ||
+            b.beforePhotos.isNotEmpty ||
+            b.afterPhotos.isNotEmpty) ...[
+          _buildBookingInspectionPhotosCard(context, b),
+          const SizedBox(height: 14),
+        ],
+
         // 5. Status Controls & Action Buttons
         Container(
           padding: const EdgeInsets.all(16),
@@ -4150,6 +4164,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   if (b.status == BookingStatus.pending)
                     ElevatedButton.icon(
@@ -4179,6 +4194,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                     ),
                   if (b.status == BookingStatus.inProgress)
                     ElevatedButton.icon(
+                      key: const Key('booking_complete_job_btn'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF00E676),
                         foregroundColor: Colors.black,
@@ -4188,8 +4204,67 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                       onPressed: () async {
                         await widget.repository.updateBookingStatus(b.id, BookingStatus.completed);
                         if (mounted) setState(() {});
+                        if (context.mounted) {
+                          _showCompleteBookingModal(
+                            context,
+                            b,
+                            revertStatusOnCancel: BookingStatus.inProgress,
+                          );
+                        }
                       },
                     ),
+                  if (b.status == BookingStatus.confirmed || b.status == BookingStatus.inProgress)
+                    OutlinedButton.icon(
+                      key: const Key('booking_complete_and_portfolio_btn'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF00E676),
+                        side: const BorderSide(color: Color(0xFF00E676)),
+                      ),
+                      icon: const Icon(Icons.photo_library_rounded, size: 16),
+                      label: const Text('Complete & Portfolio', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () => _showCompleteBookingModal(context, b),
+                    ),
+                  if (b.status == BookingStatus.completed) ...[
+                    if (b.portfolioJobId != null && b.portfolioJobId!.isNotEmpty)
+                      Container(
+                        key: const Key('booking_published_portfolio_badge'),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withAlpha(25),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppTheme.primary.withAlpha(120)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.verified_rounded, size: 16, color: AppTheme.primary),
+                            SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                '✓ Published to Portfolio',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.primary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      ElevatedButton.icon(
+                        key: const Key('booking_publish_to_portfolio_btn'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.black,
+                        ),
+                        icon: const Icon(Icons.photo_library_rounded, size: 16),
+                        label: const Text('Publish to Portfolio', style: TextStyle(fontWeight: FontWeight.bold)),
+                        onPressed: () => _showCompleteBookingModal(context, b, initialPublishToggle: true),
+                      ),
+                  ],
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppTheme.primary,
@@ -4248,6 +4323,712 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           ),
         ),
       ],
+    );
+  }
+
+  bool _isUploadingBookingBeforePhoto = false;
+  bool _isUploadingBookingAfterPhoto = false;
+
+  Future<String?> _uploadBookingPhotoToR2({
+    required BookingAppointment booking,
+    required bool isBefore,
+  }) async {
+    final picked = await pickImageFromDevice();
+    final bytes = picked.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      return null;
+    }
+
+    final prefix = isBefore ? 'before' : 'after';
+    final fileName = 'booking_${booking.id}_${prefix}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final detailerId = booking.detailerId.trim().isNotEmpty
+        ? booking.detailerId.trim()
+        : widget.repository.currentUser.id;
+
+    final cdnUrl = await R2StorageService.uploadImage(
+      userId: detailerId,
+      bytes: bytes,
+      customFileName: fileName,
+    );
+
+    if (cdnUrl == null || cdnUrl.trim().isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cloudflare R2 upload failed. Please check your connection and try again.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return null;
+    }
+    return cdnUrl.trim();
+  }
+
+  Widget _buildBookingInspectionPhotosCard(BuildContext context, BookingAppointment b) {
+    final beforeList = b.beforePhotos;
+    final afterList = b.afterPhotos;
+
+    return Container(
+      key: const Key('booking_inspection_photos_card'),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.camera_alt_rounded, size: 16, color: AppTheme.primary),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  '📸 Before & After Inspection Photos (Cloudflare R2)',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withAlpha(20),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: AppTheme.primary.withAlpha(80)),
+                ),
+                child: const Text(
+                  'R2 CDN',
+                  style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                ),
+              ),
+            ],
+          ),
+          const Divider(color: AppTheme.border, height: 20),
+          const Text(
+            'Upload inspection photos before and after detailing. All photos are stored directly on Cloudflare R2 CDN.',
+            style: TextStyle(fontSize: 11.5, color: AppTheme.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('booking_upload_before_photo_btn'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.hardnessSoft,
+                    side: BorderSide(color: AppTheme.hardnessSoft.withAlpha(140)),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  icon: _isUploadingBookingBeforePhoto
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.hardnessSoft),
+                        )
+                      : const Icon(Icons.add_a_photo_rounded, size: 15),
+                  label: Text(
+                    'Before (${beforeList.length})',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                  onPressed: _isUploadingBookingBeforePhoto
+                      ? null
+                      : () async {
+                          setState(() => _isUploadingBookingBeforePhoto = true);
+                          try {
+                            final url = await _uploadBookingPhotoToR2(booking: b, isBefore: true);
+                            if (url != null) {
+                              final updated = [...b.beforePhotos, url];
+                              await widget.repository.updateBookingInspectionPhotos(
+                                b.id,
+                                beforePhotos: updated,
+                              );
+                            }
+                          } finally {
+                            if (mounted) setState(() => _isUploadingBookingBeforePhoto = false);
+                          }
+                        },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('booking_upload_after_photo_btn'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.primary,
+                    side: BorderSide(color: AppTheme.primary.withAlpha(140)),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  icon: _isUploadingBookingAfterPhoto
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
+                        )
+                      : const Icon(Icons.auto_awesome_rounded, size: 15),
+                  label: Text(
+                    'After (${afterList.length})',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                  onPressed: _isUploadingBookingAfterPhoto
+                      ? null
+                      : () async {
+                          setState(() => _isUploadingBookingAfterPhoto = true);
+                          try {
+                            final url = await _uploadBookingPhotoToR2(booking: b, isBefore: false);
+                            if (url != null) {
+                              final updated = [...b.afterPhotos, url];
+                              await widget.repository.updateBookingInspectionPhotos(
+                                b.id,
+                                afterPhotos: updated,
+                              );
+                            }
+                          } finally {
+                            if (mounted) setState(() => _isUploadingBookingAfterPhoto = false);
+                          }
+                        },
+                ),
+              ),
+            ],
+          ),
+          if (beforeList.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'BEFORE PHOTOS',
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.hardnessSoft, letterSpacing: 0.7),
+            ),
+            const SizedBox(height: 6),
+            _buildBookingPhotoStrip(
+              photos: beforeList,
+              accentColor: AppTheme.hardnessSoft,
+              labelPrefix: 'BEFORE',
+              onRemove: (idx) async {
+                final urlToRemove = beforeList[idx];
+                await R2StorageService.deleteImage(urlToRemove);
+                final updated = List<String>.from(beforeList)..removeAt(idx);
+                await widget.repository.updateBookingInspectionPhotos(b.id, beforePhotos: updated);
+                if (mounted) setState(() {});
+              },
+            ),
+          ],
+          if (afterList.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'AFTER PHOTOS',
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.7),
+            ),
+            const SizedBox(height: 6),
+            _buildBookingPhotoStrip(
+              photos: afterList,
+              accentColor: AppTheme.primary,
+              labelPrefix: 'AFTER',
+              onRemove: (idx) async {
+                final urlToRemove = afterList[idx];
+                await R2StorageService.deleteImage(urlToRemove);
+                final updated = List<String>.from(afterList)..removeAt(idx);
+                await widget.repository.updateBookingInspectionPhotos(b.id, afterPhotos: updated);
+                if (mounted) setState(() {});
+              },
+            ),
+          ],
+          if (beforeList.isNotEmpty && afterList.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            const Text(
+              'LIVE 50/50 TRANSFORMATION PREVIEW',
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.textMuted, letterSpacing: 0.7),
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SplitSliderWidget(
+                key: const Key('booking_inspector_split_slider'),
+                beforeImageUrl: beforeList.first,
+                afterImageUrl: afterList.first,
+                height: 190,
+                defectBadge: b.package.title,
+              ),
+            ),
+          ],
+          if (b.completionNotes != null && b.completionNotes!.trim().isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppTheme.background,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Completion Notes:',
+                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    b.completionNotes!,
+                    style: const TextStyle(fontSize: 11.5, color: AppTheme.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBookingPhotoStrip({
+    required List<String> photos,
+    required Color accentColor,
+    required String labelPrefix,
+    required void Function(int index) onRemove,
+  }) {
+    return SizedBox(
+      height: 76,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: photos.length,
+        itemBuilder: (context, index) {
+          final url = photos[index];
+          return Stack(
+            children: [
+              GestureDetector(
+                onTap: () {
+                  FullscreenImageViewer.open(
+                    context,
+                    images: photos,
+                    initialIndex: index,
+                    title: '$labelPrefix Photo #${index + 1}',
+                  );
+                },
+                child: Container(
+                  width: 76,
+                  height: 76,
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: accentColor.withAlpha(140)),
+                    image: DecorationImage(
+                      image: NetworkImage(url),
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 4,
+                bottom: 4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withAlpha(180),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '#${index + 1}',
+                    style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: accentColor),
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 10,
+                top: 2,
+                child: InkWell(
+                  key: Key('remove_${labelPrefix.toLowerCase()}_photo_$index'),
+                  onTap: () => onRemove(index),
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                      color: Colors.black87,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.close_rounded, size: 12, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showCompleteBookingModal(
+    BuildContext context,
+    BookingAppointment booking, {
+    bool initialPublishToggle = false,
+    BookingStatus? revertStatusOnCancel,
+  }) {
+    final currentBooking = widget.repository.bookings.firstWhere(
+      (item) => item.id == booking.id,
+      orElse: () => booking,
+    );
+
+    List<String> modalBeforePhotos = List<String>.from(currentBooking.beforePhotos);
+    List<String> modalAfterPhotos = List<String>.from(currentBooking.afterPhotos);
+    final notesCtrl = TextEditingController(text: currentBooking.completionNotes ?? '');
+    bool publishToPortfolio = initialPublishToggle ||
+        (modalBeforePhotos.isNotEmpty && modalAfterPhotos.isNotEmpty);
+    bool isUploadingBefore = false;
+    bool isUploadingAfter = false;
+    bool isSubmitting = false;
+    String? validationError;
+
+    showDialog(
+      context: context,
+      builder: (dlgCtx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          final canPublish = modalBeforePhotos.isNotEmpty && modalAfterPhotos.isNotEmpty;
+
+          return AlertDialog(
+            key: const Key('complete_job_portfolio_modal'),
+            backgroundColor: AppTheme.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+              side: const BorderSide(color: AppTheme.border),
+            ),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF00E676).withAlpha(30),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.task_alt_rounded, color: Color(0xFF00E676), size: 20),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Complete Job & Portfolio',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 480,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${currentBooking.vehicleYearMakeModel} • ${currentBooking.package.title}',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Upload Before & After inspection photos (saved to Cloudflare R2 CDN) and optionally showcase this transformation on your Studio Portfolio.',
+                      style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            key: const Key('modal_upload_before_photo_btn'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppTheme.hardnessSoft,
+                              side: BorderSide(color: AppTheme.hardnessSoft.withAlpha(140)),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                            ),
+                            icon: isUploadingBefore
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.hardnessSoft),
+                                  )
+                                : const Icon(Icons.add_a_photo_rounded, size: 15),
+                            label: Text(
+                              'Add Before (${modalBeforePhotos.length})',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
+                            ),
+                            onPressed: isUploadingBefore
+                                ? null
+                                : () async {
+                                    setModalState(() {
+                                      isUploadingBefore = true;
+                                      validationError = null;
+                                    });
+                                    try {
+                                      final url = await _uploadBookingPhotoToR2(booking: currentBooking, isBefore: true);
+                                      if (url != null) {
+                                        modalBeforePhotos.add(url);
+                                        await widget.repository.updateBookingInspectionPhotos(
+                                          currentBooking.id,
+                                          beforePhotos: modalBeforePhotos,
+                                        );
+                                      }
+                                    } finally {
+                                      if (ctx.mounted) {
+                                        setModalState(() => isUploadingBefore = false);
+                                      }
+                                      if (mounted) setState(() {});
+                                    }
+                                  },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            key: const Key('modal_upload_after_photo_btn'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppTheme.primary,
+                              side: BorderSide(color: AppTheme.primary.withAlpha(140)),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                            ),
+                            icon: isUploadingAfter
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
+                                  )
+                                : const Icon(Icons.auto_awesome_rounded, size: 15),
+                            label: Text(
+                              'Add After (${modalAfterPhotos.length})',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
+                            ),
+                            onPressed: isUploadingAfter
+                                ? null
+                                : () async {
+                                    setModalState(() {
+                                      isUploadingAfter = true;
+                                      validationError = null;
+                                    });
+                                    try {
+                                      final url = await _uploadBookingPhotoToR2(booking: currentBooking, isBefore: false);
+                                      if (url != null) {
+                                        modalAfterPhotos.add(url);
+                                        await widget.repository.updateBookingInspectionPhotos(
+                                          currentBooking.id,
+                                          afterPhotos: modalAfterPhotos,
+                                        );
+                                      }
+                                    } finally {
+                                      if (ctx.mounted) {
+                                        setModalState(() => isUploadingAfter = false);
+                                      }
+                                      if (mounted) setState(() {});
+                                    }
+                                  },
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (modalBeforePhotos.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      _buildBookingPhotoStrip(
+                        photos: modalBeforePhotos,
+                        accentColor: AppTheme.hardnessSoft,
+                        labelPrefix: 'BEFORE',
+                        onRemove: (idx) async {
+                          final url = modalBeforePhotos[idx];
+                          await R2StorageService.deleteImage(url);
+                          setModalState(() {
+                            modalBeforePhotos.removeAt(idx);
+                          });
+                          await widget.repository.updateBookingInspectionPhotos(
+                            currentBooking.id,
+                            beforePhotos: modalBeforePhotos,
+                          );
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                    ],
+                    if (modalAfterPhotos.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      _buildBookingPhotoStrip(
+                        photos: modalAfterPhotos,
+                        accentColor: AppTheme.primary,
+                        labelPrefix: 'AFTER',
+                        onRemove: (idx) async {
+                          final url = modalAfterPhotos[idx];
+                          await R2StorageService.deleteImage(url);
+                          setModalState(() {
+                            modalAfterPhotos.removeAt(idx);
+                          });
+                          await widget.repository.updateBookingInspectionPhotos(
+                            currentBooking.id,
+                            afterPhotos: modalAfterPhotos,
+                          );
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                    ],
+                    if (modalBeforePhotos.isNotEmpty && modalAfterPhotos.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: SplitSliderWidget(
+                          key: const Key('modal_complete_split_slider'),
+                          beforeImageUrl: modalBeforePhotos.first,
+                          afterImageUrl: modalAfterPhotos.first,
+                          height: 160,
+                          defectBadge: currentBooking.package.title,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    TextField(
+                      key: const Key('booking_completion_notes_input'),
+                      controller: notesCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Completion Notes for Client (Optional)',
+                        hintText: 'e.g. 2-stage correction complete, cured 5-year ceramic coating applied.',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Material(
+                      color: AppTheme.surfaceLight,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: BorderSide(
+                          color: publishToPortfolio ? AppTheme.primary.withAlpha(140) : AppTheme.border,
+                        ),
+                      ),
+                      child: SwitchListTile(
+                        key: const Key('publish_to_portfolio_switch'),
+                        dense: true,
+                        activeThumbColor: AppTheme.primary,
+                        title: const Text(
+                          'Publish to Studio Portfolio',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                        ),
+                        subtitle: Text(
+                          canPublish
+                              ? 'Creates a 50/50 transformation post in your Portfolio & Explore feed.'
+                              : 'Requires at least 1 Before photo and 1 After photo.',
+                          style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                        ),
+                        value: publishToPortfolio,
+                        onChanged: (val) {
+                          setModalState(() {
+                            publishToPortfolio = val;
+                            validationError = null;
+                          });
+                        },
+                      ),
+                    ),
+                    if (validationError != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        validationError!,
+                        style: const TextStyle(color: Colors.orangeAccent, fontSize: 11.5, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        key: const Key('open_full_portfolio_editor_btn'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.textPrimary,
+                          side: const BorderSide(color: AppTheme.border),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                        icon: const Icon(Icons.tune_rounded, size: 16, color: AppTheme.primary),
+                        label: const Text(
+                          'Open Full Portfolio Editor',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                        onPressed: () async {
+                          final updatedSource = currentBooking.copyWith(
+                            beforePhotos: modalBeforePhotos,
+                            afterPhotos: modalAfterPhotos,
+                            completionNotes: notesCtrl.text.trim(),
+                          );
+                          Navigator.of(dlgCtx).pop();
+                          await CreateJobScreen.show(
+                            context,
+                            repository: widget.repository,
+                            sourceBooking: updatedSource,
+                            onJobCreated: () {
+                              if (mounted) setState(() {});
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSubmitting
+                    ? null
+                    : () async {
+                        if (revertStatusOnCancel != null) {
+                          await widget.repository.updateBookingStatus(currentBooking.id, revertStatusOnCancel);
+                          if (mounted) setState(() {});
+                        }
+                        if (dlgCtx.mounted) Navigator.of(dlgCtx).pop();
+                      },
+                child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+              ),
+              ElevatedButton.icon(
+                key: const Key('confirm_complete_booking_btn'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00E676),
+                  foregroundColor: Colors.black,
+                ),
+                icon: isSubmitting
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                      )
+                    : const Icon(Icons.check_circle_rounded, size: 16),
+                label: Text(
+                  publishToPortfolio ? 'Complete & Publish to Portfolio' : 'Complete Job',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                onPressed: isSubmitting
+                    ? null
+                    : () async {
+                        if (publishToPortfolio && (modalBeforePhotos.isEmpty || modalAfterPhotos.isEmpty)) {
+                          setModalState(() {
+                            validationError =
+                                'Please upload at least 1 Before photo and 1 After photo to publish to your Studio Portfolio, or turn off "Publish to Studio Portfolio" to complete privately.';
+                          });
+                          return;
+                        }
+                        setModalState(() => isSubmitting = true);
+                        final createdJob = await widget.repository.completeBookingAndPublishToPortfolio(
+                          currentBooking.id,
+                          beforePhotos: modalBeforePhotos,
+                          afterPhotos: modalAfterPhotos,
+                          completionNotes: notesCtrl.text.trim(),
+                          publishToPortfolio: publishToPortfolio,
+                        );
+                        if (dlgCtx.mounted) Navigator.of(dlgCtx).pop();
+                        if (mounted) setState(() {});
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                createdJob != null
+                                    ? 'Job completed & published to Studio Portfolio!'
+                                    : 'Job marked as completed!',
+                              ),
+                              backgroundColor: AppTheme.surface,
+                            ),
+                          );
+                        }
+                      },
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 

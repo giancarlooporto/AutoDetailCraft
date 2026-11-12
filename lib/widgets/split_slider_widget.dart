@@ -100,7 +100,12 @@ class _SplitSliderWidgetState extends State<SplitSliderWidget> {
       ),
       child: Center(
         child: isLoading
-            ? const CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary)
+            ? CircularProgressIndicator(
+                value: 0.35,
+                strokeWidth: 2,
+                color: AppTheme.primary,
+                backgroundColor: AppTheme.primary.withAlpha(40),
+              )
             : Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [

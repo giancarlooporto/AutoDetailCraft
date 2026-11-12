@@ -5,6 +5,7 @@ import '../core/theme/app_theme.dart';
 import '../core/constants/app_constants.dart';
 import '../core/constants/detailing_presets.dart';
 import '../models/detail_job.dart';
+import '../models/booking_models.dart';
 import '../models/paint_gauge_point.dart';
 import '../models/inventory_item.dart';
 import '../services/job_repository.dart';
@@ -32,6 +33,7 @@ class CreateJobScreen extends StatefulWidget {
   final JobRepository repository;
   final VoidCallback onJobCreated;
   final DetailJob? jobToEdit;
+  final BookingAppointment? sourceBooking;
 
   final String? initialServiceType;
 
@@ -40,6 +42,7 @@ class CreateJobScreen extends StatefulWidget {
     required this.repository,
     required this.onJobCreated,
     this.jobToEdit,
+    this.sourceBooking,
     this.initialServiceType,
   });
 
@@ -48,6 +51,7 @@ class CreateJobScreen extends StatefulWidget {
     required JobRepository repository,
     required VoidCallback onJobCreated,
     DetailJob? jobToEdit,
+    BookingAppointment? sourceBooking,
   }) {
     return showDialog(
       context: context,
@@ -56,6 +60,7 @@ class CreateJobScreen extends StatefulWidget {
         repository: repository,
         onJobCreated: onJobCreated,
         jobToEdit: jobToEdit,
+        sourceBooking: sourceBooking,
       ),
     );
   }
@@ -151,18 +156,55 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       final afterHeroIdx = afters.indexOf(edit.afterImageUrl);
       if (afterHeroIdx != -1) _selectedHeroAfterIndex = afterHeroIdx;
     } else {
-      if (widget.initialServiceType != null) {
-        _selectedService = widget.initialServiceType!;
+      final src = widget.sourceBooking;
+      if (src != null) {
+        final parsedVehicle = JobRepository.parseVehicleYearMakeModel(src.vehicleYearMakeModel);
+        _titleCtrl.text = src.package.title.trim().isNotEmpty
+            ? '${src.package.title.trim()} on ${src.vehicleYearMakeModel.trim()}'
+            : 'Transformation on ${src.vehicleYearMakeModel.trim()}';
+        _vehicleYearCtrl.text = parsedVehicle.year.toString();
+        _vehicleMakeCtrl.text = parsedVehicle.make;
+        _vehicleModelCtrl.text = parsedVehicle.model;
+        _priceCtrl.text = src.totalPrice.toStringAsFixed(0);
+        _descriptionCtrl.text = (src.completionNotes != null && src.completionNotes!.trim().isNotEmpty)
+            ? src.completionNotes!.trim()
+            : src.package.description;
+        final validServices = AppConstants.serviceTypes.skip(1).toList();
+        final matchedService = validServices.firstWhere(
+          (s) => src.package.title.toLowerCase().contains(s.toLowerCase()),
+          orElse: () => validServices.contains(src.package.title)
+              ? src.package.title
+              : AppConstants.serviceTypes[1],
+        );
+        _selectedService = matchedService;
+
+        for (var i = 0; i < src.beforePhotos.length; i++) {
+          _beforePhotos.add(PhotoItem(id: 'before_booking_$i', url: src.beforePhotos[i]));
+        }
+        for (var i = 0; i < src.afterPhotos.length; i++) {
+          _afterPhotos.add(PhotoItem(id: 'after_booking_$i', url: src.afterPhotos[i]));
+        }
       }
-      // Default initial demonstration photos
-      _beforePhotos.add(PhotoItem(
-        id: 'before_init_1',
-        url: 'https://images.unsplash.com/photo-1542362567-b07e54358753?w=900&auto=format&fit=crop&q=80',
-      ));
-      _afterPhotos.add(PhotoItem(
-        id: 'after_init_1',
-        url: 'https://images.unsplash.com/photo-1563720223185-11003d516935?w=900&auto=format&fit=crop&q=80',
-      ));
+
+      if (widget.initialServiceType != null) {
+        final validServices = AppConstants.serviceTypes.skip(1).toList();
+        if (validServices.contains(widget.initialServiceType)) {
+          _selectedService = widget.initialServiceType!;
+        }
+      }
+      // Default initial demonstration photos if not pre-populated from booking
+      if (_beforePhotos.isEmpty) {
+        _beforePhotos.add(PhotoItem(
+          id: 'before_init_1',
+          url: 'https://images.unsplash.com/photo-1542362567-b07e54358753?w=900&auto=format&fit=crop&q=80',
+        ));
+      }
+      if (_afterPhotos.isEmpty) {
+        _afterPhotos.add(PhotoItem(
+          id: 'after_init_1',
+          url: 'https://images.unsplash.com/photo-1563720223185-11003d516935?w=900&auto=format&fit=crop&q=80',
+        ));
+      }
 
       // Default recipe preset: 2-Stage Correction & Ceramic
       final defaultPreset = DetailingPresets.recipePresets.firstWhere(
@@ -276,6 +318,15 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
           item.isUploading = false;
           if (cdnUrl != null && cdnUrl.isNotEmpty) {
             item.url = cdnUrl;
+          } else if (widget.sourceBooking != null) {
+            // Never fallback to raw base64 for booking-linked photos
+            (isBefore ? _beforePhotos : _afterPhotos).removeWhere((p) => p.id == item.id);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Cloudflare R2 upload failed. Please check your connection and try again.'),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
           } else {
             item.url = 'data:image/jpeg;base64,${base64Encode(bytes)}';
           }
@@ -285,7 +336,11 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       if (mounted) {
         setState(() {
           item.isUploading = false;
-          item.url = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+          if (widget.sourceBooking != null) {
+            (isBefore ? _beforePhotos : _afterPhotos).removeWhere((p) => p.id == item.id);
+          } else {
+            item.url = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+          }
         });
       }
     }
@@ -457,6 +512,21 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       );
 
       widget.repository.addJob(newJob);
+
+      if (widget.sourceBooking != null) {
+        final r2BeforeUrls = allBeforeUrls.where((u) => !u.startsWith('data:image')).toList();
+        final r2AfterUrls = allAfterUrls.where((u) => !u.startsWith('data:image')).toList();
+        widget.repository.updateBookingInspectionPhotos(
+          widget.sourceBooking!.id,
+          beforePhotos: r2BeforeUrls,
+          afterPhotos: r2AfterUrls,
+          completionNotes: _descriptionCtrl.text.trim(),
+          portfolioJobId: newJob.id,
+        );
+        if (widget.sourceBooking!.status != BookingStatus.completed) {
+          widget.repository.updateBookingStatus(widget.sourceBooking!.id, BookingStatus.completed);
+        }
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

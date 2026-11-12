@@ -828,7 +828,11 @@ class JobRepository extends ChangeNotifier {
             existing.clientAddress != b.clientAddress ||
             existing.clientUnitOrGateCode != b.clientUnitOrGateCode ||
             existing.latitude != b.latitude ||
-            existing.longitude != b.longitude) {
+            existing.longitude != b.longitude ||
+            !listEquals(existing.beforePhotos, b.beforePhotos) ||
+            !listEquals(existing.afterPhotos, b.afterPhotos) ||
+            existing.completionNotes != b.completionNotes ||
+            existing.portfolioJobId != b.portfolioJobId) {
           bookingMap[b.id] = existing.copyWith(
             status: b.status,
             scheduledDate: b.scheduledDate,
@@ -853,6 +857,11 @@ class JobRepository extends ChangeNotifier {
             warrantyPassportId: b.warrantyPassportId ?? existing.warrantyPassportId,
             clientNotes: b.clientNotes ?? existing.clientNotes,
             preInspectionSummary: b.preInspectionSummary ?? existing.preInspectionSummary,
+            beforePhotos: b.beforePhotos,
+            afterPhotos: b.afterPhotos,
+            completionNotes: b.completionNotes ?? existing.completionNotes,
+            portfolioJobId: b.portfolioJobId,
+            clearPortfolioJobId: b.portfolioJobId == null && existing.portfolioJobId != null,
           );
           hasChanges = true;
         }
@@ -2611,7 +2620,27 @@ class JobRepository extends ChangeNotifier {
       SupabaseDbService.deleteJob(jobId);
     }
 
-    // Permanently purge all associated images from Cloudflare R2
+    // Unlink any booking that pointed to this deleted portfolio job,
+    // and only delete R2 images that are NOT still referenced by any booking!
+    final Set<String> bookingReferencedUrls = {};
+    bool bookingsUpdated = false;
+    for (int i = 0; i < _bookings.length; i++) {
+      final b = _bookings[i];
+      if (b.portfolioJobId == jobId) {
+        _bookings[i] = b.copyWith(clearPortfolioJobId: true);
+        bookingsUpdated = true;
+        if (_isLoggedIn || SupabaseAuthService.isLoggedIn || SupabaseService.client != null) {
+          SupabaseDbService.saveBooking(_bookings[i]);
+        }
+      }
+      bookingReferencedUrls.addAll(_bookings[i].beforePhotos);
+      bookingReferencedUrls.addAll(_bookings[i].afterPhotos);
+    }
+    if (bookingsUpdated) {
+      _persistBookings();
+    }
+
+    // Permanently purge all associated images from Cloudflare R2 unless still used on a booking
     if (jobToDelete != null) {
       final List<String> imageUrlsToPurge = [];
       if (jobToDelete.beforeImageUrl.isNotEmpty) imageUrlsToPurge.add(jobToDelete.beforeImageUrl);
@@ -2623,8 +2652,11 @@ class JobRepository extends ChangeNotifier {
         if (zone.afterImageUrl.isNotEmpty) imageUrlsToPurge.add(zone.afterImageUrl);
       }
 
-      if (imageUrlsToPurge.isNotEmpty) {
-        R2StorageService.deleteImages(imageUrlsToPurge);
+      final unreferencedUrls = imageUrlsToPurge
+          .where((url) => !bookingReferencedUrls.contains(url))
+          .toList();
+      if (unreferencedUrls.isNotEmpty) {
+        R2StorageService.deleteImages(unreferencedUrls);
       }
     }
 
@@ -2741,6 +2773,204 @@ class JobRepository extends ChangeNotifier {
       return true;
     }
     return false;
+  }
+
+  static const List<String> _multiWordMakes = [
+    'Aston Martin',
+    'Alfa Romeo',
+    'Land Rover',
+    'Mercedes Benz',
+    'Rolls Royce',
+    'De Tomaso',
+  ];
+
+  /// Parses a vehicle year/make/model string (e.g. "2023 Porsche 911 GT3" or "2023 Aston Martin Vantage") into (year, make, model)
+  static ({int year, String make, String model}) parseVehicleYearMakeModel(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) {
+      return (year: DateTime.now().year, make: 'Custom', model: 'Vehicle');
+    }
+    final tokens = trimmed.split(RegExp(r'\s+'));
+    int year = DateTime.now().year;
+    int startIdx = 0;
+    final parsedYear = int.tryParse(tokens.first);
+    if (parsedYear != null && parsedYear >= 1900 && parsedYear <= 2100) {
+      year = parsedYear;
+      startIdx = 1;
+    }
+    if (tokens.length <= startIdx) {
+      return (year: year, make: trimmed, model: 'Build');
+    }
+    final remaining = tokens.sublist(startIdx).join(' ');
+    for (final multiMake in _multiWordMakes) {
+      if (remaining.toLowerCase().startsWith(multiMake.toLowerCase())) {
+        final afterMake = remaining.substring(multiMake.length).trim();
+        return (
+          year: year,
+          make: multiMake,
+          model: afterMake.isNotEmpty ? afterMake : 'Detail',
+        );
+      }
+    }
+    final make = tokens[startIdx];
+    final model = tokens.length > startIdx + 1
+        ? tokens.sublist(startIdx + 1).join(' ')
+        : 'Detail';
+    return (year: year, make: make, model: model);
+  }
+
+  /// Updates the inspection before/after R2 photo URLs, completion notes, and/or portfolioJobId on a booking
+  Future<BookingAppointment?> updateBookingInspectionPhotos(
+    String bookingId, {
+    List<String>? beforePhotos,
+    List<String>? afterPhotos,
+    String? completionNotes,
+    String? portfolioJobId,
+  }) async {
+    final idx = _bookings.indexWhere((b) => b.id == bookingId);
+    if (idx == -1) return null;
+
+    final current = _bookings[idx];
+    final updated = current.copyWith(
+      beforePhotos: beforePhotos ?? current.beforePhotos,
+      afterPhotos: afterPhotos ?? current.afterPhotos,
+      completionNotes: completionNotes ?? current.completionNotes,
+      portfolioJobId: portfolioJobId ?? current.portfolioJobId,
+    );
+    _bookings[idx] = updated;
+    _persistBookings();
+    notifyListeners();
+
+    if (_isLoggedIn || SupabaseAuthService.isLoggedIn || SupabaseService.client != null) {
+      await SupabaseDbService.saveBooking(updated);
+    }
+    return updated;
+  }
+
+  /// Marks a booking completed, persists its R2 before/after inspection photos and completion notes,
+  /// and optionally publishes a transformation DetailJob to the studio's Portfolio.
+  Future<DetailJob?> completeBookingAndPublishToPortfolio(
+    String bookingId, {
+    List<String>? beforePhotos,
+    List<String>? afterPhotos,
+    String? completionNotes,
+    bool publishToPortfolio = false,
+    DefectStage? defectStage,
+    int? correctionPercentage,
+  }) async {
+    final idx = _bookings.indexWhere((b) => b.id == bookingId);
+    if (idx == -1) return null;
+
+    final current = _bookings[idx];
+    final resolvedBefore = beforePhotos ?? current.beforePhotos;
+    final resolvedAfter = afterPhotos ?? current.afterPhotos;
+    final resolvedNotes = completionNotes ?? current.completionNotes;
+
+    DetailJob? publishedJob;
+    String? linkedJobId = current.portfolioJobId;
+
+    if (publishToPortfolio && resolvedBefore.isNotEmpty && resolvedAfter.isNotEmpty) {
+      final parsedVehicle = parseVehicleYearMakeModel(current.vehicleYearMakeModel);
+      final resolvedStage = defectStage ?? DefectStage.stage2;
+      final resolvedCorrection = correctionPercentage ?? 90;
+
+      // Resolve recipe stages from linked recipe or default preset
+      List<RecipeStage> stages = [];
+      if (current.package.recipeId != null || (current.package.recipeName != null && current.package.recipeName!.isNotEmpty)) {
+        final matchedRecipe = _inventoryItems.where((i) =>
+            i.category == InventoryCategory.recipe &&
+            ((current.package.recipeId != null && i.id == current.package.recipeId) ||
+             (current.package.recipeName != null && i.name == current.package.recipeName))).firstOrNull;
+        if (matchedRecipe != null && matchedRecipe.recipeStages.isNotEmpty) {
+          stages = List<RecipeStage>.from(matchedRecipe.recipeStages);
+        }
+      }
+      if (stages.isEmpty && current.package.includes.isNotEmpty) {
+        stages = current.package.includes
+            .map((step) => RecipeStage(stageName: step, chemical: current.package.title))
+            .toList();
+      }
+      if (stages.isEmpty) {
+        stages = List<RecipeStage>.from(DetailingPresets.recipePresets.first.stages);
+      }
+
+      final jobId = (linkedJobId != null && linkedJobId.isNotEmpty)
+          ? linkedJobId
+          : 'job_bk_${bookingId}_${DateTime.now().millisecondsSinceEpoch}';
+
+      final heroBefore = resolvedBefore.first;
+      final heroAfter = resolvedAfter.first;
+      final heroZone = JobMediaZone(
+        id: 'hero_$jobId',
+        zoneName: 'Hero 50/50 Transformation',
+        beforeImageUrl: heroBefore,
+        afterImageUrl: heroAfter,
+        defectBadge: resolvedStage.label,
+        initialMicrons: 120.0,
+        finalMicrons: 117.0,
+      );
+
+      final jobDescription = (resolvedNotes != null && resolvedNotes.trim().isNotEmpty)
+          ? resolvedNotes.trim()
+          : (current.package.description.trim().isNotEmpty
+              ? current.package.description.trim()
+              : 'Completed ${current.package.title} transformation on ${current.vehicleYearMakeModel}.');
+
+      publishedJob = DetailJob(
+        id: jobId,
+        author: _currentUser,
+        createdAt: DateTime.now(),
+        title: current.package.title.trim().isNotEmpty
+            ? current.package.title.trim()
+            : '${current.vehicleYearMakeModel} Transformation',
+        description: jobDescription,
+        vehicleYear: parsedVehicle.year,
+        vehicleMake: parsedVehicle.make,
+        vehicleModel: parsedVehicle.model,
+        paintColorName: 'OEM Finish',
+        paintCode: 'OEM',
+        paintHardness: PaintHardness.medium,
+        initialPaintThicknessMicrons: 120.0,
+        finalPaintThicknessMicrons: 117.0,
+        defectSeverity: resolvedStage.stageNumber,
+        defectStage: resolvedStage,
+        correctionPercentage: resolvedCorrection,
+        serviceType: current.package.title.trim().isNotEmpty
+            ? current.package.title.trim()
+            : 'Paint Correction',
+        recipeStages: stages,
+        beforeImageUrl: heroBefore,
+        afterImageUrl: heroAfter,
+        defectBadge: resolvedStage.label,
+        beforePhotos: resolvedBefore,
+        afterPhotos: resolvedAfter,
+        mediaZones: [heroZone],
+        durationHours: current.package.durationHours > 0 ? current.package.durationHours : 4.0,
+        quotedPrice: current.totalPrice,
+      );
+
+      addJob(publishedJob);
+      linkedJobId = publishedJob.id;
+    }
+
+    final updatedBooking = current.copyWith(
+      status: BookingStatus.completed,
+      completionDate: current.completionDate ?? DateTime.now(),
+      beforePhotos: resolvedBefore,
+      afterPhotos: resolvedAfter,
+      completionNotes: resolvedNotes,
+      portfolioJobId: linkedJobId,
+    );
+
+    _bookings[idx] = updatedBooking;
+    _persistBookings();
+    notifyListeners();
+
+    if (_isLoggedIn || SupabaseAuthService.isLoggedIn || SupabaseService.client != null) {
+      await SupabaseDbService.saveBooking(updatedBooking);
+    }
+
+    return publishedJob;
   }
 
   // ─── CALENDAR & AVAILABILITY ────────────────────────────────────────────────
@@ -5569,6 +5799,18 @@ class JobRepository extends ChangeNotifier {
         }
         if (map['isMultiDay'] == null && map['is_multi_day'] != null) {
           map['isMultiDay'] = map['is_multi_day'];
+        }
+        if (map['beforePhotos'] == null && map['before_photos'] != null) {
+          map['beforePhotos'] = map['before_photos'];
+        }
+        if (map['afterPhotos'] == null && map['after_photos'] != null) {
+          map['afterPhotos'] = map['after_photos'];
+        }
+        if (map['completionNotes'] == null && map['completion_notes'] != null) {
+          map['completionNotes'] = map['completion_notes'];
+        }
+        if (map['portfolioJobId'] == null && map['portfolio_job_id'] != null) {
+          map['portfolioJobId'] = map['portfolio_job_id'];
         }
         final incomingId = (map['id'] ?? map['booking_id'])?.toString();
         if (incomingId != null && incomingId.isNotEmpty) {

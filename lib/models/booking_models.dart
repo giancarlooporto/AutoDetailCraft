@@ -323,6 +323,10 @@ class BookingAppointment {
   final String? endTime;
   final int? durationMinutes;
   final bool isMultiDay;
+  final List<String> beforePhotos;
+  final List<String> afterPhotos;
+  final String? completionNotes;
+  final String? portfolioJobId;
 
   const BookingAppointment({
     required this.id,
@@ -357,6 +361,10 @@ class BookingAppointment {
     this.clientUnitOrGateCode,
     this.latitude,
     this.longitude,
+    this.beforePhotos = const [],
+    this.afterPhotos = const [],
+    this.completionNotes,
+    this.portfolioJobId,
   });
 
   BookingAppointment copyWith({
@@ -392,6 +400,11 @@ class BookingAppointment {
     String? clientUnitOrGateCode,
     double? latitude,
     double? longitude,
+    List<String>? beforePhotos,
+    List<String>? afterPhotos,
+    String? completionNotes,
+    String? portfolioJobId,
+    bool clearPortfolioJobId = false,
   }) => BookingAppointment(
     id: id ?? this.id,
     clientId: clientId ?? this.clientId,
@@ -425,6 +438,10 @@ class BookingAppointment {
     clientUnitOrGateCode: clientUnitOrGateCode ?? this.clientUnitOrGateCode,
     latitude: latitude ?? this.latitude,
     longitude: longitude ?? this.longitude,
+    beforePhotos: beforePhotos ?? this.beforePhotos,
+    afterPhotos: afterPhotos ?? this.afterPhotos,
+    completionNotes: completionNotes ?? this.completionNotes,
+    portfolioJobId: clearPortfolioJobId ? null : (portfolioJobId ?? this.portfolioJobId),
   );
 
   Map<String, dynamic> toJson() => {
@@ -483,6 +500,18 @@ class BookingAppointment {
     },
     'isMultiDay': isMultiDay,
     'is_multi_day': isMultiDay,
+    'beforePhotos': beforePhotos,
+    'before_photos': beforePhotos,
+    'afterPhotos': afterPhotos,
+    'after_photos': afterPhotos,
+    if (completionNotes != null) ...{
+      'completionNotes': completionNotes,
+      'completion_notes': completionNotes,
+    },
+    if (portfolioJobId != null) ...{
+      'portfolioJobId': portfolioJobId,
+      'portfolio_job_id': portfolioJobId,
+    },
   };
 
   Map<String, dynamic> toSupabase() => {
@@ -518,7 +547,29 @@ class BookingAppointment {
     if (completionDate != null) 'completion_date': completionDate!.toIso8601String(),
     if (durationMinutes != null) 'duration_minutes': durationMinutes,
     'is_multi_day': isMultiDay,
+    'before_photos': beforePhotos,
+    'after_photos': afterPhotos,
+    if (completionNotes != null) 'completion_notes': completionNotes,
+    if (portfolioJobId != null) 'portfolio_job_id': portfolioJobId,
   };
+
+  static List<String> _parseStringList(dynamic value) {
+    if (value == null) return const [];
+    if (value is List) {
+      return value.map((e) => e.toString().trim()).where((s) => s.isNotEmpty).toList();
+    }
+    if (value is String && value.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is List) {
+          return decoded.map((e) => e.toString().trim()).where((s) => s.isNotEmpty).toList();
+        }
+      } catch (_) {}
+    }
+    return const [];
+  }
+
+  factory BookingAppointment.fromSupabase(Map<String, dynamic> map) => BookingAppointment.fromJson(map);
 
   static double? _parseCoordinate(dynamic value) {
     if (value == null) return null;
@@ -673,6 +724,10 @@ class BookingAppointment {
       clientUnitOrGateCode: (json['clientUnitOrGateCode'] ?? json['client_unit_or_gate_code'])?.toString(),
       latitude: _parseCoordinate(json['latitude'] ?? json['lat']),
       longitude: _parseCoordinate(json['longitude'] ?? json['lng']),
+      beforePhotos: _parseStringList(json['beforePhotos'] ?? json['before_photos']),
+      afterPhotos: _parseStringList(json['afterPhotos'] ?? json['after_photos']),
+      completionNotes: (json['completionNotes'] ?? json['completion_notes'])?.toString(),
+      portfolioJobId: (json['portfolioJobId'] ?? json['portfolio_job_id'])?.toString(),
     );
   }
 }

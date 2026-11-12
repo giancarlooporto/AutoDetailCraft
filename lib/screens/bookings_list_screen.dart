@@ -5,6 +5,8 @@ import '../core/theme/app_theme.dart';
 import '../models/booking_models.dart';
 import '../services/job_repository.dart';
 import '../widgets/booking_status_tracker.dart';
+import '../widgets/split_slider_widget.dart';
+import '../widgets/fullscreen_image_viewer.dart';
 import '../services/map_launcher_service.dart';
 import 'auth_modal.dart';
 
@@ -137,6 +139,13 @@ class BookingsListScreen extends StatelessWidget {
                             ],
                           ),
                         ),
+                      ],
+                      if (currentBooking.beforePhotos.isNotEmpty ||
+                          currentBooking.afterPhotos.isNotEmpty ||
+                          (currentBooking.completionNotes != null && currentBooking.completionNotes!.trim().isNotEmpty)) ...[
+                        const SizedBox(height: 16),
+                        _sectionHeader('Before & After Transformation', Icons.compare_rounded),
+                        _buildClientTransformationSection(context, currentBooking, isModal: true),
                       ],
                       const SizedBox(height: 20),
                       if (repository.isLoggedIn && currentBooking.detailerId == repository.currentUser.id) ...[
@@ -739,6 +748,12 @@ class BookingsListScreen extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             _buildStatusTracker(booking),
+            if (booking.beforePhotos.isNotEmpty ||
+                booking.afterPhotos.isNotEmpty ||
+                (booking.completionNotes != null && booking.completionNotes!.trim().isNotEmpty)) ...[
+              const SizedBox(height: 12),
+              _buildClientTransformationSection(context, booking, isModal: false),
+            ],
             if (booking.status == BookingStatus.cancelled) ...[
               const SizedBox(height: 12),
               SizedBox(
@@ -788,6 +803,171 @@ class BookingsListScreen extends StatelessWidget {
 
   Widget _buildStatusTracker(BookingAppointment booking) {
     return BookingStatusTracker(booking: booking);
+  }
+
+  Widget _buildClientTransformationSection(
+    BuildContext context,
+    BookingAppointment booking, {
+    required bool isModal,
+  }) {
+    final beforeList = booking.beforePhotos;
+    final afterList = booking.afterPhotos;
+    final hasNotes = booking.completionNotes != null && booking.completionNotes!.trim().isNotEmpty;
+
+    return Container(
+      key: Key('client_booking_transformation_${booking.id}${isModal ? "_modal" : "_card"}'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.primary.withAlpha(80)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!isModal) ...[
+            Row(
+              children: [
+                const Icon(Icons.compare_rounded, size: 15, color: AppTheme.primary),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'Before & After Transformation',
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ),
+                Text(
+                  '${beforeList.length} Before • ${afterList.length} After',
+                  style: const TextStyle(fontSize: 10.5, color: AppTheme.primary, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (beforeList.isNotEmpty && afterList.isNotEmpty) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SplitSliderWidget(
+                key: Key('client_booking_split_slider_${booking.id}${isModal ? "_modal" : "_card"}'),
+                beforeImageUrl: beforeList.first,
+                afterImageUrl: afterList.first,
+                height: isModal ? 210 : 170,
+                defectBadge: booking.package.title,
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (beforeList.isNotEmpty) ...[
+            const Text(
+              'BEFORE PHOTOS',
+              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: AppTheme.hardnessSoft, letterSpacing: 0.7),
+            ),
+            const SizedBox(height: 5),
+            SizedBox(
+              height: 60,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: beforeList.length,
+                itemBuilder: (ctx, idx) {
+                  final url = beforeList[idx];
+                  return GestureDetector(
+                    onTap: () {
+                      FullscreenImageViewer.open(
+                        context,
+                        images: beforeList,
+                        initialIndex: idx,
+                        title: 'Before Photo #${idx + 1}',
+                      );
+                    },
+                    child: Container(
+                      width: 60,
+                      height: 60,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.hardnessSoft.withAlpha(140)),
+                        image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          if (afterList.isNotEmpty) ...[
+            const Text(
+              'AFTER PHOTOS',
+              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: AppTheme.primary, letterSpacing: 0.7),
+            ),
+            const SizedBox(height: 5),
+            SizedBox(
+              height: 60,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: afterList.length,
+                itemBuilder: (ctx, idx) {
+                  final url = afterList[idx];
+                  return GestureDetector(
+                    onTap: () {
+                      FullscreenImageViewer.open(
+                        context,
+                        images: afterList,
+                        initialIndex: idx,
+                        title: 'After Photo #${idx + 1}',
+                      );
+                    },
+                    child: Container(
+                      width: 60,
+                      height: 60,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.primary.withAlpha(140)),
+                        image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            if (hasNotes) const SizedBox(height: 8),
+          ],
+          if (hasNotes)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.notes_rounded, size: 13, color: AppTheme.primary),
+                      SizedBox(width: 4),
+                      Text(
+                        'Detailer Completion Notes',
+                        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    booking.completionNotes!,
+                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary, height: 1.35),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _buildBookingsTabList(

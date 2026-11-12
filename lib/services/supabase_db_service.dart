@@ -1606,6 +1606,10 @@ class SupabaseDbService {
         if (booking.completionDate != null) 'completion_date': booking.completionDate!.toIso8601String(),
         if (booking.durationMinutes != null) 'duration_minutes': booking.durationMinutes,
         'is_multi_day': booking.isMultiDay,
+        'before_photos': booking.beforePhotos,
+        'after_photos': booking.afterPhotos,
+        if (booking.completionNotes != null) 'completion_notes': booking.completionNotes,
+        if (booking.portfolioJobId != null) 'portfolio_job_id': booking.portfolioJobId,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
 
@@ -1628,8 +1632,12 @@ class SupabaseDbService {
             msg.contains('client_unit_or_gate_code') ||
             msg.contains('latitude') ||
             msg.contains('longitude') ||
+            msg.contains('before_photos') ||
+            msg.contains('after_photos') ||
+            msg.contains('completion_notes') ||
+            msg.contains('portfolio_job_id') ||
             msg.contains('schema cache')) {
-          // Schema drift fallback: try alternate column naming and strip optional location columns if needed
+          // Schema drift fallback: try alternate column naming and strip optional location/photo columns if needed
           final fallbackPayload = Map<String, dynamic>.from(basePayload);
           if (msg.contains('package')) {
             fallbackPayload.remove('package');
@@ -1647,6 +1655,16 @@ class SupabaseDbService {
               ..remove('latitude')
               ..remove('longitude');
           }
+          if (msg.contains('before_photos') ||
+              msg.contains('after_photos') ||
+              msg.contains('completion_notes') ||
+              msg.contains('portfolio_job_id')) {
+            fallbackPayload
+              ..remove('before_photos')
+              ..remove('after_photos')
+              ..remove('completion_notes')
+              ..remove('portfolio_job_id');
+          }
           try {
             await client.from('bookings').upsert({
               ...fallbackPayload,
@@ -1661,7 +1679,11 @@ class SupabaseDbService {
               ..remove('location_type')
               ..remove('client_unit_or_gate_code')
               ..remove('latitude')
-              ..remove('longitude');
+              ..remove('longitude')
+              ..remove('before_photos')
+              ..remove('after_photos')
+              ..remove('completion_notes')
+              ..remove('portfolio_job_id');
             fallbackPayload['package_data'] = booking.package.toJson();
             fallbackPayload['service_location_type'] = booking.locationType.name;
             await client.from('bookings').upsert(fallbackPayload);
@@ -1770,6 +1792,18 @@ class SupabaseDbService {
         }
         if (map['clientUnitOrGateCode'] == null && map['client_unit_or_gate_code'] != null) {
           map['clientUnitOrGateCode'] = map['client_unit_or_gate_code'];
+        }
+        if (map['beforePhotos'] == null && map['before_photos'] != null) {
+          map['beforePhotos'] = map['before_photos'];
+        }
+        if (map['afterPhotos'] == null && map['after_photos'] != null) {
+          map['afterPhotos'] = map['after_photos'];
+        }
+        if (map['completionNotes'] == null && map['completion_notes'] != null) {
+          map['completionNotes'] = map['completion_notes'];
+        }
+        if (map['portfolioJobId'] == null && map['portfolio_job_id'] != null) {
+          map['portfolioJobId'] = map['portfolio_job_id'];
         }
         bookings.add(BookingAppointment.fromJson(map));
       }
