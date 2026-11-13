@@ -16,6 +16,54 @@ import 'mock_data_service.dart';
 class SupabaseDbService {
   static SupabaseClient? get _client => SupabaseService.client;
 
+  /// Fetch a studio/user profile by unique handle (`username` column, case-insensitive).
+  static Future<UserProfile?> fetchUserProfileByHandle(String handle) async {
+    final client = _client;
+    if (client == null) return null;
+
+    final cleanHandle = UserProfile.sanitizeHandle(handle);
+    if (cleanHandle.isEmpty) return null;
+
+    try {
+      final res = await client
+          .from('profiles')
+          .select('id')
+          .ilike('username', cleanHandle)
+          .maybeSingle();
+      final userId = res?['id'] as String?;
+      if (userId == null || userId.isEmpty) return null;
+      return await fetchUserProfile(userId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Checks whether [handle] is available (not used by another profile).
+  static Future<bool> isHandleAvailable(
+    String handle, {
+    String? excludeUserId,
+  }) async {
+    final client = _client;
+    if (client == null) return true;
+
+    final cleanHandle = UserProfile.sanitizeHandle(handle);
+    if (cleanHandle.isEmpty) return false;
+
+    try {
+      var query = client
+          .from('profiles')
+          .select('id')
+          .ilike('username', cleanHandle);
+      if (excludeUserId != null && excludeUserId.isNotEmpty) {
+        query = query.neq('id', excludeUserId);
+      }
+      final res = await query.limit(1);
+      return (res as List<dynamic>).isEmpty;
+    } catch (_) {
+      return true;
+    }
+  }
+
   /// Fetch full user profile including vehicles and team from Supabase
   static Future<UserProfile?> fetchUserProfile(String userId) async {
     final client = _client;

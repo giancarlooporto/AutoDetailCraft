@@ -286,6 +286,32 @@ class UserProfile {
     return location;
   }
 
+  /// Sanitizes a raw string into a URL-safe studio handle (lowercase, alphanumeric + . _ -).
+  static String sanitizeHandle(String raw) {
+    var cleaned = raw.trim().toLowerCase();
+    if (cleaned.startsWith('@')) {
+      cleaned = cleaned.substring(1);
+    }
+    cleaned = cleaned.replaceAll(RegExp(r'\s+'), '_');
+    cleaned = cleaned.replaceAll(RegExp(r'[^a-z0-9._-]'), '');
+    return cleaned;
+  }
+
+  /// Clean, URL-safe unique handle for `https://www.autodetailcraft.com/@handle`.
+  String get handle {
+    final trimmedUsername = username.trim();
+    final isEmail = trimmedUsername.indexOf('@') > 0;
+    if (trimmedUsername.isNotEmpty && !isEmail) {
+      final cleaned = sanitizeHandle(trimmedUsername);
+      if (cleaned.length >= 3) return cleaned;
+    }
+    if (businessName.trim().isNotEmpty) {
+      final cleaned = sanitizeHandle(businessName);
+      if (cleaned.length >= 3) return cleaned;
+    }
+    return sanitizeHandle(id);
+  }
+
   /// Formatted single-line commercial studio address for Explore feed and drop-off navigation
   String get formattedStudioAddress {
     final stateZip = [

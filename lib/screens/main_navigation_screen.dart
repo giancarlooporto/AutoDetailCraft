@@ -17,12 +17,25 @@ import 'auth_modal.dart';
 class MainNavigationScreen extends StatefulWidget {
   final JobRepository repository;
   final String? initialStudioId;
+  final String? initialStudioHandle;
 
   const MainNavigationScreen({
     super.key,
     required this.repository,
     this.initialStudioId,
+    this.initialStudioHandle,
   });
+
+  static String? extractHandleFromPath(String path) {
+    final trimmed = path.trim();
+    if (trimmed.isEmpty) return null;
+    final segments = trimmed.split('/').where((s) => s.isNotEmpty).toList();
+    if (segments.isEmpty) return null;
+    final first = segments.first;
+    if (!first.startsWith('@') || first.length < 2) return null;
+    final clean = UserProfile.sanitizeHandle(first.substring(1));
+    return clean.isNotEmpty ? clean : null;
+  }
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
@@ -46,30 +59,65 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       final rawStudioId = widget.initialStudioId ??
           Uri.base.queryParameters['studio'] ??
           Uri.base.queryParameters['s'];
-      if (rawStudioId != null &&
-          rawStudioId.trim().isNotEmpty &&
-          !_handledInitialStudioLink) {
+      final rawHandle = widget.initialStudioHandle ??
+          MainNavigationScreen.extractHandleFromPath(Uri.base.path);
+
+      if (!_handledInitialStudioLink &&
+          ((rawStudioId != null && rawStudioId.trim().isNotEmpty) ||
+              (rawHandle != null && rawHandle.trim().isNotEmpty))) {
         _handledInitialStudioLink = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _openInitialStudio(rawStudioId.trim());
+          _resolveDeepLinkedStudio(
+            studioId: rawStudioId?.trim(),
+            studioHandle: rawHandle?.trim(),
+          );
         });
       }
     } catch (_) {}
   }
 
-  Future<void> _openInitialStudio(String studioId) async {
+  Future<void> _resolveDeepLinkedStudio({
+    String? studioId,
+    String? studioHandle,
+  }) async {
     if (!mounted) return;
-    UserProfile? targetDetailer = widget.repository.publicDetailers
-        .where((d) => d.id == studioId)
-        .firstOrNull;
-    if (targetDetailer == null && widget.repository.currentUser.id == studioId) {
-      targetDetailer = widget.repository.currentUser;
+    UserProfile? targetDetailer;
+
+    if (studioHandle != null && studioHandle.isNotEmpty) {
+      final normalized = UserProfile.sanitizeHandle(studioHandle);
+      targetDetailer = widget.repository.publicDetailers
+          .where((d) =>
+              d.handle.toLowerCase() == normalized ||
+              UserProfile.sanitizeHandle(d.username) == normalized)
+          .firstOrNull;
+      if (targetDetailer == null &&
+          (widget.repository.currentUser.handle.toLowerCase() == normalized ||
+              UserProfile.sanitizeHandle(widget.repository.currentUser.username) ==
+                  normalized)) {
+        targetDetailer = widget.repository.currentUser;
+      }
+      if (targetDetailer == null) {
+        try {
+          targetDetailer =
+              await SupabaseDbService.fetchUserProfileByHandle(normalized);
+        } catch (_) {}
+      }
     }
-    if (targetDetailer == null) {
-      try {
-        targetDetailer = await SupabaseDbService.fetchUserProfile(studioId);
-      } catch (_) {}
+
+    if (targetDetailer == null && studioId != null && studioId.isNotEmpty) {
+      targetDetailer = widget.repository.publicDetailers
+          .where((d) => d.id == studioId)
+          .firstOrNull;
+      if (targetDetailer == null && widget.repository.currentUser.id == studioId) {
+        targetDetailer = widget.repository.currentUser;
+      }
+      if (targetDetailer == null) {
+        try {
+          targetDetailer = await SupabaseDbService.fetchUserProfile(studioId);
+        } catch (_) {}
+      }
     }
+
     if (targetDetailer != null && mounted) {
       Navigator.of(context).push(
         MaterialPageRoute(

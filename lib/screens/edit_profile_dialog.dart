@@ -6,6 +6,7 @@ import '../models/user_profile.dart';
 import '../services/job_repository.dart';
 import '../services/image_picker_service.dart';
 import '../services/places_autocomplete_service.dart';
+import '../services/supabase_db_service.dart';
 import '../services/supabase_service.dart';
 
 class EditProfileDialog extends StatefulWidget {
@@ -40,6 +41,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameCtrl;
   late TextEditingController _businessCtrl;
+  late TextEditingController _handleCtrl;
   late TextEditingController _locationCtrl;
   late TextEditingController _bioCtrl;
   late TextEditingController _phoneCtrl;
@@ -68,6 +70,8 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
 
   bool _isUploadingAvatar = false;
   bool _isUploadingCover = false;
+  bool _isCheckingHandle = false;
+  String? _handleError;
 
   @override
   void initState() {
@@ -76,6 +80,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
     final user = widget.repository.currentUser;
     _nameCtrl = TextEditingController(text: user.displayName);
     _businessCtrl = TextEditingController(text: user.businessName);
+    _handleCtrl = TextEditingController(text: user.handle);
     _locationCtrl = TextEditingController(text: user.location);
     _bioCtrl = TextEditingController(text: user.bio);
     _phoneCtrl = TextEditingController(text: user.phone);
@@ -124,6 +129,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
     _autocompleteDebounce?.cancel();
     _nameCtrl.dispose();
     _businessCtrl.dispose();
+    _handleCtrl.dispose();
     _locationCtrl.dispose();
     _bioCtrl.dispose();
     _phoneCtrl.dispose();
@@ -346,12 +352,53 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
     }
   }
 
-  void _save() {
+  Future<void> _save() async {
+    if (_isCheckingHandle) return;
+    setState(() => _handleError = null);
+
     if (_formKey.currentState != null && !_formKey.currentState!.validate()) {
       return;
     }
 
     final currentUser = widget.repository.currentUser;
+    final normalizedHandle = UserProfile.sanitizeHandle(_handleCtrl.text);
+    final handleRegex = RegExp(r'^[a-z0-9._-]{3,30}$');
+    if (!handleRegex.hasMatch(normalizedHandle)) {
+      setState(() {
+        _handleError =
+            'Handle must be 3-30 characters (letters, numbers, ., _, -).';
+      });
+      return;
+    }
+
+    final localConflict = widget.repository.publicDetailers.any(
+      (d) =>
+          d.id != currentUser.id &&
+          (d.handle.toLowerCase() == normalizedHandle ||
+              UserProfile.sanitizeHandle(d.username) == normalizedHandle),
+    );
+    if (localConflict) {
+      setState(() {
+        _handleError = 'That handle is already taken. Please choose another.';
+      });
+      return;
+    }
+
+    if (SupabaseService.client != null) {
+      setState(() => _isCheckingHandle = true);
+      final available = await SupabaseDbService.isHandleAvailable(
+        normalizedHandle,
+        excludeUserId: currentUser.id,
+      );
+      if (!mounted) return;
+      setState(() => _isCheckingHandle = false);
+      if (!available) {
+        setState(() {
+          _handleError = 'That handle is already taken. Please choose another.';
+        });
+        return;
+      }
+    }
     final savedUnit = widget.isStudioProfile
         ? currentUser.studioUnitOrApt.trim()
         : currentUser.unitOrApt.trim();
@@ -378,6 +425,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
 
     if (widget.isStudioProfile) {
       updated = currentUser.copyWith(
+        username: normalizedHandle,
         displayName: _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : null,
         businessName: _businessCtrl.text.trim().isNotEmpty ? _businessCtrl.text.trim() : null,
         studioStreetAddress: street,
@@ -399,6 +447,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
       );
     } else {
       updated = currentUser.copyWith(
+        username: normalizedHandle,
         displayName: _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : null,
         businessName: _businessCtrl.text.trim().isNotEmpty ? _businessCtrl.text.trim() : null,
         streetAddress: street,
@@ -751,6 +800,29 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                   decoration: const InputDecoration(
                     labelText: 'Detailing Business / Studio Name',
                     prefixIcon: Icon(Icons.storefront_outlined, size: 18),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _handleCtrl,
+                  onChanged: (_) {
+                    if (_handleError != null) {
+                      setState(() => _handleError = null);
+                    } else {
+                      setState(() {});
+                    }
+                  },
+                  decoration: InputDecoration(
+                    labelText: 'Unique Website Handle (@username)',
+                    prefixText: '@',
+                    prefixIcon: const Icon(Icons.alternate_email_rounded, size: 18),
+                    errorText: _handleError,
+                    helperText:
+                        'autodetailcraft.com/@${UserProfile.sanitizeHandle(_handleCtrl.text).isNotEmpty ? UserProfile.sanitizeHandle(_handleCtrl.text) : 'yourhandle'}',
+                    helperStyle: const TextStyle(
+                      color: AppTheme.primary,
+                      fontSize: 11.5,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
