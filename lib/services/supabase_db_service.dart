@@ -420,6 +420,7 @@ class SupabaseDbService {
 
       final fullPayload = <String, dynamic>{
         'id': user.id,
+        'username': user.username,
         'display_name': user.displayName,
         'business_name': user.businessName,
         'role': roleStr,
