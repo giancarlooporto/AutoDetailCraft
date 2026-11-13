@@ -2732,8 +2732,12 @@ class JobRepository extends ChangeNotifier {
   Future<void> updateBookingStatus(String bookingId, BookingStatus newStatus) async {
     final idx = _bookings.indexWhere((b) => b.id == bookingId);
     if (idx != -1) {
-      _bookings[idx] = _bookings[idx].copyWith(status: newStatus);
+      final updatedBooking = _bookings[idx].copyWith(status: newStatus);
+      _bookings[idx] = updatedBooking;
       _persistBookings();
+      if (newStatus == BookingStatus.completed) {
+        _updateGarageVehicleCareFromBooking(updatedBooking);
+      }
       notifyListeners();
       if (_isLoggedIn || SupabaseAuthService.isLoggedIn || SupabaseService.client != null) {
         await SupabaseDbService.updateBookingStatus(bookingId, newStatus);
@@ -2741,6 +2745,31 @@ class JobRepository extends ChangeNotifier {
     } else {
       if (_isLoggedIn || SupabaseAuthService.isLoggedIn || SupabaseService.client != null) {
         await SupabaseDbService.updateBookingStatus(bookingId, newStatus);
+      }
+    }
+  }
+
+  void _updateGarageVehicleCareFromBooking(BookingAppointment booking) {
+    if (_currentUser.myGarage.isEmpty) return;
+    final target = booking.vehicleYearMakeModel.trim().toLowerCase();
+    if (target.isEmpty) return;
+    for (final v in _currentUser.myGarage) {
+      final fullName = v.fullName.trim().toLowerCase();
+      final make = v.make.trim().toLowerCase();
+      final model = v.model.trim().toLowerCase();
+      final matches = fullName == target ||
+          (make.isNotEmpty &&
+              model.isNotEmpty &&
+              target.contains(make) &&
+              target.contains(model));
+      if (matches) {
+        updateVehicleInGarage(
+          v.copyWith(
+            lastDetailService: booking.package.title,
+            lastDetailDate: booking.scheduledDate,
+          ),
+        );
+        break;
       }
     }
   }
@@ -2964,6 +2993,7 @@ class JobRepository extends ChangeNotifier {
 
     _bookings[idx] = updatedBooking;
     _persistBookings();
+    _updateGarageVehicleCareFromBooking(updatedBooking);
     notifyListeners();
 
     if (_isLoggedIn || SupabaseAuthService.isLoggedIn || SupabaseService.client != null) {

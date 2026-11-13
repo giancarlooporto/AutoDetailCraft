@@ -4,12 +4,15 @@ import 'dart:ui';
 import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
 import '../models/user_vehicle.dart';
+import '../models/booking_models.dart';
 import '../services/job_repository.dart';
 import '../services/supabase_auth_service.dart';
 import 'vehicle_editor_dialog.dart';
 import 'auth_modal.dart';
 import 'edit_profile_dialog.dart';
+import 'booking_flow_screen.dart';
 import '../widgets/job_recipe_card.dart';
+import '../widgets/split_slider_widget.dart';
 import 'detailer_workbench_view.dart';
 import '../services/local_storage_service.dart';
 
@@ -1326,6 +1329,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   Widget _buildGarageVehicleCard(UserVehicle veh, {bool isGrid = false}) {
+    final completedHistory = _completedBookingsForVehicle(veh);
     return Container(
       margin: EdgeInsets.only(bottom: isGrid ? 0 : 16),
       decoration: BoxDecoration(
@@ -1457,11 +1461,287 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     ),
                   ),
                 ],
+                if (completedHistory.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openVehicleServiceHistorySheet(context, veh, completedHistory),
+                      icon: const Icon(Icons.history_edu_rounded, size: 16, color: AppTheme.primary),
+                      label: Text(
+                        'Service History (${completedHistory.length})',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: AppTheme.primary.withAlpha(120)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  List<BookingAppointment> _completedBookingsForVehicle(UserVehicle veh) {
+    final fullName = veh.fullName.trim().toLowerCase();
+    final make = veh.make.trim().toLowerCase();
+    final model = veh.model.trim().toLowerCase();
+    final matches = widget.repository.clientBookings.where((b) {
+      if (b.status != BookingStatus.completed) return false;
+      final target = b.vehicleYearMakeModel.trim().toLowerCase();
+      if (target.isEmpty) return false;
+      return target == fullName ||
+          (make.isNotEmpty &&
+              model.isNotEmpty &&
+              target.contains(make) &&
+              target.contains(model));
+    }).toList();
+    matches.sort((a, b) => b.scheduledDate.compareTo(a.scheduledDate));
+    return matches;
+  }
+
+  void _openVehicleServiceHistorySheet(
+    BuildContext context,
+    UserVehicle veh,
+    List<BookingAppointment> history,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.78,
+          minChildSize: 0.45,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (_, scrollController) {
+            return Column(
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppTheme.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 12, 10),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.history_edu_rounded, color: AppTheme.primary, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              veh.fullName,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.textPrimary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const Text(
+                              'Service History & Care Log',
+                              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: AppTheme.textMuted),
+                        onPressed: () => Navigator.pop(sheetContext),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: AppTheme.border),
+                Expanded(
+                  child: ListView.separated(
+                    controller: scrollController,
+                    padding: const EdgeInsets.all(16),
+                    itemCount: history.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 14),
+                    itemBuilder: (_, index) {
+                      final b = history[index];
+                      final studioName = b.detailerBusinessName.trim().isNotEmpty
+                          ? b.detailerBusinessName.trim()
+                          : b.detailerName;
+                      final hasBothPhotos = b.beforePhotos.isNotEmpty && b.afterPhotos.isNotEmpty;
+                      final hasSingleSide = !hasBothPhotos && (b.beforePhotos.isNotEmpty || b.afterPhotos.isNotEmpty);
+                      final singlePhotos = b.afterPhotos.isNotEmpty ? b.afterPhotos : b.beforePhotos;
+
+                      return Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceLight,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: AppTheme.border),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        b.package.title,
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppTheme.textPrimary,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        studioName,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppTheme.primary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      '\$${b.totalPrice.toStringAsFixed(0)}',
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.textPrimary,
+                                      ),
+                                    ),
+                                    Text(
+                                      DateFormat('MMM d, yyyy').format(b.scheduledDate),
+                                      style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            if (b.completionNotes != null && b.completionNotes!.trim().isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.surface,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: AppTheme.border),
+                                ),
+                                child: Text(
+                                  b.completionNotes!.trim(),
+                                  style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                                ),
+                              ),
+                            ],
+                            if (hasBothPhotos) ...[
+                              const SizedBox(height: 12),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: SplitSliderWidget(
+                                  beforeImageUrl: b.beforePhotos.first,
+                                  afterImageUrl: b.afterPhotos.first,
+                                  defectBadge: b.package.title,
+                                  aspectRatio: 16 / 9,
+                                ),
+                              ),
+                            ] else if (hasSingleSide) ...[
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                height: 90,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: singlePhotos.length,
+                                  separatorBuilder: (_, _) => const SizedBox(width: 8),
+                                  itemBuilder: (_, pIdx) => ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.network(
+                                      singlePhotos[pIdx],
+                                      width: 120,
+                                      height: 90,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, _, _) => Container(
+                                        width: 120,
+                                        height: 90,
+                                        color: AppTheme.surface,
+                                        child: const Icon(Icons.broken_image_outlined, color: AppTheme.textMuted),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  final targetDetailer = widget.repository.publicDetailers
+                                          .where((d) => d.id == b.detailerId)
+                                          .firstOrNull ??
+                                      UserProfile(
+                                        id: b.detailerId,
+                                        displayName: b.detailerName,
+                                        username: '@${b.detailerName.toLowerCase().replaceAll(' ', '')}',
+                                        avatarUrl: b.detailerAvatar,
+                                        businessName: studioName,
+                                        role: UserRole.detailer,
+                                      );
+                                  Navigator.pop(sheetContext);
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => BookingFlowScreen(
+                                        detailer: targetDetailer,
+                                        repository: widget.repository,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.replay_rounded, size: 16),
+                                label: const Text('Re-Book', style: TextStyle(fontWeight: FontWeight.bold)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.primary,
+                                  foregroundColor: Colors.black,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
