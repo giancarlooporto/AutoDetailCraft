@@ -31,9 +31,11 @@ class MainNavigationScreen extends StatefulWidget {
     if (trimmed.isEmpty) return null;
     final segments = trimmed.split('/').where((s) => s.isNotEmpty).toList();
     if (segments.isEmpty) return null;
-    final first = segments.first;
-    if (!first.startsWith('@') || first.length < 2) return null;
-    final clean = UserProfile.sanitizeHandle(first.substring(1));
+    final first = Uri.decodeComponent(segments.first);
+    const reserved = {'index.html', 'assets', 'canvaskit', 'icons', 'favicon.ico'};
+    if (reserved.contains(first.toLowerCase())) return null;
+    final raw = first.startsWith('@') ? first.substring(1) : first;
+    final clean = UserProfile.sanitizeHandle(raw);
     return clean.isNotEmpty ? clean : null;
   }
 
