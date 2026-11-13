@@ -818,7 +818,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                     prefixIcon: const Icon(Icons.alternate_email_rounded, size: 18),
                     errorText: _handleError,
                     helperText:
-                        'autodetailcraft.com/@${UserProfile.sanitizeHandle(_handleCtrl.text).isNotEmpty ? UserProfile.sanitizeHandle(_handleCtrl.text) : 'yourhandle'}',
+                        'autodetailcraft.com/${UserProfile.sanitizeHandle(_handleCtrl.text).isNotEmpty ? UserProfile.sanitizeHandle(_handleCtrl.text) : 'yourhandle'}',
                     helperStyle: const TextStyle(
                       color: AppTheme.primary,
                       fontSize: 11.5,

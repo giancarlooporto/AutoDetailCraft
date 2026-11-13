@@ -24,7 +24,7 @@ class StudioShareDialog extends StatefulWidget {
   static String buildStudioUrl(UserProfile detailer) {
     final handle = detailer.handle;
     if (handle.isNotEmpty) {
-      return 'https://www.autodetailcraft.com/@$handle';
+      return 'https://www.autodetailcraft.com/$handle';
     }
     return buildStudioShareUrl(detailer.id);
   }
