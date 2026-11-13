@@ -282,7 +282,9 @@ class SupabaseDbService {
       return UserProfile(
         id: res['id'] as String,
         role: parsedRole,
-        username: (res['email'] as String?)?.split('@').first ?? 'user',
+        username: (res['username'] as String?)?.trim().isNotEmpty == true
+            ? (res['username'] as String).trim()
+            : ((res['email'] as String?)?.split('@').first ?? 'user'),
         displayName: res['display_name'] as String? ?? 'Vehicle Owner',
         businessName: cleanBusiness,
         avatarUrl: cleanAvatar,
