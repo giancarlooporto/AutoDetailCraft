@@ -4,18 +4,25 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/theme/app_theme.dart';
 import '../models/user_profile.dart';
 import '../services/job_repository.dart';
+import '../services/supabase_db_service.dart';
 import '../services/supabase_service.dart';
 import 'feed_screen.dart';
 import 'bookings_list_screen.dart';
 import 'messages_screen.dart';
 import 'profile_screen.dart';
+import 'public_studio_screen.dart';
 import 'update_password_dialog.dart';
 import 'auth_modal.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   final JobRepository repository;
+  final String? initialStudioId;
 
-  const MainNavigationScreen({super.key, required this.repository});
+  const MainNavigationScreen({
+    super.key,
+    required this.repository,
+    this.initialStudioId,
+  });
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
@@ -24,12 +31,55 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   StreamSubscription<AuthState>? _authSubscription;
   bool _handledInitialInviteLink = false;
+  bool _handledInitialStudioLink = false;
 
   @override
   void initState() {
     super.initState();
     _listenToAuthRecovery();
     _checkInitialStaffInviteUrl();
+    _checkInitialStudioUrl();
+  }
+
+  void _checkInitialStudioUrl() {
+    try {
+      final rawStudioId = widget.initialStudioId ??
+          Uri.base.queryParameters['studio'] ??
+          Uri.base.queryParameters['s'];
+      if (rawStudioId != null &&
+          rawStudioId.trim().isNotEmpty &&
+          !_handledInitialStudioLink) {
+        _handledInitialStudioLink = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _openInitialStudio(rawStudioId.trim());
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _openInitialStudio(String studioId) async {
+    if (!mounted) return;
+    UserProfile? targetDetailer = widget.repository.publicDetailers
+        .where((d) => d.id == studioId)
+        .firstOrNull;
+    if (targetDetailer == null && widget.repository.currentUser.id == studioId) {
+      targetDetailer = widget.repository.currentUser;
+    }
+    if (targetDetailer == null) {
+      try {
+        targetDetailer = await SupabaseDbService.fetchUserProfile(studioId);
+      } catch (_) {}
+    }
+    if (targetDetailer != null && mounted) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => PublicStudioScreen(
+            detailer: targetDetailer!,
+            repository: widget.repository,
+          ),
+        ),
+      );
+    }
   }
 
   void _checkInitialStaffInviteUrl() {

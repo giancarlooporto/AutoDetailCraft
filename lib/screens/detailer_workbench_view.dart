@@ -11,6 +11,7 @@ import '../services/job_repository.dart';
 import '../widgets/job_recipe_card.dart';
 import '../widgets/dilution_dialog.dart';
 import '../widgets/inventory_item_editor_dialog.dart';
+import '../widgets/studio_share_dialog.dart';
 import 'service_package_editor_dialog.dart';
 import 'add_team_member_dialog.dart';
 import 'create_job_screen.dart';
@@ -888,6 +889,17 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
                                 ),
                               ],
                             ),
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.qr_code_2_rounded,
+                              color: AppTheme.primary,
+                              size: 20,
+                            ),
+                            tooltip: 'Website Link & QR',
+                            onPressed: () {
+                              StudioShareDialog.show(context, detailer: user);
+                            },
                           ),
                         ],
                       ),

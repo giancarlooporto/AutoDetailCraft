@@ -8,6 +8,7 @@ import '../services/job_repository.dart';
 import '../services/map_launcher_service.dart';
 import '../widgets/client_garage_gate.dart';
 import '../widgets/job_recipe_card.dart';
+import '../widgets/studio_share_dialog.dart';
 import 'auth_modal.dart';
 import 'booking_flow_screen.dart';
 import 'chat_screen.dart';
@@ -194,12 +195,11 @@ class _PublicStudioScreenState extends State<PublicStudioScreen>
                   child: IconButton(
                     icon: const Icon(Icons.share_outlined,
                         color: Colors.white, size: 18),
+                    tooltip: 'Share Studio Website & QR',
                     onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Storefront link copied for $studioName'),
-                          backgroundColor: AppTheme.surface,
-                        ),
+                      StudioShareDialog.show(
+                        context,
+                        detailer: widget.detailer,
                       );
                     },
                   ),
