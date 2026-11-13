@@ -6097,7 +6097,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
           const SizedBox(height: 14),
           _buildInfoSection(title: 'SERVICE RADIUS & LOCATIONS', content: '${user.location} • ${user.serviceRadius}', icon: Icons.location_on_outlined),
           const SizedBox(height: 14),
-          _buildInfoSection(title: 'CONTACT & SOCIAL', content: 'Phone: ${user.phone.isNotEmpty ? user.phone : "Not provided"} • IG: ${user.instagramHandle}', icon: Icons.phone_outlined),
+          _buildInfoSection(title: 'CONTACT', content: 'Phone: ${user.phone.isNotEmpty ? user.phone : "Not provided"}', icon: Icons.phone_outlined),
           if (!widget.repository.isViewingAsTeamMember) ...[
             const SizedBox(height: 16),
             _buildOwnerSecurityCard(context),

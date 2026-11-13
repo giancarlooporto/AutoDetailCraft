@@ -839,17 +839,6 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
               ),
               const SizedBox(height: 12),
 
-              // Instagram Handle
-              TextField(
-                controller: _instagramCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Instagram Handle',
-                  hintText: '@handle',
-                  prefixIcon: Icon(Icons.camera_alt_outlined, size: 18),
-                ),
-              ),
-              const SizedBox(height: 12),
-
               // Bio
               TextField(
                 controller: _bioCtrl,

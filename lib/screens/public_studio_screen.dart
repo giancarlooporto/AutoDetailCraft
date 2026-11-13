@@ -1035,25 +1035,14 @@ class _PublicStudioScreenState extends State<PublicStudioScreen>
                 }).toList(),
               ),
             ],
-            if (detailer.instagramHandle.trim().isNotEmpty ||
-                detailer.phone.trim().isNotEmpty) ...[
+            if (detailer.phone.trim().isNotEmpty) ...[
               const SizedBox(height: 16),
               _buildInfoSection(
-                title: 'Contact & Social',
-                icon: Icons.alternate_email_rounded,
+                title: 'Contact',
+                icon: Icons.phone_outlined,
                 children: [
-                  if (detailer.instagramHandle.trim().isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Text(
-                        'Instagram: @${detailer.instagramHandle.replaceFirst('@', '')}',
-                        style: const TextStyle(
-                            fontSize: 13, color: AppTheme.textSecondary),
-                      ),
-                    ),
-                  if (detailer.phone.trim().isNotEmpty)
-                    Text(
-                      'Phone: ${detailer.phone}',
+                  Text(
+                    'Phone: ${detailer.phone}',
                       style: const TextStyle(
                           fontSize: 13, color: AppTheme.textSecondary),
                     ),
