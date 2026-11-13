@@ -1081,11 +1081,11 @@ class _BookingFlowScreenState extends State<BookingFlowScreen> {
             ),
             child: Row(
               children: [
-                Expanded(child: _stepIndicator(0, MediaQuery.sizeOf(context).width < 450 ? 'Package' : '1. Package')),
+                Expanded(child: _stepIndicator(0, 'Package')),
                 _stepDivider(0),
-                Expanded(child: _stepIndicator(1, MediaQuery.sizeOf(context).width < 450 ? 'Date' : '2. Vehicle & Date')),
+                Expanded(child: _stepIndicator(1, MediaQuery.sizeOf(context).width < 450 ? 'Date' : 'Vehicle & Date')),
                 _stepDivider(1),
-                Expanded(child: _stepIndicator(2, MediaQuery.sizeOf(context).width < 450 ? 'Checkout' : '3. Checkout')),
+                Expanded(child: _stepIndicator(2, 'Checkout')),
               ],
             ),
           ),
