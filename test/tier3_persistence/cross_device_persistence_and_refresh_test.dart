@@ -5,7 +5,13 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:detail_craft/models/booking_models.dart';
+import 'package:detail_craft/models/calendar_availability_block.dart';
+import 'package:detail_craft/models/detail_job.dart';
+import 'package:detail_craft/models/inventory_item.dart';
+import 'package:detail_craft/models/team_member.dart';
 import 'package:detail_craft/models/user_profile.dart';
+import 'package:detail_craft/services/local_storage_service.dart';
+import 'package:detail_craft/services/supabase_db_service.dart';
 import 'package:detail_craft/services/supabase_service.dart';
 import '../core/test_harness.dart';
 import '../core/multi_device_test_harness.dart';
@@ -392,6 +398,268 @@ void main() {
 
       // Bookings cleanly restored
       expect(deviceB.clientBookings.any((b) => b.id == 'bk_alex_session_01'), isTrue);
+    });
+
+    test('4. Studio Workbench Authoritative Supabase Sync: Deleted Services, Portfolio Jobs, Team Members, Inventory, and Calendar Blocks Stay Deleted Across Devices', () async {
+      const studioId = 'usr_studio_sync_01';
+      const deletedPkg = ServicePackage(
+        id: 'pkg_deleted_on_device_a',
+        title: 'Deleted Paint Correction',
+        description: 'Should stay deleted after cloud sync',
+        basePrice: 499.0,
+        estimatedDuration: '4 hrs',
+        includes: ['Paint correction'],
+      );
+      const remainingPkg = ServicePackage(
+        id: 'pkg_remaining_on_cloud',
+        title: 'Ceramic Maintenance Wash',
+        description: 'Active service package',
+        basePrice: 120.0,
+        estimatedDuration: '90 mins',
+        includes: ['Foam wash'],
+      );
+      final initialUser = UserProfile(
+        id: studioId,
+        role: UserRole.detailer,
+        username: 'apexstudio',
+        displayName: 'Marcus Vance',
+        businessName: 'Apex Precision Studio',
+        servicePackages: const [deletedPkg, remainingPkg],
+        teamMembers: const [
+          TeamMember(
+            id: 'tm_deleted_01',
+            name: 'Removed Tech',
+            roleTitle: 'Tech',
+            avatarUrl: '',
+          ),
+          TeamMember(
+            id: 'tm_active_02',
+            name: 'Elena Tech',
+            roleTitle: 'Lead Polisher',
+            avatarUrl: '',
+          ),
+        ],
+        ownerPinHash: 'salt:hash123',
+      );
+
+      final deletedJob = DetailJob(
+        id: 'job_deleted_01',
+        author: initialUser,
+        createdAt: DateTime(2026, 11, 1),
+        title: 'Deleted Portfolio Entry',
+        description: 'Should be removed on Device B sync',
+        vehicleYear: 2024,
+        vehicleMake: 'Porsche',
+        vehicleModel: '911',
+        paintColorName: 'GT Silver',
+        paintCode: 'M7Z',
+        paintHardness: PaintHardness.medium,
+        initialPaintThicknessMicrons: 130,
+        finalPaintThicknessMicrons: 125,
+        defectSeverity: 2,
+        serviceType: 'Correction',
+        recipeStages: const [],
+        beforeImageUrl: 'https://example.com/b.jpg',
+        afterImageUrl: 'https://example.com/a.jpg',
+      );
+
+      final remainingJob = DetailJob(
+        id: 'job_active_02',
+        author: initialUser,
+        createdAt: DateTime(2026, 11, 5),
+        title: 'Active Portfolio Entry',
+        description: 'Stays in Supabase',
+        vehicleYear: 2025,
+        vehicleMake: 'BMW',
+        vehicleModel: 'M4',
+        paintColorName: 'Isle of Man Green',
+        paintCode: 'C4G',
+        paintHardness: PaintHardness.hard,
+        initialPaintThicknessMicrons: 135,
+        finalPaintThicknessMicrons: 131,
+        defectSeverity: 2,
+        serviceType: 'Ceramic',
+        recipeStages: const [],
+        beforeImageUrl: 'https://example.com/b2.jpg',
+        afterImageUrl: 'https://example.com/a2.jpg',
+      );
+
+      const deletedInv = InventoryItem(
+        id: 'inv_deleted_01',
+        name: 'Old Compound',
+        category: InventoryCategory.chemicals,
+      );
+      const remainingInv = InventoryItem(
+        id: 'inv_active_02',
+        name: 'Active Coating',
+        category: InventoryCategory.chemicals,
+      );
+
+      final deletedBlock = CalendarAvailabilityBlock(
+        id: 'blk_deleted_01',
+        detailerId: studioId,
+        date: DateTime(2026, 11, 20),
+        isAllDay: true,
+        createdAt: DateTime(2026, 11, 1),
+      );
+      final remainingBlock = CalendarAvailabilityBlock(
+        id: 'blk_active_02',
+        detailerId: studioId,
+        date: DateTime(2026, 11, 25),
+        isAllDay: true,
+        createdAt: DateTime(2026, 11, 1),
+      );
+
+      // Verify saveUserProfile does NOT send owner_pin_hash and survives PGRST204 checks
+      final capturedProfileUpserts = <Map<String, dynamic>>[];
+      bool sawReuploadOfDeletedPackage = false;
+
+      _mockCloudProvider = (uri, method, requestBody) {
+        if (uri.path.contains('/rest/v1/profiles') && method == 'POST') {
+          final decoded = jsonDecode(requestBody);
+          final map = decoded is List
+              ? Map<String, dynamic>.from(decoded.first as Map)
+              : Map<String, dynamic>.from(decoded as Map);
+          capturedProfileUpserts.add(map);
+          if (map.containsKey('owner_pin_hash')) {
+            return {
+              'statusCode': 400,
+              'body': {
+                'code': 'PGRST204',
+                'message': "Could not find the 'owner_pin_hash' column of 'profiles' in the schema cache",
+              },
+            };
+          }
+          final pkgs = (map['service_packages'] as List<dynamic>?) ?? [];
+          if (pkgs.any((p) => (p as Map)['id'] == deletedPkg.id)) {
+            sawReuploadOfDeletedPackage = true;
+          }
+          return {'statusCode': 201, 'body': [map]};
+        }
+        return {'statusCode': 200, 'body': []};
+      };
+
+      await SupabaseDbService.saveUserProfile(
+        initialUser.copyWith(servicePackages: const [remainingPkg]),
+        inventoryItems: const [remainingInv],
+      );
+      expect(capturedProfileUpserts, isNotEmpty);
+      expect(capturedProfileUpserts.first.containsKey('owner_pin_hash'), isFalse);
+
+      // Seed Device B with stale local items before Device A deleted them
+      await LocalStorageService.saveServicePackages([deletedPkg, remainingPkg]);
+      await LocalStorageService.saveTeamMembers(initialUser.teamMembers);
+      await LocalStorageService.saveInventoryItems([deletedInv, remainingInv]);
+      await LocalStorageService.saveCalendarBlocks([deletedBlock, remainingBlock]);
+      await LocalStorageService.saveCustomJobs([deletedJob, remainingJob]);
+
+      final deviceB = await harness.createDeviceSession(
+        user: initialUser,
+        isLoggedIn: true,
+      );
+      deviceB.addJob(deletedJob);
+      deviceB.addJob(remainingJob);
+      deviceB.addInventoryItem(deletedInv);
+      deviceB.addInventoryItem(remainingInv);
+      deviceB.addAvailabilityBlock(deletedBlock);
+      deviceB.addAvailabilityBlock(remainingBlock);
+      // Confirm Device B starts with stale cached items before refresh
+      expect(deviceB.currentUser.servicePackages.length, equals(2));
+      expect(deviceB.currentUser.teamMembers.length, equals(2));
+      expect(deviceB.jobs.any((j) => j.id == deletedJob.id), isTrue);
+
+      // Flush in-flight background writes from Device B seeding before enabling deletion-reupload assertions
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      sawReuploadOfDeletedPackage = false;
+
+      // Cloud now reflects Device A deletions (even testing empty service_packages in step 2)
+      List<Map<String, dynamic>> cloudPackages = [remainingPkg.toJson()];
+      final teamJson = jsonEncode([initialUser.teamMembers[1].toJson()]);
+      final teamB64 = base64Encode(utf8.encode(teamJson));
+      final invJson = jsonEncode([remainingInv.toJson()]);
+      final invB64 = base64Encode(utf8.encode(invJson));
+
+      _mockCloudProvider = (uri, method, requestBody) {
+        if (uri.path.contains('/rest/v1/profiles') && method == 'GET') {
+          return {
+            'statusCode': 200,
+            'body': [
+              {
+                'id': studioId,
+                'username': 'apexstudio',
+                'display_name': 'Marcus Vance',
+                'business_name': 'Apex Precision Studio',
+                'role': 'detailer',
+                'service_radius': '25 miles||team:$teamB64||inv:$invB64',
+                'service_packages': cloudPackages,
+              }
+            ],
+          };
+        }
+        if (uri.path.contains('/rest/v1/profiles') && (method == 'POST' || method == 'PATCH')) {
+          if (requestBody.contains(deletedPkg.id)) {
+            sawReuploadOfDeletedPackage = true;
+          }
+          return {'statusCode': 200, 'body': []};
+        }
+        if (uri.path.contains('/rest/v1/team_members') && method == 'GET') {
+          return {
+            'statusCode': 200,
+            'body': [
+              {
+                'id': 'tm_active_02',
+                'studio_id': studioId,
+                'name': 'Elena Tech',
+                'role_title': 'Lead Polisher',
+              }
+            ],
+          };
+        }
+        if (uri.path.contains('/rest/v1/jobs') && method == 'GET') {
+          return {
+            'statusCode': 200,
+            'body': [
+              {'id': remainingJob.id, 'raw_data': remainingJob.toJson()},
+            ],
+          };
+        }
+        if (uri.path.contains('/rest/v1/availability_blocks') && method == 'GET') {
+          return {
+            'statusCode': 200,
+            'body': [remainingBlock.toSupabase()],
+          };
+        }
+        return {'statusCode': 200, 'body': []};
+      };
+
+      // Refresh Studio Workbench on Device B
+      await deviceB.refreshStudioWorkbench();
+
+      // Services: deletedPkg removed, only remainingPkg present, never re-uploaded
+      expect(deviceB.currentUser.servicePackages.map((p) => p.id), equals([remainingPkg.id]));
+      expect(sawReuploadOfDeletedPackage, isFalse);
+      final persistedPackages = await LocalStorageService.loadServicePackages();
+      expect(persistedPackages.map((p) => p.id), equals([remainingPkg.id]));
+
+      // Portfolio jobs: deletedJob removed
+      expect(deviceB.jobs.any((j) => j.id == deletedJob.id), isFalse);
+      expect(deviceB.jobs.any((j) => j.id == remainingJob.id), isTrue);
+
+      // Team members: deleted member removed
+      expect(deviceB.currentUser.teamMembers.map((m) => m.id), equals(['tm_active_02']));
+
+      // Inventory: deletedInv removed
+      expect(deviceB.inventoryItems.map((i) => i.id), equals([remainingInv.id]));
+
+      // Calendar availability blocks: deletedBlock removed
+      expect(deviceB.availabilityBlocks.map((b) => b.id), equals([remainingBlock.id]));
+
+      // Edge case: even when ALL services are deleted in Supabase ([]), Device B clears them instead of resurrecting local cache
+      cloudPackages = [];
+      await deviceB.refreshStudioWorkbench();
+      expect(deviceB.currentUser.servicePackages, isEmpty);
+      expect(await LocalStorageService.loadServicePackages(), isEmpty);
+      expect(sawReuploadOfDeletedPackage, isFalse);
     });
   });
 }

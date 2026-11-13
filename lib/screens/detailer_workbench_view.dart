@@ -144,6 +144,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     _loadSavedHubSection();
     widget.repository.addListener(_onRepoChanged);
     widget.repository.loadConversations();
+    widget.repository.refreshStudioWorkbench();
     _ensureSelection();
     _startAutoLockTimer();
   }
@@ -297,6 +298,7 @@ class _DetailerWorkbenchViewState extends State<DetailerWorkbenchView> {
     if (section == StudioHubSection.messages) {
       widget.repository.loadConversations();
     }
+    widget.repository.refreshStudioWorkbench();
     setState(() {
       _selectedHub = section;
       if (section != StudioHubSection.inventory) {

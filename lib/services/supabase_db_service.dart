@@ -205,17 +205,26 @@ class SupabaseDbService {
 
       String? ownerPinHash = res['owner_pin_hash'] as String?;
       List<TeamMember> backupTeam = [];
+      bool hasPackedTeamTag = false;
       bool isPausedFromRadius = false;
+      String? packedHandle;
       if (res['service_radius'] is String) {
         final sr = res['service_radius'] as String;
-        if ((ownerPinHash == null || ownerPinHash.isEmpty) && sr.contains('||pin:')) {
-          final afterPin = sr.split('||pin:').last;
-          ownerPinHash = afterPin.split('||team:').first.split('||paused:').first.trim();
+        String? extractTag(String tag) {
+          if (!sr.contains(tag)) return null;
+          return sr.split(tag).last.split('||').first.trim();
         }
-        if (sr.contains('||team:')) {
+
+        final pinVal = extractTag('||pin:');
+        if ((ownerPinHash == null || ownerPinHash.isEmpty) &&
+            pinVal != null &&
+            pinVal.isNotEmpty) {
+          ownerPinHash = pinVal;
+        }
+        final teamB64 = extractTag('||team:');
+        if (teamB64 != null) {
+          hasPackedTeamTag = true;
           try {
-            final afterTeam = sr.split('||team:').last;
-            final teamB64 = afterTeam.split('||paused:').first.trim();
             final decodedJson = utf8.decode(base64Decode(teamB64));
             final list = jsonDecode(decodedJson) as List<dynamic>;
             backupTeam = list
@@ -223,21 +232,34 @@ class SupabaseDbService {
                 .toList();
           } catch (_) {}
         }
-        if (sr.contains('||paused:')) {
-          final afterPaused = sr.split('||paused:').last.split('||').first.trim();
-          isPausedFromRadius = afterPaused == 'true' || afterPaused == '1';
+        final pausedVal = extractTag('||paused:');
+        if (pausedVal != null) {
+          isPausedFromRadius = pausedVal == 'true' || pausedVal == '1';
+        }
+        final handleVal = extractTag('||handle:');
+        if (handleVal != null && handleVal.isNotEmpty) {
+          packedHandle = handleVal;
         }
       }
-      final cleanServiceRadius = ((res['service_radius'] as String?) ?? '25 miles • Mobile & Studio')
-          .split('||pin:')
-          .first
-          .split('||team:')
-          .first
-          .split('||paused:')
-          .first
-          .trim();
+      var cleanServiceRadius = (res['service_radius'] as String?) ?? '25 miles • Mobile & Studio';
+      for (final tag in [
+        '||pin:',
+        '||team:',
+        '||paused:',
+        '||handle:',
+        '||inv:',
+        '||cal:',
+        '||pause:',
+        '||garage:',
+        '||verif:',
+      ]) {
+        if (cleanServiceRadius.contains(tag)) {
+          cleanServiceRadius = cleanServiceRadius.split(tag).first;
+        }
+      }
+      cleanServiceRadius = cleanServiceRadius.trim();
 
-      // Merge team_members table rows with backupTeam so no staff or PINs are lost across devices
+      // Reconcile team_members table rows with backupTeam so deletions stay deleted across devices
       final mergedTeamMap = <String, TeamMember>{
         for (final bm in backupTeam) bm.id: bm,
       };
@@ -250,7 +272,7 @@ class SupabaseDbService {
             allowedHubSections: tm.allowedHubSections ?? existing.allowedHubSections,
             customWeeklySchedule: tm.customWeeklySchedule ?? existing.customWeeklySchedule,
           );
-        } else {
+        } else if (!hasPackedTeamTag) {
           mergedTeamMap[tm.id] = tm;
         }
       }
@@ -284,7 +306,9 @@ class SupabaseDbService {
         role: parsedRole,
         username: (res['username'] as String?)?.trim().isNotEmpty == true
             ? (res['username'] as String).trim()
-            : ((res['email'] as String?)?.split('@').first ?? 'user'),
+            : ((packedHandle != null && packedHandle.isNotEmpty)
+                ? packedHandle
+                : ((res['email'] as String?)?.split('@').first ?? 'user')),
         displayName: res['display_name'] as String? ?? 'Vehicle Owner',
         businessName: cleanBusiness,
         avatarUrl: cleanAvatar,
@@ -382,8 +406,86 @@ class SupabaseDbService {
     return profiles;
   }
 
+  static Map<String, dynamic> _stripExtendedProfileFields(
+    Map<String, dynamic> payload, {
+    bool stripUsername = false,
+  }) {
+    final copy = Map<String, dynamic>.from(payload)
+      ..remove('owner_pin_hash')
+      ..remove('is_insurance_verified')
+      ..remove('insurance_policy_number')
+      ..remove('is_studio_paused')
+      ..remove('street_address')
+      ..remove('unit_or_apt')
+      ..remove('city')
+      ..remove('state')
+      ..remove('postal_code')
+      ..remove('latitude')
+      ..remove('longitude')
+      ..remove('studio_street_address')
+      ..remove('studio_unit_or_apt')
+      ..remove('studio_city')
+      ..remove('studio_state')
+      ..remove('studio_postal_code')
+      ..remove('studio_latitude')
+      ..remove('studio_longitude');
+    if (stripUsername) {
+      copy.remove('username');
+    }
+    return copy;
+  }
+
+  static Future<void> _upsertProfileWithFallback(
+    SupabaseClient client,
+    Map<String, dynamic> fullPayload,
+    String errorMessage,
+  ) async {
+    final msg = errorMessage.toLowerCase();
+    final fallbackPayload = _stripExtendedProfileFields(
+      fullPayload,
+      stripUsername: msg.contains('username'),
+    );
+    try {
+      await client.from('profiles').upsert(fallbackPayload);
+      if (kDebugMode) {
+        print('[SupabaseDbService] Fallback profile upsert succeeded.');
+      }
+    } catch (_) {
+      final corePayload = _stripExtendedProfileFields(
+        fullPayload,
+        stripUsername: true,
+      );
+      await client.from('profiles').upsert(corePayload);
+      if (kDebugMode) {
+        print('[SupabaseDbService] Core profile upsert succeeded.');
+      }
+    }
+  }
+
+  /// Directly updates `service_packages` and `starting_price` on `public.profiles`.
+  static Future<void> saveServicePackages(
+    String userId,
+    List<ServicePackage> packages,
+    double startingPrice,
+  ) async {
+    final client = _client;
+    if (client == null || userId.isEmpty || userId == 'usr_you') return;
+    try {
+      await client.from('profiles').update({
+        'service_packages': packages.map((p) => p.toJson()).toList(),
+        'starting_price': startingPrice,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', userId);
+    } catch (e) {
+      if (kDebugMode) print('[SupabaseDbService] saveServicePackages error: $e');
+    }
+  }
+
   /// Upsert full user profile to Supabase
-  static Future<void> saveUserProfile(UserProfile user) async {
+  static Future<void> saveUserProfile(
+    UserProfile user, {
+    List<InventoryItem>? inventoryItems,
+  }) async {
     final client = _client;
     if (client == null) return;
     if (user.id == 'usr_you') return; // Mock guest user is not persisted to cloud DB
@@ -396,19 +498,28 @@ class SupabaseDbService {
         roleStr = 'detailer';
       }
 
-      final cleanRadius = user.serviceRadius
-          .split('||pin:')
-          .first
-          .split('||team:')
-          .first
-          .split('||paused:')
-          .first
-          .trim();
+      var cleanRadius = user.serviceRadius;
+      for (final tag in [
+        '||pin:',
+        '||team:',
+        '||paused:',
+        '||handle:',
+        '||inv:',
+        '||cal:',
+        '||pause:',
+        '||garage:',
+        '||verif:',
+      ]) {
+        if (cleanRadius.contains(tag)) {
+          cleanRadius = cleanRadius.split(tag).first;
+        }
+      }
+      cleanRadius = cleanRadius.trim();
       final StringBuffer radiusBuf = StringBuffer(cleanRadius);
       if (user.ownerPinHash != null && user.ownerPinHash!.isNotEmpty) {
         radiusBuf.write('||pin:${user.ownerPinHash}');
       }
-      if (user.teamMembers.isNotEmpty) {
+      if (user.role != UserRole.client || user.teamMembers.isNotEmpty) {
         try {
           final teamJson = jsonEncode(user.teamMembers.map((m) => m.toJson()).toList());
           final teamB64 = base64Encode(utf8.encode(teamJson));
@@ -417,6 +528,17 @@ class SupabaseDbService {
       }
       if (user.isStudioPaused) {
         radiusBuf.write('||paused:true');
+      }
+      final cleanHandle = user.username.trim().replaceAll(RegExp(r'^@+'), '');
+      if (cleanHandle.isNotEmpty && !cleanHandle.contains('@')) {
+        radiusBuf.write('||handle:$cleanHandle');
+      }
+      if (inventoryItems != null) {
+        try {
+          final invJson = jsonEncode(inventoryItems.map((i) => i.toJson()).toList());
+          final invB64 = base64Encode(utf8.encode(invJson));
+          radiusBuf.write('||inv:$invB64');
+        } catch (_) {}
       }
       final encodedRadius = radiusBuf.toString();
 
@@ -430,7 +552,6 @@ class SupabaseDbService {
         'cover_url': user.coverUrl,
         'location': user.location,
         'service_radius': encodedRadius,
-        'owner_pin_hash': user.ownerPinHash,
         'bio': user.bio,
         'phone': user.phone,
         'instagram_handle': user.instagramHandle,
@@ -468,6 +589,7 @@ class SupabaseDbService {
         final isSchemaError = pe.code == 'PGRST204' ||
             pe.code == '42703' ||
             (msg.contains('column') && msg.contains('schema cache')) ||
+            msg.contains('username') ||
             msg.contains('is_insurance_verified') ||
             msg.contains('insurance_policy_number') ||
             msg.contains('is_studio_paused') ||
@@ -477,28 +599,7 @@ class SupabaseDbService {
           if (kDebugMode) {
             print('[SupabaseDbService] Profile upsert schema mismatch (${pe.code}: ${pe.message}). Retrying without optional fields...');
           }
-          final fallbackPayload = Map<String, dynamic>.from(fullPayload)
-            ..remove('is_insurance_verified')
-            ..remove('insurance_policy_number')
-            ..remove('is_studio_paused')
-            ..remove('street_address')
-            ..remove('unit_or_apt')
-            ..remove('city')
-            ..remove('state')
-            ..remove('postal_code')
-            ..remove('latitude')
-            ..remove('longitude')
-            ..remove('studio_street_address')
-            ..remove('studio_unit_or_apt')
-            ..remove('studio_city')
-            ..remove('studio_state')
-            ..remove('studio_postal_code')
-            ..remove('studio_latitude')
-            ..remove('studio_longitude');
-          await client.from('profiles').upsert(fallbackPayload);
-          if (kDebugMode) {
-            print('[SupabaseDbService] Fallback profile upsert succeeded.');
-          }
+          await _upsertProfileWithFallback(client, fullPayload, msg);
         } else {
           if (kDebugMode) {
             print('[SupabaseDbService] Profile upsert PostgrestException: code=${pe.code}, message=${pe.message}, details=${pe.details}, hint=${pe.hint}');
@@ -509,36 +610,17 @@ class SupabaseDbService {
         final eStr = e.toString().toLowerCase();
         if (eStr.contains('pgrst204') ||
             eStr.contains('42703') ||
+            eStr.contains('username') ||
             eStr.contains('is_insurance_verified') ||
             eStr.contains('insurance_policy_number') ||
+            eStr.contains('is_studio_paused') ||
             eStr.contains('street_address') ||
             eStr.contains('studio_street_address') ||
             eStr.contains('schema cache')) {
           if (kDebugMode) {
             print('[SupabaseDbService] Retrying profile upsert without optional location fields due to: $e');
           }
-          final fallbackPayload = Map<String, dynamic>.from(fullPayload)
-            ..remove('is_insurance_verified')
-            ..remove('insurance_policy_number')
-            ..remove('is_studio_paused')
-            ..remove('street_address')
-            ..remove('unit_or_apt')
-            ..remove('city')
-            ..remove('state')
-            ..remove('postal_code')
-            ..remove('latitude')
-            ..remove('longitude')
-            ..remove('studio_street_address')
-            ..remove('studio_unit_or_apt')
-            ..remove('studio_city')
-            ..remove('studio_state')
-            ..remove('studio_postal_code')
-            ..remove('studio_latitude')
-            ..remove('studio_longitude');
-          await client.from('profiles').upsert(fallbackPayload);
-          if (kDebugMode) {
-            print('[SupabaseDbService] Fallback profile upsert succeeded.');
-          }
+          await _upsertProfileWithFallback(client, fullPayload, eStr);
         } else {
           if (kDebugMode) {
             print('[SupabaseDbService] Profile upsert non-schema error: $e');
@@ -1247,10 +1329,10 @@ class SupabaseDbService {
     }
   }
 
-  /// Fetch jobs from Supabase
-  static Future<List<DetailJob>> fetchJobs() async {
+  /// Fetch jobs from Supabase (returns null when offline / error)
+  static Future<List<DetailJob>?> fetchJobs() async {
     final client = _client;
-    if (client == null) return [];
+    if (client == null) return null;
 
     try {
       final res = await client.from('jobs').select().order('created_at', ascending: false);
@@ -1264,7 +1346,7 @@ class SupabaseDbService {
       return jobs;
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error fetching jobs: $e');
-      return [];
+      return null;
     }
   }
 
@@ -1961,10 +2043,34 @@ class SupabaseDbService {
 
   // ─── INVENTORY ITEMS ──────────────────────────────────────────────────────
 
-  /// Fetch user's inventory items from Supabase
-  static Future<List<InventoryItem>> fetchInventoryItems(String studioId) async {
+  /// Fetch user's inventory items from Supabase (returns null when offline / error)
+  static Future<List<InventoryItem>?> fetchInventoryItems(String studioId) async {
     final client = _client;
-    if (client == null) return [];
+    if (client == null || studioId.isEmpty) return null;
+
+    List<InventoryItem>? packedInventory;
+    bool profileQuerySucceeded = false;
+    try {
+      final profileRes = await client
+          .from('profiles')
+          .select('service_radius')
+          .eq('id', studioId)
+          .maybeSingle();
+      profileQuerySucceeded = true;
+      final sr = profileRes?['service_radius'];
+      if (sr is String && sr.contains('||inv:')) {
+        final invB64 = sr.split('||inv:').last.split('||').first.trim();
+        final decodedJson = utf8.decode(base64Decode(invB64));
+        final list = jsonDecode(decodedJson) as List<dynamic>;
+        packedInventory = list
+            .map((item) => InventoryItem.fromJson(Map<String, dynamic>.from(item as Map)))
+            .toList();
+      }
+    } catch (_) {}
+
+    if (packedInventory != null) {
+      return packedInventory;
+    }
 
     try {
       final res = await client.from('inventory_items').select().eq('studio_id', studioId);
@@ -1978,7 +2084,7 @@ class SupabaseDbService {
       }).toList();
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error fetching inventory items: $e');
-      return [];
+      return profileQuerySucceeded ? const [] : null;
     }
   }
 
@@ -2068,10 +2174,11 @@ class SupabaseDbService {
     }
   }
 
-  /// Fetch availability blocks for a specific detailer, or all blocks if detailerId is null
-  static Future<List<CalendarAvailabilityBlock>> fetchAvailabilityBlocks([String? detailerId]) async {
+  /// Fetch availability blocks for a specific detailer, or all blocks if detailerId is null.
+  /// Returns null when offline / error.
+  static Future<List<CalendarAvailabilityBlock>?> fetchAvailabilityBlocks([String? detailerId]) async {
     final client = _client;
-    if (client == null) return [];
+    if (client == null) return null;
 
     try {
       var query = client.from('availability_blocks').select();
@@ -2087,7 +2194,7 @@ class SupabaseDbService {
       return blocks;
     } catch (e) {
       if (kDebugMode) print('[SupabaseDbService] Error fetching availability blocks: $e');
-      return [];
+      return null;
     }
   }
 

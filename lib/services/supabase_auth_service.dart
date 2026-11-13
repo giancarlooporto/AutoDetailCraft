@@ -4,7 +4,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_profile.dart';
 import '../models/team_member.dart';
 import '../models/user_vehicle.dart';
-import 'mock_data_service.dart';
 import 'supabase_service.dart';
 import 'supabase_db_service.dart';
 import 'local_storage_service.dart';
@@ -360,31 +359,26 @@ class SupabaseAuthService {
       final localPinHash = await LocalStorageService.loadOwnerPinHash() ?? existingLocalProfile?.ownerPinHash;
 
       if (cloudProfile != null) {
-        final localPackages = await LocalStorageService.loadServicePackages();
-        final mergedPackages = cloudProfile.servicePackages.isNotEmpty
-            ? cloudProfile.servicePackages
-            : (localPackages.isNotEmpty
-                ? localPackages
-                : (existingLocalProfile?.servicePackages ?? MockDataService.standardPackages));
+        final resolvedPackages = cloudProfile.servicePackages.toList();
+        await LocalStorageService.saveServicePackages(resolvedPackages);
 
-        // Non-destructive union merge of teamMembers across local profile, dedicated storage, and cloud
-        final teamMap = <String, TeamMember>{
+        // Cloud teamMembers is authoritative; enrich matching members with local cached bytes/PIN/schedule
+        final localTeamMap = <String, TeamMember>{
           if (existingLocalProfile != null)
             for (final m in existingLocalProfile.teamMembers) m.id: m,
           for (final m in localTeam) m.id: m,
         };
-        for (final cm in cloudProfile.teamMembers) {
-          final local = teamMap[cm.id];
-          if (local != null) {
-            teamMap[cm.id] = cm.copyWith(
-              customWeeklySchedule: cm.customWeeklySchedule ?? local.customWeeklySchedule,
-              localAvatarBytes: cm.localAvatarBytes ?? local.localAvatarBytes,
-              isFounder: cm.isFounder || local.isFounder,
-            );
-          } else {
-            teamMap[cm.id] = cm;
-          }
-        }
+        final resolvedTeam = cloudProfile.teamMembers.map((cm) {
+          final local = localTeamMap[cm.id];
+          if (local == null) return cm;
+          return cm.copyWith(
+            pin: (cm.pin != null && cm.pin!.isNotEmpty) ? cm.pin : local.pin,
+            customWeeklySchedule: cm.customWeeklySchedule ?? local.customWeeklySchedule,
+            localAvatarBytes: cm.localAvatarBytes ?? local.localAvatarBytes,
+            isFounder: cm.isFounder || local.isFounder,
+          );
+        }).toList();
+        await LocalStorageService.saveTeamMembers(resolvedTeam);
 
         // Reconcile garage vehicles from cloud and local guest additions
         final garageMap = <String, UserVehicle>{
@@ -418,8 +412,8 @@ class SupabaseAuthService {
             : localPinHash;
 
         final merged = cloudProfile.copyWith(
-          servicePackages: mergedPackages,
-          teamMembers: teamMap.values.toList(),
+          servicePackages: resolvedPackages,
+          teamMembers: resolvedTeam,
           myGarage: reconciledGarage,
           ownerPinHash: resolvedPinHash,
         );

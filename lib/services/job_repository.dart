@@ -505,21 +505,8 @@ class JobRepository extends ChangeNotifier {
     try {
       final cloudProfile = await SupabaseDbService.fetchUserProfile(userId);
       if (cloudProfile != null) {
-        // Non-destructive union merge for service packages: union by ID, preserving local custom packages and additions
-        List<ServicePackage> resolvedPackages;
-        if (cloudProfile.servicePackages.isNotEmpty) {
-          final packageMap = <String, ServicePackage>{
-            for (final p in _currentUser.servicePackages) p.id: p,
-          };
-          for (final cp in cloudProfile.servicePackages) {
-            packageMap[cp.id] = cp;
-          }
-          resolvedPackages = packageMap.values.toList();
-        } else {
-          resolvedPackages = _currentUser.servicePackages.isNotEmpty
-              ? _currentUser.servicePackages
-              : await LocalStorageService.loadServicePackages();
-        }
+        // Cloud servicePackages is authoritative so deletions stay deleted across devices
+        final resolvedPackages = List<ServicePackage>.from(cloudProfile.servicePackages);
 
         // Non-destructive union merge for garage vehicles: union by ID across local storage, in-memory profile, and cloud
         final storedLocalGarage = await LocalStorageService.loadGarageVehicles();
@@ -548,41 +535,26 @@ class JobRepository extends ChangeNotifier {
         final resolvedGarage = vehicleMap.values.toList();
         await LocalStorageService.saveGarageVehicles(resolvedGarage);
 
-        // Non-destructive union merge for team members: union by ID across local storage, in-memory profile, and cloud
+        // Cloud teamMembers is authoritative; enrich matching members with local cached bytes/PIN/schedule
         final storedLocalTeam = await LocalStorageService.loadTeamMembers();
-        List<TeamMember> resolvedTeam;
-        if (cloudProfile.teamMembers.isNotEmpty) {
-          final teamMap = <String, TeamMember>{
-            if (storedLocalUser != null)
-              for (final m in storedLocalUser.teamMembers) m.id: m,
-            for (final m in storedLocalTeam) m.id: m,
-            for (final m in _currentUser.teamMembers) m.id: m,
-          };
-          for (final cm in cloudProfile.teamMembers) {
-            final local = teamMap[cm.id];
-            if (local != null) {
-              teamMap[cm.id] = cm.copyWith(
-                pin: (cm.pin != null && cm.pin!.isNotEmpty) ? cm.pin : local.pin,
-                email: (cm.email != null && cm.email!.isNotEmpty) ? cm.email : local.email,
-                allowedHubSections: cm.allowedHubSections ?? local.allowedHubSections,
-                customWeeklySchedule: cm.customWeeklySchedule ?? local.customWeeklySchedule,
-                localAvatarBytes: cm.localAvatarBytes ?? local.localAvatarBytes,
-                isFounder: cm.isFounder || local.isFounder,
-              );
-            } else {
-              teamMap[cm.id] = cm;
-            }
-          }
-          resolvedTeam = teamMap.values.toList();
-        } else {
-          final teamMap = <String, TeamMember>{
-            if (storedLocalUser != null)
-              for (final m in storedLocalUser.teamMembers) m.id: m,
-            for (final m in storedLocalTeam) m.id: m,
-            for (final m in _currentUser.teamMembers) m.id: m,
-          };
-          resolvedTeam = teamMap.values.toList();
-        }
+        final localTeamById = <String, TeamMember>{
+          if (storedLocalUser != null)
+            for (final m in storedLocalUser.teamMembers) m.id: m,
+          for (final m in storedLocalTeam) m.id: m,
+          for (final m in _currentUser.teamMembers) m.id: m,
+        };
+        final resolvedTeam = cloudProfile.teamMembers.map((cm) {
+          final local = localTeamById[cm.id];
+          if (local == null) return cm;
+          return cm.copyWith(
+            pin: (cm.pin != null && cm.pin!.isNotEmpty) ? cm.pin : local.pin,
+            email: (cm.email != null && cm.email!.isNotEmpty) ? cm.email : local.email,
+            allowedHubSections: cm.allowedHubSections ?? local.allowedHubSections,
+            customWeeklySchedule: cm.customWeeklySchedule ?? local.customWeeklySchedule,
+            localAvatarBytes: cm.localAvatarBytes ?? local.localAvatarBytes,
+            isFounder: cm.isFounder || local.isFounder,
+          );
+        }).toList();
 
         // Resolve ownerPinHash across cloud, local storage, and current in-memory state
         final localPinHash = await LocalStorageService.loadOwnerPinHash() ??
@@ -623,31 +595,18 @@ class JobRepository extends ChangeNotifier {
 
         _currentUser = merged;
         await LocalStorageService.saveCurrentUser(_currentUser);
-        if (resolvedPackages.isNotEmpty) {
-          await LocalStorageService.saveServicePackages(resolvedPackages);
-        }
+        await LocalStorageService.saveServicePackages(resolvedPackages);
         if (resolvedGarage.isNotEmpty) {
           await LocalStorageService.saveGarageVehicles(resolvedGarage);
         }
-        if (resolvedTeam.isNotEmpty) {
-          await LocalStorageService.saveTeamMembers(resolvedTeam);
-        }
+        await LocalStorageService.saveTeamMembers(resolvedTeam);
         if (userId != 'usr_you') {
-          final needsProfileSync = resolvedPackages.length > cloudProfile.servicePackages.length ||
-              resolvedTeam.length > cloudProfile.teamMembers.length ||
-              resolvedGarage.length > cloudProfile.myGarage.length ||
+          final needsProfileSync = resolvedGarage.length > cloudProfile.myGarage.length ||
               ((cloudProfile.ownerPinHash == null || cloudProfile.ownerPinHash!.isEmpty) &&
                   resolvedPinHash != null &&
                   resolvedPinHash.isNotEmpty);
           if (needsProfileSync) {
-            SupabaseDbService.saveUserProfile(merged);
-          }
-          // Push any locally added team members that were missing from Supabase up to the cloud
-          final cloudTeamIds = cloudProfile.teamMembers.map((m) => m.id).toSet();
-          for (final member in resolvedTeam) {
-            if (!cloudTeamIds.contains(member.id)) {
-              SupabaseDbService.saveTeamMember(userId, member);
-            }
+            SupabaseDbService.saveUserProfile(merged, inventoryItems: _inventoryItems);
           }
           // Push any local garage vehicles that are missing from Supabase up to the cloud
           final cloudVehicleIds = cloudProfile.myGarage.map((v) => v.id).toSet();
@@ -658,26 +617,11 @@ class JobRepository extends ChangeNotifier {
           }
         }
 
-        // Non-destructive union merge for inventory items: union by ID, preserving local custom items and fill levels
+        // Cloud inventory is authoritative so deletions stay deleted across devices
         try {
           final cloudInventory = await SupabaseDbService.fetchInventoryItems(userId);
-          if (cloudInventory.isNotEmpty) {
-            final invMap = <String, InventoryItem>{
-              for (final item in _inventoryItems) item.id: item,
-            };
-            for (final ci in cloudInventory) {
-              final local = invMap[ci.id];
-              if (local != null) {
-                invMap[ci.id] = ci.copyWith(
-                  status: local.status,
-                  location: local.location.isNotEmpty ? local.location : ci.location,
-                  notes: local.notes ?? ci.notes,
-                );
-              } else {
-                invMap[ci.id] = ci;
-              }
-            }
-            _inventoryItems = invMap.values.toList();
+          if (cloudInventory != null) {
+            _inventoryItems = List<InventoryItem>.from(cloudInventory);
             await LocalStorageService.saveInventoryItems(_inventoryItems);
           }
         } catch (_) {}
@@ -702,48 +646,54 @@ class JobRepository extends ChangeNotifier {
   Future<void> _refreshJobsFromCloud() async {
     try {
       final cloudJobs = await SupabaseDbService.fetchJobs();
-      if (cloudJobs.isNotEmpty) {
-        final Map<String, DetailJob> jobMap = {};
-        // 1. Existing local jobs
-        for (final job in _jobs) {
-          jobMap[job.id] = job;
-        }
-        // 2. Cloud jobs non-destructively merge with local state
-        for (final cJob in cloudJobs) {
-          final existing = jobMap[cJob.id];
-          if (existing != null) {
-            // Non-destructive comments merge: combine local and cloud comments without dropping either
-            final commentMap = <String, JobComment>{};
-            for (final c in cJob.comments) {
-              commentMap[c.id] = c;
-            }
-            for (final c in existing.comments) {
-              commentMap[c.id] = c;
-            }
-            final mergedComments = commentMap.values.toList()
-              ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      if (cloudJobs == null) return;
 
-            jobMap[cJob.id] = cJob.copyWith(
-              isLiked: existing.isLiked,
-              isSaved: existing.isSaved,
-              likesCount: existing.likesCount > cJob.likesCount ? existing.likesCount : cJob.likesCount,
-              comments: mergedComments,
-            );
-          } else {
-            // If the job belongs to the current user (e.g. published on another device),
-            // attribute it directly to _currentUser so it appears in My Studio portfolio immediately
-            if (cJob.author.id == _currentUser.id || cJob.author.username == _currentUser.username) {
-              jobMap[cJob.id] = cJob.copyWith(author: _currentUser);
-            } else {
-              jobMap[cJob.id] = cJob;
-            }
+      final existingMap = <String, DetailJob>{
+        for (final job in _jobs) job.id: job,
+      };
+      final updatedJobs = <DetailJob>[];
+      final seenIds = <String>{};
+
+      for (final cJob in cloudJobs) {
+        seenIds.add(cJob.id);
+        final existing = existingMap[cJob.id];
+        if (existing != null) {
+          final commentMap = <String, JobComment>{
+            for (final c in cJob.comments) c.id: c,
+            for (final c in existing.comments) c.id: c,
+          };
+          final mergedComments = commentMap.values.toList()
+            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+          updatedJobs.add(cJob.copyWith(
+            isLiked: existing.isLiked,
+            isSaved: existing.isSaved,
+            likesCount: existing.likesCount > cJob.likesCount
+                ? existing.likesCount
+                : cJob.likesCount,
+            comments: mergedComments,
+          ));
+        } else if (cJob.author.id == _currentUser.id ||
+            cJob.author.username == _currentUser.username) {
+          updatedJobs.add(cJob.copyWith(author: _currentUser));
+        } else {
+          updatedJobs.add(cJob);
+        }
+      }
+
+      if (debugSeedSampleData) {
+        for (final j in _jobs) {
+          if (_legacyMockJobIds.contains(j.id) && !seenIds.contains(j.id)) {
+            updatedJobs.add(j);
+            seenIds.add(j.id);
           }
         }
-        _jobs = jobMap.values.toList();
-        _jobs.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        _persistCustomJobs();
-        notifyListeners();
       }
+
+      _jobs = updatedJobs
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      _persistCustomJobs();
+      notifyListeners();
     } catch (_) {}
   }
 
@@ -889,31 +839,21 @@ class JobRepository extends ChangeNotifier {
 
   Future<void> _refreshAvailabilityBlocksFromCloud([String? detailerId]) async {
     try {
-      final targetId = detailerId ?? _currentUser.id;
+      final targetId = detailerId ?? (_isLoggedIn ? _currentUser.id : null);
       final cloudBlocks = await SupabaseDbService.fetchAvailabilityBlocks(targetId);
-      if (cloudBlocks.isNotEmpty) {
-        final blockMap = <String, CalendarAvailabilityBlock>{};
-        for (final b in _availabilityBlocks) {
-          blockMap[b.id] = b;
-        }
-        bool hasChanges = false;
-        for (final b in cloudBlocks) {
-          final existing = blockMap[b.id];
-          if (existing == null ||
-              existing.isAllDay != b.isAllDay ||
-              existing.blockedSlots.length != b.blockedSlots.length ||
-              existing.reason != b.reason ||
-              existing.teamMemberId != b.teamMemberId) {
-            blockMap[b.id] = b;
-            hasChanges = true;
-          }
-        }
-        if (hasChanges) {
-          _availabilityBlocks = blockMap.values.toList();
-          await LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
-          notifyListeners();
-        }
+      if (cloudBlocks == null) return;
+
+      if (targetId != null && targetId.isNotEmpty) {
+        _availabilityBlocks.removeWhere(
+          (b) => b.detailerId == targetId || b.detailerId.isEmpty,
+        );
+        _availabilityBlocks.addAll(cloudBlocks);
+      } else {
+        _availabilityBlocks = List<CalendarAvailabilityBlock>.from(cloudBlocks);
       }
+      await LocalStorageService.saveCalendarBlocks(_availabilityBlocks);
+      await LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+      notifyListeners();
     } catch (_) {}
   }
 
@@ -1172,9 +1112,12 @@ class JobRepository extends ChangeNotifier {
     LocalStorageService.saveGarageVehicles(_currentUser.myGarage);
     LocalStorageService.saveTeamMembers(_currentUser.teamMembers);
     LocalStorageService.saveInventoryItems(_inventoryItems);
-    if (_isLoggedIn) {
+    if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
       // 2. Sync to Supabase Database
-      await SupabaseDbService.saveUserProfile(_currentUser);
+      await SupabaseDbService.saveUserProfile(
+        _currentUser,
+        inventoryItems: _inventoryItems,
+      );
     }
   }
 
@@ -1213,6 +1156,21 @@ class JobRepository extends ChangeNotifier {
       if (_isLoggedIn) _refreshProfileFromCloud(_currentUser.id),
     ]);
     notifyListeners();
+  }
+
+  /// Refreshes all Studio Workbench Hub sections from Supabase so every device stays in sync
+  Future<void> refreshStudioWorkbench() async {
+    final uid = _currentUser.id.isNotEmpty
+        ? _currentUser.id
+        : (SupabaseAuthService.currentAuthUser?.id ?? '');
+    if (uid.isEmpty || uid == 'usr_you') return;
+    await Future.wait([
+      _refreshProfileFromCloud(uid),
+      _refreshJobsFromCloud(),
+      _refreshBookingsFromCloud(uid),
+      _refreshAvailabilityBlocksFromCloud(uid),
+      loadConversations(),
+    ]);
   }
 
   void _persistBookings() {
@@ -1278,7 +1236,7 @@ class JobRepository extends ChangeNotifier {
     _inventoryItems.insert(0, item);
     LocalStorageService.saveInventoryItems(_inventoryItems);
     _persistUser();
-    if (_isLoggedIn) {
+    if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
       SupabaseDbService.saveInventoryItem(_currentUser.id, item);
     }
     notifyListeners();
@@ -1290,7 +1248,7 @@ class JobRepository extends ChangeNotifier {
       _inventoryItems[idx] = updated;
       LocalStorageService.saveInventoryItems(_inventoryItems);
       _persistUser();
-      if (_isLoggedIn) {
+      if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
         SupabaseDbService.saveInventoryItem(_currentUser.id, updated);
       }
       notifyListeners();
@@ -1301,7 +1259,7 @@ class JobRepository extends ChangeNotifier {
     _inventoryItems.removeWhere((i) => i.id == itemId);
     LocalStorageService.saveInventoryItems(_inventoryItems);
     _persistUser();
-    if (_isLoggedIn) {
+    if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
       SupabaseDbService.deleteInventoryItem(itemId);
     }
     notifyListeners();
@@ -1315,7 +1273,7 @@ class JobRepository extends ChangeNotifier {
       _inventoryItems[idx] = updated;
       LocalStorageService.saveInventoryItems(_inventoryItems);
       _persistUser();
-      if (_isLoggedIn) {
+      if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
         SupabaseDbService.saveInventoryItem(_currentUser.id, updated);
       }
       notifyListeners();
@@ -2398,17 +2356,17 @@ class JobRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  void removeTeamMember(String memberId) {
+  Future<void> removeTeamMember(String memberId) async {
     final updatedMembers = _currentUser.teamMembers.where((m) => m.id != memberId).toList();
     _currentUser = _currentUser.copyWith(
       teamMembers: updatedMembers,
     );
     LocalStorageService.saveTeamMembers(updatedMembers);
-    _persistUser();
-    if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
-      SupabaseDbService.deleteTeamMember(memberId);
-    }
     notifyListeners();
+    if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
+      await SupabaseDbService.deleteTeamMember(memberId);
+    }
+    await _persistUser();
   }
 
   void updateTeamMember(TeamMember updated) {
@@ -2444,6 +2402,9 @@ class JobRepository extends ChangeNotifier {
     );
     LocalStorageService.saveServicePackages(updatedList);
     notifyListeners();
+    if ((_isLoggedIn || SupabaseAuthService.isLoggedIn) && _currentUser.id != 'usr_you') {
+      await SupabaseDbService.saveServicePackages(_currentUser.id, updatedList, minPrice);
+    }
     try {
       await _persistUser();
     } catch (_) {}
@@ -2468,6 +2429,9 @@ class JobRepository extends ChangeNotifier {
       );
       LocalStorageService.saveServicePackages(list);
       notifyListeners();
+      if ((_isLoggedIn || SupabaseAuthService.isLoggedIn) && _currentUser.id != 'usr_you') {
+        await SupabaseDbService.saveServicePackages(_currentUser.id, list, minPrice);
+      }
       try {
         await _persistUser();
       } catch (_) {}
@@ -2488,6 +2452,9 @@ class JobRepository extends ChangeNotifier {
     );
     LocalStorageService.saveServicePackages(updatedList);
     notifyListeners();
+    if ((_isLoggedIn || SupabaseAuthService.isLoggedIn) && _currentUser.id != 'usr_you') {
+      await SupabaseDbService.saveServicePackages(_currentUser.id, updatedList, minPrice);
+    }
     try {
       await _persistUser();
     } catch (_) {}
@@ -2550,7 +2517,7 @@ class JobRepository extends ChangeNotifier {
       _jobs.insert(0, newJob);
     }
     _persistCustomJobs();
-    if (_isLoggedIn) {
+    if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
       SupabaseDbService.saveJob(newJob);
     }
     if (_currentUser.id == newJob.author.id) {
@@ -2568,7 +2535,7 @@ class JobRepository extends ChangeNotifier {
       _jobs[idx] = updatedJob;
       _persistCustomJobs();
       LocalStorageService.saveJobCommentsOverride(updatedJob.id, updatedJob.comments);
-      if (_isLoggedIn) {
+      if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
         SupabaseDbService.saveJob(updatedJob);
       }
       notifyListeners();
@@ -2616,7 +2583,7 @@ class JobRepository extends ChangeNotifier {
     _jobs.removeWhere((j) => j.id == jobId);
     _persistCustomJobs();
 
-    if (_isLoggedIn) {
+    if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
       SupabaseDbService.deleteJob(jobId);
     }
 
@@ -3406,26 +3373,31 @@ class JobRepository extends ChangeNotifier {
                b.date.month == normDate.month &&
                b.date.day == normDate.day,
       );
+      final CalendarAvailabilityBlock savedBlock;
       if (idx != -1) {
         final existing = _availabilityBlocks[idx];
-        _availabilityBlocks[idx] = existing.copyWith(
+        savedBlock = existing.copyWith(
           customSlots: list,
           hasCustomSlotsOverride: true,
         );
+        _availabilityBlocks[idx] = savedBlock;
       } else {
-        _availabilityBlocks.add(
-          CalendarAvailabilityBlock(
-            id: 'block_${DateTime.now().millisecondsSinceEpoch}',
-            detailerId: targetDetailerId,
-            date: normDate,
-            isAllDay: false,
-            customSlots: list,
-            hasCustomSlotsOverride: true,
-            createdAt: DateTime.now(),
-          ),
+        savedBlock = CalendarAvailabilityBlock(
+          id: 'block_${DateTime.now().millisecondsSinceEpoch}',
+          detailerId: targetDetailerId,
+          date: normDate,
+          isAllDay: false,
+          customSlots: list,
+          hasCustomSlotsOverride: true,
+          createdAt: DateTime.now(),
         );
+        _availabilityBlocks.add(savedBlock);
       }
+      LocalStorageService.saveCalendarBlocks(_availabilityBlocks);
       LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+      if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
+        SupabaseDbService.saveAvailabilityBlock(savedBlock);
+      }
     } else {
       final prefs = getCalendarPreferences(detailerId: targetDetailerId);
       final list = List<String>.from(prefs.customTimeSlots);
@@ -3462,26 +3434,31 @@ class JobRepository extends ChangeNotifier {
                b.date.month == normDate.month &&
                b.date.day == normDate.day,
       );
+      final CalendarAvailabilityBlock savedBlock;
       if (idx != -1) {
         final existing = _availabilityBlocks[idx];
-        _availabilityBlocks[idx] = existing.copyWith(
+        savedBlock = existing.copyWith(
           customSlots: list,
           hasCustomSlotsOverride: true,
         );
+        _availabilityBlocks[idx] = savedBlock;
       } else {
-        _availabilityBlocks.add(
-          CalendarAvailabilityBlock(
-            id: 'block_${DateTime.now().millisecondsSinceEpoch}',
-            detailerId: targetDetailerId,
-            date: normDate,
-            isAllDay: false,
-            customSlots: list,
-            hasCustomSlotsOverride: true,
-            createdAt: DateTime.now(),
-          ),
+        savedBlock = CalendarAvailabilityBlock(
+          id: 'block_${DateTime.now().millisecondsSinceEpoch}',
+          detailerId: targetDetailerId,
+          date: normDate,
+          isAllDay: false,
+          customSlots: list,
+          hasCustomSlotsOverride: true,
+          createdAt: DateTime.now(),
         );
+        _availabilityBlocks.add(savedBlock);
       }
+      LocalStorageService.saveCalendarBlocks(_availabilityBlocks);
       LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+      if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
+        SupabaseDbService.saveAvailabilityBlock(savedBlock);
+      }
     } else {
       final prefs = getCalendarPreferences(detailerId: targetDetailerId);
       final list = List<String>.from(prefs.customTimeSlots);
@@ -3521,9 +3498,14 @@ class JobRepository extends ChangeNotifier {
         final b = _availabilityBlocks[i];
         if (b.detailerId == targetDetailerId && b.customSlots.contains(slot)) {
           final updatedCustom = List<String>.from(b.customSlots)..remove(slot);
-          _availabilityBlocks[i] = b.copyWith(customSlots: updatedCustom);
+          final updatedBlock = b.copyWith(customSlots: updatedCustom);
+          _availabilityBlocks[i] = updatedBlock;
+          if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
+            SupabaseDbService.saveAvailabilityBlock(updatedBlock);
+          }
         }
       }
+      LocalStorageService.saveCalendarBlocks(_availabilityBlocks);
       LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
     } else {
       final normDate = DateTime(specificDate.year, specificDate.month, specificDate.day);
@@ -3536,26 +3518,31 @@ class JobRepository extends ChangeNotifier {
                b.date.month == normDate.month &&
                b.date.day == normDate.day,
       );
+      final CalendarAvailabilityBlock savedBlock;
       if (idx != -1) {
         final existing = _availabilityBlocks[idx];
-        _availabilityBlocks[idx] = existing.copyWith(
+        savedBlock = existing.copyWith(
           customSlots: remainingSlots,
           hasCustomSlotsOverride: true,
         );
+        _availabilityBlocks[idx] = savedBlock;
       } else {
-        _availabilityBlocks.add(
-          CalendarAvailabilityBlock(
-            id: 'block_${DateTime.now().millisecondsSinceEpoch}',
-            detailerId: targetDetailerId,
-            date: normDate,
-            isAllDay: false,
-            customSlots: remainingSlots,
-            hasCustomSlotsOverride: true,
-            createdAt: DateTime.now(),
-          ),
+        savedBlock = CalendarAvailabilityBlock(
+          id: 'block_${DateTime.now().millisecondsSinceEpoch}',
+          detailerId: targetDetailerId,
+          date: normDate,
+          isAllDay: false,
+          customSlots: remainingSlots,
+          hasCustomSlotsOverride: true,
+          createdAt: DateTime.now(),
         );
+        _availabilityBlocks.add(savedBlock);
       }
+      LocalStorageService.saveCalendarBlocks(_availabilityBlocks);
       LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+      if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
+        SupabaseDbService.saveAvailabilityBlock(savedBlock);
+      }
     }
     notifyListeners();
   }
@@ -3585,25 +3572,30 @@ class JobRepository extends ChangeNotifier {
                b.date.month == normDate.month &&
                b.date.day == normDate.day,
       );
+      final CalendarAvailabilityBlock savedBlock;
       if (idx != -1) {
-        _availabilityBlocks[idx] = _availabilityBlocks[idx].copyWith(
+        savedBlock = _availabilityBlocks[idx].copyWith(
           customSlots: generated,
           hasCustomSlotsOverride: true,
         );
+        _availabilityBlocks[idx] = savedBlock;
       } else {
-        _availabilityBlocks.add(
-          CalendarAvailabilityBlock(
-            id: 'block_${DateTime.now().millisecondsSinceEpoch}',
-            detailerId: targetDetailerId,
-            date: normDate,
-            isAllDay: false,
-            customSlots: generated,
-            hasCustomSlotsOverride: true,
-            createdAt: DateTime.now(),
-          ),
+        savedBlock = CalendarAvailabilityBlock(
+          id: 'block_${DateTime.now().millisecondsSinceEpoch}',
+          detailerId: targetDetailerId,
+          date: normDate,
+          isAllDay: false,
+          customSlots: generated,
+          hasCustomSlotsOverride: true,
+          createdAt: DateTime.now(),
         );
+        _availabilityBlocks.add(savedBlock);
       }
+      LocalStorageService.saveCalendarBlocks(_availabilityBlocks);
       LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
+      if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
+        SupabaseDbService.saveAvailabilityBlock(savedBlock);
+      }
     } else {
       final prefs = getCalendarPreferences(detailerId: targetDetailerId);
       final updated = prefs.copyWith(
@@ -3617,12 +3609,17 @@ class JobRepository extends ChangeNotifier {
       for (int i = 0; i < _availabilityBlocks.length; i++) {
         final b = _availabilityBlocks[i];
         if (b.detailerId == targetDetailerId) {
-          _availabilityBlocks[i] = b.copyWith(
+          final updatedBlock = b.copyWith(
             customSlots: [],
             hasCustomSlotsOverride: false,
           );
+          _availabilityBlocks[i] = updatedBlock;
+          if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
+            SupabaseDbService.saveAvailabilityBlock(updatedBlock);
+          }
         }
       }
+      LocalStorageService.saveCalendarBlocks(_availabilityBlocks);
       LocalStorageService.saveAvailabilityBlocks(_availabilityBlocks);
     }
     notifyListeners();
@@ -5952,7 +5949,15 @@ class JobRepository extends ChangeNotifier {
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'jobs',
-          callback: (_) {
+          callback: (payload) {
+            if (payload.eventType == PostgresChangeEvent.delete) {
+              final deletedId = payload.oldRecord['id']?.toString();
+              if (deletedId != null && deletedId.isNotEmpty) {
+                _jobs.removeWhere((j) => j.id == deletedId);
+                _persistCustomJobs();
+                notifyListeners();
+              }
+            }
             _refreshJobsFromCloud();
           },
         )
