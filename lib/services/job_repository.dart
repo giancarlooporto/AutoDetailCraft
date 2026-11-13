@@ -643,6 +643,23 @@ class JobRepository extends ChangeNotifier {
     } catch (_) {}
   }
 
+  UserProfile _resolveJobAuthor(UserProfile rawAuthor) {
+    if (rawAuthor.id.isNotEmpty && rawAuthor.id != 'usr_you') {
+      final matched = _publicDetailers.where((d) => d.id == rawAuthor.id).firstOrNull;
+      if (matched != null) {
+        return matched.localAvatarBytes == null && rawAuthor.localAvatarBytes != null
+            ? matched.copyWith(localAvatarBytes: rawAuthor.localAvatarBytes)
+            : matched;
+      }
+      if (rawAuthor.id == _currentUser.id &&
+          _currentUser.role != UserRole.client &&
+          _currentUser.businessName.trim().isNotEmpty) {
+        return _currentUser;
+      }
+    }
+    return rawAuthor;
+  }
+
   Future<void> _refreshJobsFromCloud() async {
     try {
       final cloudJobs = await SupabaseDbService.fetchJobs();
@@ -656,6 +673,7 @@ class JobRepository extends ChangeNotifier {
 
       for (final cJob in cloudJobs) {
         seenIds.add(cJob.id);
+        final resolvedAuthor = _resolveJobAuthor(cJob.author);
         final existing = existingMap[cJob.id];
         if (existing != null) {
           final commentMap = <String, JobComment>{
@@ -666,6 +684,7 @@ class JobRepository extends ChangeNotifier {
             ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
           updatedJobs.add(cJob.copyWith(
+            author: resolvedAuthor,
             isLiked: existing.isLiked,
             isSaved: existing.isSaved,
             likesCount: existing.likesCount > cJob.likesCount
@@ -673,11 +692,12 @@ class JobRepository extends ChangeNotifier {
                 : cJob.likesCount,
             comments: mergedComments,
           ));
-        } else if (cJob.author.id == _currentUser.id ||
-            cJob.author.username == _currentUser.username) {
-          updatedJobs.add(cJob.copyWith(author: _currentUser));
         } else {
-          updatedJobs.add(cJob);
+          updatedJobs.add(
+            resolvedAuthor != cJob.author
+                ? cJob.copyWith(author: resolvedAuthor)
+                : cJob,
+          );
         }
       }
 
@@ -1142,6 +1162,27 @@ class JobRepository extends ChangeNotifier {
         }
         if (detailers.isNotEmpty) {
           _publicDetailers = detailers;
+          if (_jobs.isNotEmpty) {
+            final detailerById = {for (final d in detailers) d.id: d};
+            bool updatedJobAuthors = false;
+            _jobs = _jobs.map((job) {
+              if (job.author.id.isNotEmpty && job.author.id != 'usr_you') {
+                final matched = detailerById[job.author.id];
+                if (matched != null) {
+                  updatedJobAuthors = true;
+                  return job.copyWith(
+                    author: matched.localAvatarBytes == null && job.author.localAvatarBytes != null
+                        ? matched.copyWith(localAvatarBytes: job.author.localAvatarBytes)
+                        : matched,
+                  );
+                }
+              }
+              return job;
+            }).toList();
+            if (updatedJobAuthors) {
+              _persistCustomJobs();
+            }
+          }
           notifyListeners();
         }
       }
@@ -2109,7 +2150,7 @@ class JobRepository extends ChangeNotifier {
     await LocalStorageService.saveTeamMembers([]);
 
     // 4. Remove studio-authored jobs
-    _jobs.removeWhere((j) => j.author.id == _currentUser.id || j.author.username == _currentUser.username);
+    _jobs.removeWhere((j) => j.author.id == _currentUser.id);
     await LocalStorageService.saveCustomJobs(_jobs);
 
     // 5. Gather and delete all studio conversations and messages

@@ -317,7 +317,9 @@ class JobRecipeCard extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                job.author.businessName,
+                                job.author.businessName.trim().isNotEmpty
+                                    ? job.author.businessName
+                                    : job.author.displayName,
                                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                               ),
                               if (job.author.isVerifiedHost) ...[

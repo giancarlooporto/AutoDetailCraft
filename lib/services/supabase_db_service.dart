@@ -1290,7 +1290,9 @@ class SupabaseDbService {
     if (client == null) return;
 
     try {
-      final effectiveAuthorId = client.auth.currentUser?.id ?? job.author.id;
+      final effectiveAuthorId = (job.author.id.isNotEmpty && job.author.id != 'usr_you')
+          ? job.author.id
+          : (client.auth.currentUser?.id ?? job.author.id);
       final jobToSave = job.author.id != effectiveAuthorId
           ? job.copyWith(author: job.author.copyWith(id: effectiveAuthorId))
           : job;
@@ -1357,7 +1359,10 @@ class SupabaseDbService {
 
     try {
       if (currentJob != null) {
-        await saveJob(currentJob);
+        await client.from('jobs').update({
+          'raw_data': currentJob.toJson(),
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        }).eq('id', jobId);
         return;
       }
       final res = await client.from('jobs').select('raw_data').eq('id', jobId).maybeSingle();

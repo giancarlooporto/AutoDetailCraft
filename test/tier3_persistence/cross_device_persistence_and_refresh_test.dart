@@ -661,5 +661,110 @@ void main() {
       expect(await LocalStorageService.loadServicePackages(), isEmpty);
       expect(sawReuploadOfDeletedPackage, isFalse);
     });
+
+    test('5. Explore Feed Preserves Detailer Recipe Author Across Client Devices Sharing Default Username', () async {
+      final detailerA = UserProfile(
+        id: 'usr_detailer_creator_a',
+        role: UserRole.detailer,
+        username: 'user',
+        displayName: 'Marco Rossi',
+        businessName: 'Luxe Coat Studio',
+        location: 'Austin, TX',
+        isVerifiedHost: true,
+        servicePackages: const [samplePackage],
+      );
+
+      final clientB = UserProfile(
+        id: 'usr_client_phone_b',
+        role: UserRole.client,
+        username: 'user',
+        displayName: 'Phone Client User',
+        businessName: '',
+        servicePackages: const [],
+      );
+
+      final publishedRecipe = DetailJob(
+        id: 'job_recipe_creator_01',
+        author: detailerA,
+        createdAt: DateTime(2026, 11, 12),
+        title: 'Two-Stage Ceramic Mirror Recipe',
+        description: 'Wet sand + rotary cut + DA jeweling',
+        vehicleYear: 2024,
+        vehicleMake: 'Ferrari',
+        vehicleModel: '296 GTB',
+        paintColorName: 'Rosso Corsa',
+        paintCode: '322',
+        paintHardness: PaintHardness.medium,
+        initialPaintThicknessMicrons: 132,
+        finalPaintThicknessMicrons: 127,
+        defectSeverity: 3,
+        serviceType: 'Paint Correction',
+        recipeStages: const [],
+        beforeImageUrl: 'https://example.com/ferrari_b.jpg',
+        afterImageUrl: 'https://example.com/ferrari_a.jpg',
+      );
+
+      _mockCloudProvider = (uri, method, requestBody) {
+        if (uri.path.contains('/rest/v1/jobs') && method == 'GET') {
+          return {
+            'statusCode': 200,
+            'body': [
+              {
+                'id': publishedRecipe.id,
+                'author_id': detailerA.id,
+                'raw_data': publishedRecipe.toJson(),
+              },
+            ],
+          };
+        }
+        if (uri.path.contains('/rest/v1/profiles') && method == 'GET') {
+          if (uri.query.contains('id=eq.${clientB.id}')) {
+            return {
+              'statusCode': 200,
+              'body': [
+                {
+                  'id': clientB.id,
+                  'username': 'user',
+                  'display_name': 'Phone Client User',
+                  'business_name': '',
+                  'role': 'client',
+                },
+              ],
+            };
+          }
+          return {
+            'statusCode': 200,
+            'body': [
+              {
+                'id': detailerA.id,
+                'username': 'user',
+                'display_name': 'Marco Rossi',
+                'business_name': 'Luxe Coat Studio',
+                'location': 'Austin, TX',
+                'role': 'detailer',
+                'is_verified_host': true,
+                'service_packages': [samplePackage.toJson()],
+              },
+            ],
+          };
+        }
+        return {'statusCode': 200, 'body': []};
+      };
+
+      final clientDevice = await harness.createDeviceSession(
+        user: clientB,
+        isLoggedIn: true,
+      );
+
+      await clientDevice.refreshExploreFeed();
+
+      final fetched = clientDevice.jobs.firstWhere((j) => j.id == publishedRecipe.id);
+      expect(fetched.author.id, equals(detailerA.id));
+      expect(fetched.author.businessName, equals('Luxe Coat Studio'));
+      expect(fetched.author.displayName, equals('Marco Rossi'));
+      expect(fetched.author.role, equals(UserRole.detailer));
+      expect(fetched.author.id, isNot(equals(clientB.id)));
+      expect(fetched.author.displayName, isNot(equals('Phone Client User')));
+    });
   });
 }
