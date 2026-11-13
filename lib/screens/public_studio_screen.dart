@@ -1,14 +1,16 @@
-import 'package:flutter/material.dart';
 import 'dart:ui';
+import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
-import '../models/user_profile.dart';
 import '../models/booking_models.dart';
+import '../models/detail_job.dart';
+import '../models/user_profile.dart';
 import '../services/job_repository.dart';
+import '../services/map_launcher_service.dart';
+import '../widgets/client_garage_gate.dart';
 import '../widgets/job_recipe_card.dart';
+import 'auth_modal.dart';
 import 'booking_flow_screen.dart';
 import 'chat_screen.dart';
-import 'auth_modal.dart';
-import '../widgets/client_garage_gate.dart';
 
 class PublicStudioScreen extends StatefulWidget {
   final UserProfile detailer;
@@ -24,13 +26,15 @@ class PublicStudioScreen extends StatefulWidget {
   State<PublicStudioScreen> createState() => _PublicStudioScreenState();
 }
 
-class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTickerProviderStateMixin {
+class _PublicStudioScreenState extends State<PublicStudioScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  String _selectedPortfolioFilter = 'All';
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -39,13 +43,13 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
     super.dispose();
   }
 
-  void _openBookingFlow() {
+  void _openBookingFlow({ServicePackage? initialPackage}) {
     if (!widget.repository.isLoggedIn) {
       AuthModal.show(
         context,
         repository: widget.repository,
         onSuccess: () {
-          if (mounted) _openBookingFlow();
+          if (mounted) _openBookingFlow(initialPackage: initialPackage);
         },
       );
       return;
@@ -60,7 +64,7 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
         repository: widget.repository,
         detailerName: name,
         onProceedToBooking: () {
-          if (mounted) _openBookingFlow();
+          if (mounted) _openBookingFlow(initialPackage: initialPackage);
         },
       );
       return;
@@ -71,6 +75,7 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
         builder: (_) => BookingFlowScreen(
           detailer: widget.detailer,
           repository: widget.repository,
+          initialPackage: initialPackage,
         ),
       ),
     );
@@ -79,9 +84,13 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
   Future<void> _openChatWithDetailer() async {
     final repo = widget.repository;
     if (repo.isGuestMode) {
-      AuthModal.show(context, repository: repo, onSuccess: () {
-        if (mounted) _openChatWithDetailer();
-      });
+      AuthModal.show(
+        context,
+        repository: repo,
+        onSuccess: () {
+          if (mounted) _openChatWithDetailer();
+        },
+      );
       return;
     }
     final convId = await repo.openOrCreateConversation(widget.detailer.id);
@@ -98,14 +107,63 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
     }
   }
 
+  String _formattedStudioAddress(UserProfile detailer) {
+    final parts = <String>[
+      if (detailer.studioStreetAddress.trim().isNotEmpty)
+        detailer.studioStreetAddress.trim(),
+      if (detailer.studioCity.trim().isNotEmpty) detailer.studioCity.trim(),
+      if (detailer.studioState.trim().isNotEmpty) detailer.studioState.trim(),
+      if (detailer.studioPostalCode.trim().isNotEmpty)
+        detailer.studioPostalCode.trim(),
+    ];
+    return parts.join(', ');
+  }
+
+  bool _hasStudioDirections(UserProfile detailer) {
+    final addr = _formattedStudioAddress(detailer);
+    final hasCoords = detailer.effectiveStudioLatitude != null &&
+        detailer.effectiveStudioLongitude != null;
+    return addr.isNotEmpty || hasCoords;
+  }
+
+  Future<void> _launchDirections(UserProfile detailer) async {
+    final addr = _formattedStudioAddress(detailer);
+    await MapLauncherService.launchNavigation(
+      latitude: detailer.effectiveStudioLatitude,
+      longitude: detailer.effectiveStudioLongitude,
+      address: addr.isNotEmpty ? addr : detailer.location,
+      unitOrApt: detailer.studioUnitOrApt,
+    );
+  }
+
+  double? _lowestStartingPrice(UserProfile detailer) {
+    if (detailer.servicePackages.isNotEmpty) {
+      final prices = detailer.servicePackages.map((p) => p.basePrice).toList()
+        ..sort();
+      return prices.first;
+    }
+    if (detailer.startingPrice > 0) {
+      return detailer.startingPrice;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final constrainedWidth = screenWidth > 1280 ? 1280.0 : screenWidth;
-    final dynamicBannerHeight = (constrainedWidth / 3.0).clamp(220.0, 420.0);
+    final dynamicBannerHeight = (constrainedWidth / 3.2).clamp(180.0, 340.0);
     final detailer = widget.detailer;
-    final studioJobs = widget.repository.jobs.where((j) => j.author.id == detailer.id).toList();
+    final studioJobs =
+        widget.repository.jobs.where((j) => j.author.id == detailer.id).toList();
     final packages = detailer.servicePackages;
+    final studioName = detailer.businessName.isNotEmpty
+        ? detailer.businessName
+        : detailer.displayName;
+    final hasDirections = _hasStudioDirections(detailer);
+    final startingPrice = _lowestStartingPrice(detailer);
+    final completedJobs =
+        detailer.totalJobsCount > 0 ? detailer.totalJobsCount : studioJobs.length;
 
     return Scaffold(
       body: NestedScrollView(
@@ -121,7 +179,8 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                   shape: BoxShape.circle,
                 ),
                 child: IconButton(
-                  icon: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 20),
+                  icon: const Icon(Icons.arrow_back_rounded,
+                      color: Colors.white, size: 20),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ),
@@ -133,11 +192,12 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                     shape: BoxShape.circle,
                   ),
                   child: IconButton(
-                    icon: const Icon(Icons.share_outlined, color: Colors.white, size: 18),
+                    icon: const Icon(Icons.share_outlined,
+                        color: Colors.white, size: 18),
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Storefront link copied for ${detailer.businessName.isNotEmpty ? detailer.businessName : detailer.displayName}'),
+                          content: Text('Storefront link copied for $studioName'),
                           backgroundColor: AppTheme.surface,
                         ),
                       );
@@ -149,12 +209,12 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                 background: Stack(
                   fit: StackFit.expand,
                   children: [
-                    // 1. Blurred Full-Width Background
                     detailer.coverUrl.trim().isNotEmpty
                         ? Image.network(
                             detailer.coverUrl,
                             fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => Container(color: AppTheme.surfaceLight),
+                            errorBuilder: (context, error, stackTrace) =>
+                                Container(color: AppTheme.surfaceLight),
                           )
                         : Container(color: AppTheme.surfaceLight),
                     ClipRect(
@@ -163,7 +223,6 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                         child: Container(color: Colors.black.withAlpha(100)),
                       ),
                     ),
-                    // 2. Crisp Centered Foreground Image
                     Center(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 1280),
@@ -171,12 +230,15 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                           width: double.infinity,
                           height: double.infinity,
                           child: detailer.localCoverBytes != null
-                              ? Image.memory(detailer.localCoverBytes!, fit: BoxFit.cover)
+                              ? Image.memory(detailer.localCoverBytes!,
+                                  fit: BoxFit.cover)
                               : (detailer.coverUrl.trim().isNotEmpty
                                   ? Image.network(
                                       detailer.coverUrl,
                                       fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) => const SizedBox(),
+                                      errorBuilder:
+                                          (context, error, stackTrace) =>
+                                              const SizedBox(),
                                     )
                                   : const SizedBox()),
                         ),
@@ -186,8 +248,8 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            Colors.black.withAlpha(50),
-                            Colors.black.withAlpha(140),
+                            Colors.black.withAlpha(40),
+                            Colors.black.withAlpha(130),
                             AppTheme.background,
                           ],
                           begin: Alignment.topCenter,
@@ -195,206 +257,260 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                         ),
                       ),
                     ),
-                    Positioned(
-                      bottom: 12,
-                      left: 0,
-                      right: 0,
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1280),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                          Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: AppTheme.primary, width: 2.5),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withAlpha(150),
-                                  blurRadius: 10,
-                                ),
-                              ],
-                            ),
-                            child: CircleAvatar(
-                              radius: 36,
-                              backgroundColor: AppTheme.surfaceLight,
-                              backgroundImage: detailer.localAvatarBytes != null
-                                  ? MemoryImage(detailer.localAvatarBytes!) as ImageProvider
-                                  : (detailer.avatarUrl.trim().isNotEmpty
-                                      ? NetworkImage(detailer.avatarUrl.trim())
-                                      : null),
-                              child: (detailer.localAvatarBytes == null && detailer.avatarUrl.trim().isEmpty)
-                                  ? Text(
-                                      (detailer.businessName.isNotEmpty ? detailer.businessName : detailer.displayName).isNotEmpty
-                                          ? (detailer.businessName.isNotEmpty ? detailer.businessName : detailer.displayName)[0].toUpperCase()
-                                          : '?',
-                                      style: const TextStyle(
-                                        fontSize: 26,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : null,
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        detailer.businessName.isNotEmpty ? detailer.businessName : detailer.displayName,
+                  ],
+                ),
+              ),
+            ),
+
+            // Luxury Hero & Trust Header
+            SliverToBoxAdapter(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1280),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                    color: AppTheme.primary, width: 2.5),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withAlpha(140),
+                                    blurRadius: 10,
+                                  ),
+                                ],
+                              ),
+                              child: CircleAvatar(
+                                radius: 34,
+                                backgroundColor: AppTheme.surfaceLight,
+                                backgroundImage: detailer.localAvatarBytes != null
+                                    ? MemoryImage(detailer.localAvatarBytes!)
+                                        as ImageProvider
+                                    : (detailer.avatarUrl.trim().isNotEmpty
+                                        ? NetworkImage(
+                                            detailer.avatarUrl.trim())
+                                        : null),
+                                child: (detailer.localAvatarBytes == null &&
+                                        detailer.avatarUrl.trim().isEmpty)
+                                    ? Text(
+                                        studioName.isNotEmpty
+                                            ? studioName[0].toUpperCase()
+                                            : '?',
                                         style: const TextStyle(
-                                          fontSize: 20,
+                                          fontSize: 24,
                                           fontWeight: FontWeight.bold,
                                           color: Colors.white,
                                         ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+                                      )
+                                    : null,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    studioName,
+                                    style: const TextStyle(
+                                      fontSize: 21,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.textPrimary,
                                     ),
-                                    if (detailer.isVerifiedHost) ...[
-                                      const SizedBox(width: 6),
-                                      const Icon(Icons.verified_rounded, color: AppTheme.primary, size: 18),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.star_rounded,
+                                              size: 16, color: Colors.amber),
+                                          const SizedBox(width: 3),
+                                          Text(
+                                            detailer.averageRating
+                                                .toStringAsFixed(1),
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                              color: AppTheme.textPrimary,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '(${detailer.reviewCount} reviews)',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: AppTheme.textSecondary,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      Text(
+                                        '• $completedJobs jobs completed',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppTheme.textSecondary,
+                                        ),
+                                      ),
                                     ],
-                                  ],
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  detailer.location,
-                                  style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-                                ),
-                                const SizedBox(height: 4),
-                                Wrap(
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  spacing: 6,
-                                  runSpacing: 4,
-                                  children: [
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(Icons.star_rounded, size: 15, color: Colors.amber),
-                                        const SizedBox(width: 3),
-                                        Flexible(
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      if (detailer.location.trim().isNotEmpty)
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(
+                                                Icons.location_on_outlined,
+                                                size: 14,
+                                                color: AppTheme.textMuted),
+                                            const SizedBox(width: 3),
+                                            Flexible(
+                                              child: Text(
+                                                detailer.location,
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  color: AppTheme.textSecondary,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      if (detailer.serviceRadius
+                                          .trim()
+                                          .isNotEmpty)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.primary.withAlpha(25),
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                          ),
                                           child: Text(
-                                            '${detailer.averageRating} (${detailer.reviewCount} reviews)',
-                                            overflow: TextOverflow.ellipsis,
-                                            maxLines: 1,
-                                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                                            detailer.serviceRadius,
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: AppTheme.primary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
                                           ),
                                         ),
-                                      ],
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: AppTheme.primary.withAlpha(30),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        detailer.serviceRadius,
-                                        style: const TextStyle(fontSize: 10, color: AppTheme.primary, fontWeight: FontWeight.bold),
-                                      ),
-                                    ),
-                                  ],
+                                      if (hasDirections)
+                                        OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: AppTheme.primary,
+                                            side: const BorderSide(
+                                                color: AppTheme.primary),
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 10, vertical: 4),
+                                            minimumSize: Size.zero,
+                                            tapTargetSize: MaterialTapTargetSize
+                                                .shrinkWrap,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                          onPressed: () =>
+                                              _launchDirections(detailer),
+                                          icon: const Icon(
+                                              Icons.directions_rounded,
+                                              size: 14),
+                                          label: const Text(
+                                            'Directions',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (detailer.isVerifiedHost ||
+                            detailer.isIdaCertified ||
+                            detailer.isInsuranceVerified) ...[
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 6,
+                            children: [
+                              if (detailer.isVerifiedHost)
+                                _buildAuthorityBadge(
+                                  icon: Icons.verified_rounded,
+                                  label: 'Verified Pro',
                                 ),
-                              ],
+                              if (detailer.isIdaCertified)
+                                _buildAuthorityBadge(
+                                  icon: Icons.workspace_premium_rounded,
+                                  label: 'IDA Certified',
+                                ),
+                              if (detailer.isInsuranceVerified)
+                                _buildAuthorityBadge(
+                                  icon: Icons.shield_rounded,
+                                  label: 'Insured',
+                                ),
+                            ],
+                          ),
+                        ],
+                        if (detailer.bio.trim().isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            detailer.bio,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppTheme.textSecondary,
+                              height: 1.45,
                             ),
                           ),
                         ],
-                      ),
-                            ),
-                          ),
-                        ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (detailer.bio.isNotEmpty) ...[
-                      Text(
-                        detailer.bio,
-                        style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    // Quick stats badges
-                    Row(
-                      children: [
-                        _buildStatCard(
-                          icon: Icons.auto_awesome_motion_rounded,
-                          label: 'Transformations',
-                          value: '${studioJobs.length}',
-                        ),
-                        const SizedBox(width: 8),
-                        _buildStatCard(
-                          icon: Icons.shield_outlined,
-                          label: 'Certifications',
-                          value: '${detailer.certifications.length} Pro',
-                        ),
-                        const SizedBox(width: 8),
-                        _buildStatCard(
-                          icon: Icons.timelapse_rounded,
-                          label: 'Response Time',
-                          value: '< 1 hr',
-                        ),
                       ],
                     ),
-                    if (detailer.certifications.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: detailer.certifications.map((c) {
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppTheme.surface,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: AppTheme.primary.withAlpha(80)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.verified_outlined, size: 12, color: AppTheme.primary),
-                                const SizedBox(width: 5),
-                                Text(
-                                  '${c.title} • ${c.issuer}',
-                                  style: const TextStyle(fontSize: 11, color: AppTheme.textPrimary, fontWeight: FontWeight.w500),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
               ),
             ),
+
             SliverPersistentHeader(
               pinned: true,
               delegate: _SliverTabBarDelegate(
                 TabBar(
                   controller: _tabController,
+                  isScrollable: screenWidth < 420,
+                  tabAlignment:
+                      screenWidth < 420 ? TabAlignment.start : TabAlignment.fill,
                   labelColor: AppTheme.primary,
                   unselectedLabelColor: AppTheme.textSecondary,
                   indicatorColor: AppTheme.primary,
                   tabs: const [
-                    Tab(text: 'Transformations'),
-                    Tab(text: 'Services & Pricing'),
+                    Tab(text: 'Services'),
+                    Tab(text: 'Portfolio'),
+                    Tab(text: 'Reviews'),
                     Tab(text: 'About & Studio'),
                   ],
                 ),
@@ -405,318 +521,656 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
         body: TabBarView(
           controller: _tabController,
           children: [
-            // TAB 1: Transformations
-            studioJobs.isEmpty
-                ? Center(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(32),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.photo_library_outlined, size: 48, color: AppTheme.textMuted),
-                          const SizedBox(height: 12),
-                          const Text(
-                            'No Transformations Published Yet',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            '${detailer.displayName} has not published 50/50 transformation recipes yet.',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
-                          ),
-                        ],
-                      ),
+            _buildServicesTab(packages),
+            _buildPortfolioTab(studioJobs),
+            _buildReviewsTab(detailer, completedJobs),
+            _buildAboutTab(detailer, hasDirections),
+          ],
+        ),
+      ),
+      bottomNavigationBar: _buildStickyBottomBar(detailer, startingPrice),
+    );
+  }
+
+  Widget _buildAuthorityBadge({
+    required IconData icon,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppTheme.primary.withAlpha(90)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: AppTheme.primary),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildServicesTab(List<ServicePackage> packages) {
+    if (packages.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Text(
+            'No service packages listed yet.',
+            style: TextStyle(color: AppTheme.textMuted),
+          ),
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isDesktop = constraints.maxWidth >= 720;
+        final isWide = constraints.maxWidth >= 1024;
+        final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
+
+        if (!isDesktop) {
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: packages.length,
+            itemBuilder: (context, index) {
+              final pkg = packages[index];
+              final isFeatured =
+                  pkg.isPopular || (packages.length > 1 && index == 0 && !packages.any((p) => p.isPopular));
+              return _buildServicePackageCard(pkg, isFeatured: isFeatured);
+            },
+          );
+        }
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1200),
+              child: Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  for (int i = 0; i < packages.length; i++)
+                    Builder(
+                      builder: (context) {
+                        final pkg = packages[i];
+                        final isFeatured = pkg.isPopular ||
+                            (packages.length > 1 &&
+                                i == 0 &&
+                                !packages.any((p) => p.isPopular));
+                        final availableWidth =
+                            constraints.maxWidth > 1200 ? 1200.0 : constraints.maxWidth;
+                        final itemWidth =
+                            (availableWidth - 32 - (crossAxisCount - 1) * 16) /
+                                crossAxisCount;
+                        return SizedBox(
+                          width: itemWidth - 0.1,
+                          child: _buildServicePackageCard(pkg, isFeatured: isFeatured),
+                        );
+                      },
                     ),
-                  )
-                : LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isDesktop = constraints.maxWidth >= 720;
-                      final isWide = constraints.maxWidth >= 1024;
-                      final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
-                      return !isDesktop
-                          ? ListView.builder(
-                              padding: const EdgeInsets.all(16),
-                              itemCount: studioJobs.length,
-                              itemBuilder: (context, index) {
-                                final job = studioJobs[index];
-                                return JobRecipeCard(
-                                  job: job,
-                                  repository: widget.repository,
-                                  onLike: () => widget.repository.toggleLike(job.id),
-                                  onSave: () => widget.repository.toggleSave(job.id),
-                                );
-                              },
-                            )
-                          : SingleChildScrollView(
-                              padding: const EdgeInsets.all(16),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  for (int col = 0; col < crossAxisCount; col++) ...[
-                                    if (col > 0) const SizedBox(width: 16),
-                                    Expanded(
-                                      child: Column(
-                                        children: [
-                                          for (int i = col; i < studioJobs.length; i += crossAxisCount)
-                                            JobRecipeCard(
-                                              job: studioJobs[i],
-                                              repository: widget.repository,
-                                              onLike: () => widget.repository.toggleLike(studioJobs[i].id),
-                                              onSave: () => widget.repository.toggleSave(studioJobs[i].id),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            );
-                    },
-                  ),
+  Widget _buildPortfolioTab(List<DetailJob> studioJobs) {
+    if (studioJobs.isEmpty) {
+      return Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.photo_library_outlined,
+                  size: 48, color: AppTheme.textMuted),
+              const SizedBox(height: 12),
+              const Text(
+                'No Transformations Published Yet',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${widget.detailer.displayName} has not published 50/50 transformation recipes yet.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
-            // TAB 2: Services & Pricing
-            packages.isEmpty
-                ? const Center(
-                    child: Text('No service packages listed yet.', style: TextStyle(color: AppTheme.textMuted)),
-                  )
-                : LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isDesktop = constraints.maxWidth >= 720;
-                      final isWide = constraints.maxWidth >= 1024;
-                      final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
+    final serviceTypes = <String>{
+      'All',
+      ...studioJobs
+          .map((j) => j.serviceType.trim())
+          .where((s) => s.isNotEmpty),
+    }.toList();
 
-                      return !isDesktop
-                          ? ListView.builder(
-                              padding: const EdgeInsets.all(16),
-                              itemCount: packages.length,
-                              itemBuilder: (context, index) {
-                                return _buildServicePackageCard(packages[index]);
-                              },
-                            )
-                                                    : SingleChildScrollView(
-                              padding: const EdgeInsets.all(16),
-                              child: Wrap(
-                                spacing: 16,
-                                runSpacing: 16,
-                                children: packages.map((pkg) {
-                                  final availableWidth = constraints.maxWidth > 1200 ? 1200.0 : constraints.maxWidth;
-                                  final itemWidth = (availableWidth - 32 - (crossAxisCount - 1) * 16) / crossAxisCount;
-                                  return SizedBox(
-                                    width: itemWidth - 0.1,
-                                    child: _buildServicePackageCard(pkg),
-                                  );
-                                }).toList(),
-                              ),
-                            );
-                    },
-                  ),
+    final filteredJobs = _selectedPortfolioFilter == 'All'
+        ? studioJobs
+        : studioJobs
+            .where((j) => j.serviceType.trim() == _selectedPortfolioFilter)
+            .toList();
 
-            // TAB 3: About & Studio Info
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 860),
-                child: ListView(
-                  padding: const EdgeInsets.all(16),
+    return Column(
+      children: [
+        SizedBox(
+          height: 52,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            itemCount: serviceTypes.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final type = serviceTypes[index];
+              final selected = _selectedPortfolioFilter == type;
+              return ChoiceChip(
+                label: Text(type),
+                selected: selected,
+                onSelected: (_) {
+                  setState(() {
+                    _selectedPortfolioFilter = type;
+                  });
+                },
+                selectedColor: AppTheme.primary,
+                backgroundColor: AppTheme.surface,
+                labelStyle: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: selected ? Colors.black : AppTheme.textPrimary,
+                ),
+                side: BorderSide(
+                  color: selected ? AppTheme.primary : AppTheme.border,
+                ),
+              );
+            },
+          ),
+        ),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isDesktop = constraints.maxWidth >= 720;
+              final isWide = constraints.maxWidth >= 1024;
+              final crossAxisCount = isWide ? 3 : (isDesktop ? 2 : 1);
+
+              if (!isDesktop) {
+                return ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  itemCount: filteredJobs.length,
+                  itemBuilder: (context, index) {
+                    final job = filteredJobs[index];
+                    return JobRecipeCard(
+                      job: job,
+                      repository: widget.repository,
+                      onLike: () => widget.repository.toggleLike(job.id),
+                      onSave: () => widget.repository.toggleSave(job.id),
+                    );
+                  },
+                );
+              }
+
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildInfoSection(
-                      title: 'Studio Location & Service Coverage',
-                      icon: Icons.location_on_rounded,
-                      children: [
-                        Text('Base City: ${detailer.location}', style: const TextStyle(fontSize: 13)),
-                        const SizedBox(height: 4),
-                        Text('Service Radius: ${detailer.serviceRadius}', style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
-                        const SizedBox(height: 4),
-                        const Text('Studio Facility: Climate-controlled clean bay with multi-spectrum color-match LED lighting.', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildInfoSection(
-                      title: 'Professional Certifications',
-                      icon: Icons.verified_user_rounded,
-                      children: detailer.certifications.isEmpty
-                          ? [const Text('No public certifications uploaded yet.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12))]
-                          : detailer.certifications.map((c) {
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.shield_rounded, color: AppTheme.primary, size: 16),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(c.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                          Text(c.issuer, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildInfoSection(
-                      title: 'Equipment & Precision Standards',
-                      icon: Icons.precision_manufacturing_rounded,
-                      children: const [
-                        Text('• RUPES BigFoot & FLEX Cordless Rotary Polishing Units', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                        SizedBox(height: 4),
-                        Text('• DeFelsko PosiTector 200 Ultrasonic Paint Depth Gauge (Pre & Post micron audit)', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                        SizedBox(height: 4),
-                        Text('• Scangrip 3-Color High CRI+ SunMatch Inspection Lamps', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                        SizedBox(height: 4),
-                        Text('• 100% DI Pure Deionized Spot-Free Water Filtration System', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                      ],
-                    ),
+                    for (int col = 0; col < crossAxisCount; col++) ...[
+                      if (col > 0) const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            for (int i = col;
+                                i < filteredJobs.length;
+                                i += crossAxisCount)
+                              JobRecipeCard(
+                                job: filteredJobs[i],
+                                repository: widget.repository,
+                                onLike: () => widget.repository
+                                    .toggleLike(filteredJobs[i].id),
+                                onSave: () => widget.repository
+                                    .toggleSave(filteredJobs[i].id),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReviewsTab(UserProfile detailer, int completedJobs) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 860),
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final isNarrow = constraints.maxWidth < 400;
+                  final ratingBlock = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            detailer.averageRating.toStringAsFixed(1),
+                            style: const TextStyle(
+                              fontSize: 34,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.star_rounded,
+                              color: Colors.amber, size: 28),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${detailer.reviewCount} verified reviews',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  );
+
+                  final statsBlock = Column(
+                    crossAxisAlignment: isNarrow
+                        ? CrossAxisAlignment.start
+                        : CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '$completedJobs',
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primary,
+                        ),
+                      ),
+                      const Text(
+                        'Verified Bookings',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  );
+
+                  if (isNarrow) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ratingBlock,
+                        const SizedBox(height: 12),
+                        const Divider(color: AppTheme.border),
+                        const SizedBox(height: 12),
+                        statsBlock,
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      ratingBlock,
+                      statsBlock,
+                    ],
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Column(
+                children: const [
+                  Icon(Icons.rate_review_outlined,
+                      size: 40, color: AppTheme.textMuted),
+                  SizedBox(height: 12),
+                  Text(
+                    'Verified Client Reviews',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    'Only clients who complete a booked studio service can leave a verified review.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                  ),
+                ],
               ),
             ),
           ],
         ),
       ),
-      bottomNavigationBar: Container(
-        color: AppTheme.surface,
-        child: Center(
-          heightFactor: 1.0,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1280),
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              decoration: BoxDecoration(
-                color: AppTheme.surface,
-                border: const Border(top: BorderSide(color: AppTheme.border)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withAlpha(120),
-                    blurRadius: 10,
-                    offset: const Offset(0, -3),
+    );
+  }
+
+  Widget _buildAboutTab(UserProfile detailer, bool hasDirections) {
+    final studioAddr = _formattedStudioAddress(detailer);
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 860),
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            if (detailer.bio.trim().isNotEmpty) ...[
+              _buildInfoSection(
+                title: 'About the Studio',
+                icon: Icons.storefront_rounded,
+                children: [
+                  Text(
+                    detailer.bio,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.textSecondary,
+                      height: 1.45,
+                    ),
                   ),
                 ],
               ),
-              child: SafeArea(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isNarrow = constraints.maxWidth < 480;
-
-                    if (isNarrow) {
-                      return Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Wrap(
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: const [
-                              Icon(Icons.calendar_today_rounded, size: 13, color: AppTheme.primary),
-                              SizedBox(width: 6),
-                              Text('Next Available Slot: ', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-                              Text('This Week', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary)),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(
-                                flex: 2,
-                                child: ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppTheme.surfaceLight,
-                                    foregroundColor: AppTheme.textPrimary,
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      side: const BorderSide(color: AppTheme.border),
-                                    ),
-                                  ),
-                                  onPressed: _openChatWithDetailer,
-                                  icon: const Icon(Icons.chat_rounded, size: 15),
-                                  label: const Text(
-                                    'Message',
-                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
+              const SizedBox(height: 16),
+            ],
+            _buildInfoSection(
+              title: 'Studio Location & Directions',
+              icon: Icons.location_on_rounded,
+              children: [
+                if (studioAddr.isNotEmpty) ...[
+                  Text(studioAddr, style: const TextStyle(fontSize: 13)),
+                  const SizedBox(height: 4),
+                ] else if (detailer.location.trim().isNotEmpty) ...[
+                  Text('Base City: ${detailer.location}',
+                      style: const TextStyle(fontSize: 13)),
+                  const SizedBox(height: 4),
+                ],
+                if (detailer.serviceRadius.trim().isNotEmpty) ...[
+                  Text(
+                    'Service Radius: ${detailer.serviceRadius}',
+                    style: const TextStyle(
+                        fontSize: 13, color: AppTheme.textSecondary),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                if (hasDirections)
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    onPressed: () => _launchDirections(detailer),
+                    icon: const Icon(Icons.directions_rounded, size: 16),
+                    label: const Text(
+                      'Get Directions',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildInfoSection(
+              title: 'Professional Certifications',
+              icon: Icons.verified_user_rounded,
+              children: detailer.certifications.isEmpty
+                  ? [
+                      const Text(
+                        'No public certifications uploaded yet.',
+                        style:
+                            TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                      )
+                    ]
+                  : detailer.certifications.map((c) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.shield_rounded,
+                                color: AppTheme.primary, size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(c.title,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13)),
+                                  Text(c.issuer,
+                                      style: const TextStyle(
+                                          color: AppTheme.textSecondary,
+                                          fontSize: 11)),
+                                ],
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                flex: 3,
-                                child: ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppTheme.primary,
-                                    foregroundColor: Colors.black,
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  ),
-                                  onPressed: _openBookingFlow,
-                                  icon: const Icon(Icons.calendar_today_rounded, size: 15),
-                                  label: const Text(
-                                    'Book Studio Service',
-                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      );
-                    }
-
-                    return Row(
-                      children: [
-                        const Expanded(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Next Available Slot', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-                              Text('This Week', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.primary)),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.surfaceLight,
-                            foregroundColor: AppTheme.textPrimary,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              side: const BorderSide(color: AppTheme.border),
                             ),
-                          ),
-                          onPressed: _openChatWithDetailer,
-                          icon: const Icon(Icons.chat_rounded, size: 16),
-                          label: const Text(
-                            'Message',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+            ),
+            if (detailer.teamMembers.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _buildInfoSection(
+                title: 'Studio Team',
+                icon: Icons.groups_rounded,
+                children: detailer.teamMembers.map((member) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundColor: AppTheme.surfaceLight,
+                          child: Text(
+                            member.name.isNotEmpty
+                                ? member.name[0].toUpperCase()
+                                : '?',
+                            style: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.bold),
                           ),
                         ),
                         const SizedBox(width: 10),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.primary,
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          onPressed: _openBookingFlow,
-                          icon: const Icon(Icons.calendar_today_rounded, size: 16),
-                          label: const Text(
-                            'Book Studio Service',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(member.name,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13)),
+                              if (member.roleTitle.isNotEmpty)
+                                Text(member.roleTitle,
+                                    style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AppTheme.textSecondary)),
+                            ],
                           ),
                         ),
                       ],
-                    );
-                  },
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+            if (detailer.instagramHandle.trim().isNotEmpty ||
+                detailer.phone.trim().isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _buildInfoSection(
+                title: 'Contact & Social',
+                icon: Icons.alternate_email_rounded,
+                children: [
+                  if (detailer.instagramHandle.trim().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        'Instagram: @${detailer.instagramHandle.replaceFirst('@', '')}',
+                        style: const TextStyle(
+                            fontSize: 13, color: AppTheme.textSecondary),
+                      ),
+                    ),
+                  if (detailer.phone.trim().isNotEmpty)
+                    Text(
+                      'Phone: ${detailer.phone}',
+                      style: const TextStyle(
+                          fontSize: 13, color: AppTheme.textSecondary),
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStickyBottomBar(UserProfile detailer, double? startingPrice) {
+    final priceLabel = startingPrice != null
+        ? 'From \$${startingPrice.toStringAsFixed(0)}'
+        : 'Custom Quote';
+
+    return Container(
+      color: AppTheme.surface,
+      child: Center(
+        heightFactor: 1.0,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1280),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              border: const Border(top: BorderSide(color: AppTheme.border)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(120),
+                  blurRadius: 10,
+                  offset: const Offset(0, -3),
                 ),
+              ],
+            ),
+            child: SafeArea(
+              top: false,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          priceLabel,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.star_rounded,
+                                size: 13, color: Colors.amber),
+                            const SizedBox(width: 3),
+                            Flexible(
+                              child: Text(
+                                detailer.averageRating.toStringAsFixed(1),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Message',
+                    constraints:
+                        const BoxConstraints(minWidth: 38, minHeight: 38),
+                    padding: EdgeInsets.zero,
+                    style: IconButton.styleFrom(
+                      backgroundColor: AppTheme.surfaceLight,
+                      foregroundColor: AppTheme.textPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: const BorderSide(color: AppTheme.border),
+                      ),
+                    ),
+                    onPressed: _openChatWithDetailer,
+                    icon: const Icon(Icons.chat_rounded, size: 17),
+                  ),
+                  const SizedBox(width: 6),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () => _openBookingFlow(),
+                    icon: const Icon(Icons.calendar_today_rounded, size: 14),
+                    label: const Text(
+                      'Book Appointment',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -725,7 +1179,7 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
     );
   }
 
-  Widget _buildServicePackageCard(ServicePackage pkg) {
+  Widget _buildServicePackageCard(ServicePackage pkg, {bool isFeatured = false}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(16),
@@ -733,14 +1187,32 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
         color: AppTheme.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: pkg.isPopular ? AppTheme.primary.withAlpha(150) : AppTheme.border,
-          width: pkg.isPopular ? 1.5 : 1,
+          color: isFeatured ? AppTheme.primary.withAlpha(160) : AppTheme.border,
+          width: isFeatured ? 1.5 : 1,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (isFeatured) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withAlpha(30),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text(
+                'Most Popular',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.primary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -751,39 +1223,46 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
                   children: [
                     Text(
                       pkg.title,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 4),
                     Text(
                       pkg.description,
-                      style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                      style: const TextStyle(
+                          fontSize: 12, color: AppTheme.textSecondary),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width < 450 ? 110 : 160),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        '\$${pkg.basePrice.toStringAsFixed(0)}',
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                      ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '\$${pkg.basePrice.toStringAsFixed(0)}+',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primary,
                     ),
-                    Text(
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceLight,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
                       pkg.estimatedDuration,
-                      style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.end,
+                      style: const TextStyle(
+                          fontSize: 10, color: AppTheme.textSecondary),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -795,12 +1274,14 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
               padding: const EdgeInsets.only(bottom: 6),
               child: Row(
                 children: [
-                  const Icon(Icons.check_circle_outline_rounded, size: 14, color: AppTheme.primary),
+                  const Icon(Icons.check_circle_outline_rounded,
+                      size: 14, color: AppTheme.primary),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       feat,
-                      style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary),
+                      style: const TextStyle(
+                          fontSize: 12, color: AppTheme.textPrimary),
                     ),
                   ),
                 ],
@@ -812,44 +1293,22 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
             width: double.infinity,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: pkg.isPopular ? AppTheme.primary : AppTheme.surfaceLight,
-                foregroundColor: pkg.isPopular ? Colors.black : Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                backgroundColor:
+                    isFeatured ? AppTheme.primary : AppTheme.surfaceLight,
+                foregroundColor: isFeatured ? Colors.black : Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-              onPressed: _openBookingFlow,
-              child: Text(
-                'Book ${pkg.title}',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              onPressed: () => _openBookingFlow(initialPackage: pkg),
+              child: const Text(
+                'Book This Service',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
               ),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildStatCard({
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-        decoration: BoxDecoration(
-          color: AppTheme.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppTheme.border),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, size: 16, color: AppTheme.primary),
-            const SizedBox(height: 4),
-            Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
-            Text(label, style: const TextStyle(fontSize: 10, color: AppTheme.textMuted), maxLines: 1, overflow: TextOverflow.ellipsis),
-          ],
-        ),
       ),
     );
   }
@@ -876,7 +1335,8 @@ class _PublicStudioScreenState extends State<PublicStudioScreen> with SingleTick
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.bold),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -902,7 +1362,8 @@ class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => _tabBar.preferredSize.height;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
       color: AppTheme.background,
       child: _tabBar,
