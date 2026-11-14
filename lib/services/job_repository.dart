@@ -570,9 +570,7 @@ class JobRepository extends ChangeNotifier {
         }
 
         final mode = await LocalStorageService.loadWorkbenchMode();
-        final storedCurrentUser = await LocalStorageService.loadCurrentUser();
-        final isLocalPaused = _currentUser.isStudioPaused || (storedCurrentUser?.isStudioPaused ?? false);
-        final resolvedPaused = cloudProfile.isStudioPaused || isLocalPaused;
+        final resolvedPaused = cloudProfile.isStudioPaused;
 
         var merged = cloudProfile.copyWith(
           servicePackages: resolvedPackages,
@@ -1371,6 +1369,19 @@ class JobRepository extends ChangeNotifier {
   List<CalendarAvailabilityBlock> get availabilityBlocks => List.unmodifiable(_availabilityBlocks);
   DetailerCalendarPreferences get calendarPreferences => _calendarPreferences;
   
+  bool isDetailerStudioPaused(UserProfile detailer) {
+    if (detailer.id.isNotEmpty && detailer.id == _currentUser.id) {
+      return _currentUser.isStudioPaused;
+    }
+    if (detailer.id.isNotEmpty && detailer.id != 'usr_you') {
+      final matched = _publicDetailers.where((d) => d.id == detailer.id).firstOrNull;
+      if (matched != null) {
+        return matched.isStudioPaused;
+      }
+    }
+    return detailer.isStudioPaused;
+  }
+
   // All public detailers including the current user when offering services or registered as studio!
   // Excludes any detailer who has paused their studio or retired to client role.
   List<UserProfile> get publicDetailers {
@@ -1609,6 +1620,7 @@ class JobRepository extends ChangeNotifier {
   List<String> get activeCitiesWithDetailers {
     final cities = <String>{'All Locations'};
     for (final d in _publicDetailers) {
+      if (d.isStudioPaused) continue;
       if (d.studioCity.isNotEmpty) {
         cities.add(d.studioState.isNotEmpty ? '${d.studioCity}, ${d.studioState}' : d.studioCity);
       } else if (d.city.isNotEmpty) {
@@ -1617,22 +1629,27 @@ class JobRepository extends ChangeNotifier {
         cities.add(d.location);
       }
     }
-    if (_currentUser.studioCity.isNotEmpty) {
-      cities.add(_currentUser.studioState.isNotEmpty
-          ? '${_currentUser.studioCity}, ${_currentUser.studioState}'
-          : _currentUser.studioCity);
-    } else if (_currentUser.city.isNotEmpty) {
-      cities.add(_currentUser.state.isNotEmpty
-          ? '${_currentUser.city}, ${_currentUser.state}'
-          : _currentUser.city);
-    } else if (_currentUser.location.isNotEmpty) {
-      cities.add(_currentUser.location);
+    if (!_currentUser.isStudioPaused) {
+      if (_currentUser.studioCity.isNotEmpty) {
+        cities.add(_currentUser.studioState.isNotEmpty
+            ? '${_currentUser.studioCity}, ${_currentUser.studioState}'
+            : _currentUser.studioCity);
+      } else if (_currentUser.city.isNotEmpty) {
+        cities.add(_currentUser.state.isNotEmpty
+            ? '${_currentUser.city}, ${_currentUser.state}'
+            : _currentUser.city);
+      } else if (_currentUser.location.isNotEmpty) {
+        cities.add(_currentUser.location);
+      }
     }
     return cities.toList();
   }
 
   List<DetailJob> get filteredJobs {
     final list = _jobs.where((job) {
+      if (isDetailerStudioPaused(job.author)) {
+        return false;
+      }
       if (_selectedLocationCity != 'All Locations' &&
           !job.author.location.toLowerCase().contains(_selectedLocationCity.toLowerCase()) &&
           !job.author.studioCity.toLowerCase().contains(_selectedLocationCity.toLowerCase()) &&
@@ -2103,6 +2120,32 @@ class JobRepository extends ChangeNotifier {
     _currentUser = updated;
     LocalStorageService.saveCurrentUser(_currentUser);
     LocalStorageService.saveServicePackages(_currentUser.servicePackages);
+    if (updated.id.isNotEmpty && updated.id != 'usr_you') {
+      bool jobsUpdated = false;
+      final jobsToSync = <DetailJob>[];
+      final useFullUpdatedAuthor =
+          updated.role != UserRole.client && updated.businessName.trim().isNotEmpty;
+      _jobs = _jobs.map((job) {
+        if (job.author.id == updated.id) {
+          jobsUpdated = true;
+          final newAuthor = useFullUpdatedAuthor
+              ? updated
+              : job.author.copyWith(isStudioPaused: updated.isStudioPaused);
+          final updatedJob = job.copyWith(author: newAuthor);
+          jobsToSync.add(updatedJob);
+          return updatedJob;
+        }
+        return job;
+      }).toList();
+      if (jobsUpdated) {
+        _persistCustomJobs();
+        if (_isLoggedIn || SupabaseAuthService.isLoggedIn) {
+          for (final job in jobsToSync) {
+            SupabaseDbService.saveJob(job);
+          }
+        }
+      }
+    }
     notifyListeners();
     try {
       await _persistUser();
@@ -2688,6 +2731,12 @@ class JobRepository extends ChangeNotifier {
     final effectiveBooking = (effectiveClientId != null && booking.clientId != effectiveClientId)
         ? booking.copyWith(clientId: effectiveClientId)
         : booking;
+
+    final isTargetPaused = (effectiveBooking.detailerId == _currentUser.id && _currentUser.isStudioPaused) ||
+        _publicDetailers.any((d) => d.id == effectiveBooking.detailerId && d.isStudioPaused);
+    if (isTargetPaused) {
+      return false;
+    }
 
     // 1. Guard against duplicate booking insertions (idempotency)
     final existingIdx = _bookings.indexWhere((b) => b.id == effectiveBooking.id);

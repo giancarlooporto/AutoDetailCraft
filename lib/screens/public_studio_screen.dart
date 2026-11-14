@@ -45,6 +45,15 @@ class _PublicStudioScreenState extends State<PublicStudioScreen>
   }
 
   void _openBookingFlow({ServicePackage? initialPackage}) {
+    if (widget.repository.isDetailerStudioPaused(widget.detailer)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This studio is currently paused and not accepting new bookings.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     if (!widget.repository.isLoggedIn) {
       AuthModal.show(
         context,

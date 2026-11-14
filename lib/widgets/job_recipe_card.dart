@@ -36,6 +36,15 @@ class JobRecipeCard extends StatelessWidget {
   }
 
   void _openBookingFlow(BuildContext context) {
+    if (repository.isDetailerStudioPaused(job.author)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This studio is currently paused and not accepting new bookings.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     if (repository.currentUser.myGarage.isEmpty) {
       final name = job.author.businessName.isNotEmpty
           ? job.author.businessName

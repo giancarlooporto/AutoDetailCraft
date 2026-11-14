@@ -121,6 +121,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     }
 
     if (targetDetailer != null && mounted) {
+      if (widget.repository.isDetailerStudioPaused(targetDetailer) &&
+          targetDetailer.id != widget.repository.currentUser.id) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This studio is currently paused and unavailable for bookings.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => PublicStudioScreen(

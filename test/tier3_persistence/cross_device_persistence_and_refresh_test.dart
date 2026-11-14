@@ -766,5 +766,173 @@ void main() {
       expect(fetched.author.id, isNot(equals(clientB.id)));
       expect(fetched.author.displayName, isNot(equals('Phone Client User')));
     });
+
+    test('6. Pausing Studio Hides Studio & All Posted Recipes from Explore and Blocks Bookings', () async {
+      var pausedInCloud = false;
+      final studioUser = UserProfile(
+        id: 'usr_pause_studio_01',
+        role: UserRole.detailer,
+        username: 'stealthcoat',
+        displayName: 'Elena Vance',
+        businessName: 'Stealth Coat Lab',
+        location: 'Austin, TX',
+        isVerifiedHost: true,
+        isStudioPaused: false,
+        servicePackages: const [samplePackage],
+      );
+
+      final clientUser = UserProfile(
+        id: 'usr_client_viewer_01',
+        role: UserRole.client,
+        username: 'clientviewer',
+        displayName: 'Sam Driver',
+        businessName: '',
+        servicePackages: const [],
+      );
+
+      final studioRecipe = DetailJob(
+        id: 'job_stealth_recipe_01',
+        author: studioUser,
+        createdAt: DateTime(2026, 11, 13),
+        title: 'Track Pack PPF + Ceramic',
+        description: 'Full front PPF plus 5-year coating',
+        vehicleYear: 2025,
+        vehicleMake: 'Porsche',
+        vehicleModel: 'GT3 RS',
+        paintColorName: 'Ice Grey Metallic',
+        paintCode: 'M7G',
+        paintHardness: PaintHardness.medium,
+        initialPaintThicknessMicrons: 130,
+        finalPaintThicknessMicrons: 126,
+        defectSeverity: 2,
+        serviceType: 'Ceramic Coating',
+        recipeStages: const [],
+        beforeImageUrl: 'https://example.com/gt3_b.jpg',
+        afterImageUrl: 'https://example.com/gt3_a.jpg',
+      );
+
+      var cloudJob = studioRecipe;
+
+      _mockCloudProvider = (uri, method, requestBody) {
+        if (uri.path.contains('/rest/v1/profiles') && (method == 'POST' || method == 'PATCH')) {
+          final decoded = jsonDecode(requestBody);
+          final map = decoded is List ? decoded.first as Map : decoded as Map;
+          if (map.containsKey('is_studio_paused')) {
+            pausedInCloud = map['is_studio_paused'] == true;
+          }
+          return {'statusCode': 200, 'body': []};
+        }
+        if (uri.path.contains('/rest/v1/jobs') && (method == 'POST' || method == 'PATCH')) {
+          final decoded = jsonDecode(requestBody);
+          final map = decoded is List ? decoded.first as Map : decoded as Map;
+          if (map['raw_data'] != null) {
+            cloudJob = DetailJob.fromJson(Map<String, dynamic>.from(map['raw_data'] as Map));
+          }
+          return {'statusCode': 200, 'body': []};
+        }
+        if (uri.path.contains('/rest/v1/jobs') && method == 'GET') {
+          return {
+            'statusCode': 200,
+            'body': [
+              {
+                'id': cloudJob.id,
+                'author_id': studioUser.id,
+                'raw_data': cloudJob.toJson(),
+              },
+            ],
+          };
+        }
+        if (uri.path.contains('/rest/v1/profiles') && method == 'GET') {
+          if (uri.query.contains('id=eq.${clientUser.id}')) {
+            return {
+              'statusCode': 200,
+              'body': [
+                {
+                  'id': clientUser.id,
+                  'username': 'clientviewer',
+                  'display_name': 'Sam Driver',
+                  'business_name': '',
+                  'role': 'client',
+                },
+              ],
+            };
+          }
+          return {
+            'statusCode': 200,
+            'body': [
+              {
+                'id': studioUser.id,
+                'username': 'stealthcoat',
+                'display_name': 'Elena Vance',
+                'business_name': 'Stealth Coat Lab',
+                'location': 'Austin, TX',
+                'role': 'detailer',
+                'is_verified_host': true,
+                'is_studio_paused': pausedInCloud,
+                'service_packages': [samplePackage.toJson()],
+              },
+            ],
+          };
+        }
+        return {'statusCode': 200, 'body': []};
+      };
+
+      final studioDevice = await harness.createDeviceSession(
+        user: studioUser,
+        isLoggedIn: true,
+      );
+      studioDevice.addJob(studioRecipe);
+
+      final clientDevice = await harness.createDeviceSession(
+        user: clientUser,
+        isLoggedIn: true,
+      );
+
+      // Initially LIVE: visible to clients on Explore
+      await clientDevice.refreshExploreFeed();
+      expect(clientDevice.publicDetailers.any((d) => d.id == studioUser.id), isTrue);
+      expect(clientDevice.filteredDetailers.any((d) => d.id == studioUser.id), isTrue);
+      expect(clientDevice.filteredJobs.any((j) => j.id == studioRecipe.id), isTrue);
+
+      // Detailer pauses studio
+      final pauseResult = await studioDevice.setStudioPaused(true);
+      expect(pauseResult.success, isTrue);
+
+      // Studio own Explore hides paused studio & recipes, while Studio Workbench Portfolio keeps it
+      expect(studioDevice.publicDetailers.any((d) => d.id == studioUser.id), isFalse);
+      expect(studioDevice.filteredJobs.any((j) => j.id == studioRecipe.id), isFalse);
+      expect(studioDevice.getJobsByDetailer(studioUser.id).any((j) => j.id == studioRecipe.id), isTrue);
+
+      // Client refreshes Explore feed: studio and all its recipes are hidden
+      await clientDevice.refreshExploreFeed();
+      expect(clientDevice.publicDetailers.any((d) => d.id == studioUser.id), isFalse);
+      expect(clientDevice.filteredDetailers.any((d) => d.id == studioUser.id), isFalse);
+      expect(clientDevice.filteredJobs.any((j) => j.id == studioRecipe.id), isFalse);
+
+      // Client booking against paused studio is blocked
+      final blockedBooking = createTestBooking(id: 'bk_paused_block_01').copyWith(
+        detailerId: studioUser.id,
+        clientId: clientUser.id,
+      );
+      expect(clientDevice.addBooking(blockedBooking), isFalse);
+
+      // Detailer resumes studio: studio & recipes reappear and booking succeeds
+      final resumeResult = await studioDevice.setStudioPaused(false);
+      expect(resumeResult.success, isTrue);
+
+      await clientDevice.refreshExploreFeed();
+      expect(clientDevice.publicDetailers.any((d) => d.id == studioUser.id), isTrue);
+      expect(clientDevice.filteredDetailers.any((d) => d.id == studioUser.id), isTrue);
+      expect(clientDevice.filteredJobs.any((j) => j.id == studioRecipe.id), isTrue);
+      expect(
+        clientDevice.addBooking(
+          createTestBooking(id: 'bk_resumed_ok_01').copyWith(
+            detailerId: studioUser.id,
+            clientId: clientUser.id,
+          ),
+        ),
+        isTrue,
+      );
+    });
   });
 }
