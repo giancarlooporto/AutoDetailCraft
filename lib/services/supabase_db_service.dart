@@ -206,7 +206,7 @@ class SupabaseDbService {
       String? ownerPinHash = res['owner_pin_hash'] as String?;
       List<TeamMember> backupTeam = [];
       bool hasPackedTeamTag = false;
-      bool isPausedFromRadius = false;
+      bool? explicitPausedFromRadius;
       String? packedHandle;
       if (res['service_radius'] is String) {
         final sr = res['service_radius'] as String;
@@ -233,8 +233,8 @@ class SupabaseDbService {
           } catch (_) {}
         }
         final pausedVal = extractTag('||paused:');
-        if (pausedVal != null) {
-          isPausedFromRadius = pausedVal == 'true' || pausedVal == '1';
+        if (pausedVal != null && pausedVal.isNotEmpty) {
+          explicitPausedFromRadius = pausedVal == 'true' || pausedVal == '1';
         }
         final handleVal = extractTag('||handle:');
         if (handleVal != null && handleVal.isNotEmpty) {
@@ -330,7 +330,8 @@ class SupabaseDbService {
         averageRating: (res['rating'] as num?)?.toDouble() ?? 5.0,
         reviewCount: res['review_count'] as int? ?? 0,
         ownerPinHash: ownerPinHash,
-        isStudioPaused: ((res['is_studio_paused'] ?? res['isStudioPaused']) as bool?) ?? isPausedFromRadius,
+        isStudioPaused: explicitPausedFromRadius ??
+            (((res['is_studio_paused'] ?? res['isStudioPaused']) as bool?) ?? false),
         // Structured client address
         streetAddress: (res['street_address'] ?? res['streetAddress']) as String? ?? '',
         unitOrApt: (res['unit_or_apt'] ?? res['unitOrApt']) as String? ?? '',
@@ -409,12 +410,12 @@ class SupabaseDbService {
   static Map<String, dynamic> _stripExtendedProfileFields(
     Map<String, dynamic> payload, {
     bool stripUsername = false,
+    bool stripIsStudioPaused = false,
   }) {
     final copy = Map<String, dynamic>.from(payload)
       ..remove('owner_pin_hash')
       ..remove('is_insurance_verified')
       ..remove('insurance_policy_number')
-      ..remove('is_studio_paused')
       ..remove('street_address')
       ..remove('unit_or_apt')
       ..remove('city')
@@ -429,6 +430,9 @@ class SupabaseDbService {
       ..remove('studio_postal_code')
       ..remove('studio_latitude')
       ..remove('studio_longitude');
+    if (stripIsStudioPaused) {
+      copy.remove('is_studio_paused');
+    }
     if (stripUsername) {
       copy.remove('username');
     }
@@ -444,6 +448,7 @@ class SupabaseDbService {
     final fallbackPayload = _stripExtendedProfileFields(
       fullPayload,
       stripUsername: msg.contains('username'),
+      stripIsStudioPaused: msg.contains('is_studio_paused'),
     );
     try {
       await client.from('profiles').upsert(fallbackPayload);
@@ -454,6 +459,7 @@ class SupabaseDbService {
       final corePayload = _stripExtendedProfileFields(
         fullPayload,
         stripUsername: true,
+        stripIsStudioPaused: true,
       );
       await client.from('profiles').upsert(corePayload);
       if (kDebugMode) {
@@ -526,9 +532,7 @@ class SupabaseDbService {
           radiusBuf.write('||team:$teamB64');
         } catch (_) {}
       }
-      if (user.isStudioPaused) {
-        radiusBuf.write('||paused:true');
-      }
+      radiusBuf.write('||paused:${user.isStudioPaused}');
       final cleanHandle = user.username.trim().replaceAll(RegExp(r'^@+'), '');
       if (cleanHandle.isNotEmpty && !cleanHandle.contains('@')) {
         radiusBuf.write('||handle:$cleanHandle');

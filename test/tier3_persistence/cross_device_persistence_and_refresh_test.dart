@@ -769,6 +769,10 @@ void main() {
 
     test('6. Pausing Studio Hides Studio & All Posted Recipes from Explore and Blocks Bookings', () async {
       var pausedInCloud = false;
+      var cloudServiceRadius = '25 miles • Mobile & Studio||paused:false';
+      var sawPausedTagOnFallback = false;
+      var sawResumedTagOnFallback = false;
+
       final studioUser = UserProfile(
         id: 'usr_pause_studio_01',
         role: UserRole.detailer,
@@ -816,11 +820,32 @@ void main() {
       _mockCloudProvider = (uri, method, requestBody) {
         if (uri.path.contains('/rest/v1/profiles') && (method == 'POST' || method == 'PATCH')) {
           final decoded = jsonDecode(requestBody);
-          final map = decoded is List ? decoded.first as Map : decoded as Map;
+          final map = decoded is List
+              ? Map<String, dynamic>.from(decoded.first as Map)
+              : Map<String, dynamic>.from(decoded as Map);
+          // Simulate missing street_address column triggering PGRST204 fallback
+          if (map.containsKey('street_address')) {
+            return {
+              'statusCode': 400,
+              'body': {
+                'code': 'PGRST204',
+                'message': "Could not find the 'street_address' column of 'profiles' in the schema cache",
+              },
+            };
+          }
           if (map.containsKey('is_studio_paused')) {
             pausedInCloud = map['is_studio_paused'] == true;
           }
-          return {'statusCode': 200, 'body': []};
+          if (map['service_radius'] is String) {
+            cloudServiceRadius = map['service_radius'] as String;
+            if (cloudServiceRadius.contains('||paused:true')) {
+              sawPausedTagOnFallback = true;
+            }
+            if (cloudServiceRadius.contains('||paused:false')) {
+              sawResumedTagOnFallback = true;
+            }
+          }
+          return {'statusCode': 200, 'body': [map]};
         }
         if (uri.path.contains('/rest/v1/jobs') && (method == 'POST' || method == 'PATCH')) {
           final decoded = jsonDecode(requestBody);
@@ -869,6 +894,7 @@ void main() {
                 'role': 'detailer',
                 'is_verified_host': true,
                 'is_studio_paused': pausedInCloud,
+                'service_radius': cloudServiceRadius,
                 'service_packages': [samplePackage.toJson()],
               },
             ],
@@ -883,6 +909,11 @@ void main() {
       );
       studioDevice.addJob(studioRecipe);
 
+      final secondStudioDevice = await harness.createDeviceSession(
+        user: studioUser,
+        isLoggedIn: true,
+      );
+
       final clientDevice = await harness.createDeviceSession(
         user: clientUser,
         isLoggedIn: true,
@@ -894,9 +925,15 @@ void main() {
       expect(clientDevice.filteredDetailers.any((d) => d.id == studioUser.id), isTrue);
       expect(clientDevice.filteredJobs.any((j) => j.id == studioRecipe.id), isTrue);
 
-      // Detailer pauses studio
+      // Detailer pauses studio on Device 1 (surviving PGRST204 fallback)
       final pauseResult = await studioDevice.setStudioPaused(true);
       expect(pauseResult.success, isTrue);
+      expect(pausedInCloud, isTrue);
+      expect(sawPausedTagOnFallback, isTrue);
+
+      // Secondary studio device stays synced as paused when refreshing workbench
+      await secondStudioDevice.refreshStudioWorkbench();
+      expect(secondStudioDevice.currentUser.isStudioPaused, isTrue);
 
       // Studio own Explore hides paused studio & recipes, while Studio Workbench Portfolio keeps it
       expect(studioDevice.publicDetailers.any((d) => d.id == studioUser.id), isFalse);
@@ -916,9 +953,14 @@ void main() {
       );
       expect(clientDevice.addBooking(blockedBooking), isFalse);
 
-      // Detailer resumes studio: studio & recipes reappear and booking succeeds
+      // Detailer resumes studio on Device 1 -> Device 2 & Client sync back to LIVE
       final resumeResult = await studioDevice.setStudioPaused(false);
       expect(resumeResult.success, isTrue);
+      expect(pausedInCloud, isFalse);
+      expect(sawResumedTagOnFallback, isTrue);
+
+      await secondStudioDevice.refreshStudioWorkbench();
+      expect(secondStudioDevice.currentUser.isStudioPaused, isFalse);
 
       await clientDevice.refreshExploreFeed();
       expect(clientDevice.publicDetailers.any((d) => d.id == studioUser.id), isTrue);
