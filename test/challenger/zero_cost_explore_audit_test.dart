@@ -406,27 +406,29 @@ void main() {
       await tester.pumpAndSettle();
       expect(interceptor.googleMapsApiRequests, 0);
 
-      // 3. Tap Near Me GPS button
-      final nearMeBtn = find.byKey(const Key('near_me_gps_btn'));
-      expect(nearMeBtn, findsOneWidget);
-      await tester.tap(nearMeBtn);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+      // 3. Select Current Location (Near Me) from location dropdown
+      Future<void> triggerNearMe() async {
+        await tester.tap(find.byKey(const Key('location_dropdown_btn')));
+        await tester.pumpAndSettle();
+        final menuNearMeItem = find.byKey(const Key('location_menu_near_me_item'));
+        expect(menuNearMeItem, findsOneWidget);
+        await tester.tap(menuNearMeItem);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+      }
+
+      await triggerNearMe();
       expect(interceptor.googleMapsApiRequests, 0);
       expect(interceptor.totalHttpRequests, 0);
 
       // Distance badge rendered
       expect(find.byKey(const Key('studio_distance_badge_det_test_ui')), findsOneWidget);
 
-      // 4. Rapid toggle of Near Me button (toggle off then back on)
-      await tester.tap(nearMeBtn);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 200));
+      // 4. Rapid toggle of Near Me option (toggle off then back on)
+      await triggerNearMe();
       expect(repo.currentUserGpsLocation, isNull);
 
-      await tester.tap(nearMeBtn);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 200));
+      await triggerNearMe();
       expect(repo.currentUserGpsLocation, isNotNull);
 
       // 5. Reset filters via quick reset button

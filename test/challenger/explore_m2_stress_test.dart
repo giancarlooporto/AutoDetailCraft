@@ -266,20 +266,27 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      final nearMeFinder = find.byKey(const Key('near_me_gps_btn'));
-      expect(nearMeFinder, findsOneWidget);
+      final locationDropdown = find.byKey(const Key('location_dropdown_btn'));
+      expect(locationDropdown, findsOneWidget);
 
-      // Rapidly fire 20 taps without pumping between them to test re-entrancy protection
+      // Open dropdown and rapidly fire 20 taps without pumping between them to test re-entrancy protection
+      await tester.tap(locationDropdown);
+      await tester.pumpAndSettle();
+      final nearMeMenuItem = find.byKey(const Key('location_menu_near_me_item'));
+      expect(nearMeMenuItem, findsOneWidget);
       for (int i = 0; i < 20; i++) {
-        await tester.tap(nearMeFinder, warnIfMissed: false);
+        await tester.tap(nearMeMenuItem, warnIfMissed: false);
       }
 
       // First pump to let the first tap trigger _isLocating = true
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 10));
 
-      // Fire 10 more taps while _isLocating is active
-      for (int i = 0; i < 10; i++) {
-        await tester.tap(nearMeFinder, warnIfMissed: false);
+      // Re-open dropdown while _isLocating is active and attempt another selection
+      await tester.tap(locationDropdown, warnIfMissed: false);
+      await tester.pump(const Duration(milliseconds: 10));
+      if (nearMeMenuItem.evaluate().isNotEmpty) {
+        await tester.tap(nearMeMenuItem.last, warnIfMissed: false);
       }
 
       // Allow the async simulated GPS delay to finish
@@ -360,14 +367,14 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      final nearMeFinder = find.byKey(const Key('near_me_gps_btn'));
+      final locationDropdown = find.byKey(const Key('location_dropdown_btn'));
 
       // Perform 20 toggle cycles (10 ON, 10 OFF)
       for (int i = 0; i < 20; i++) {
-        await tester.tap(nearMeFinder);
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 50));
-        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tap(locationDropdown);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('location_menu_near_me_item')));
+        await tester.pumpAndSettle();
 
         if (i % 2 == 0) {
           // Even iteration (0, 2, ...): Should be ON
@@ -392,9 +399,12 @@ void main() {
       await tester.pumpWidget(buildTestScreen(repo));
       await tester.pump();
 
-      // Trigger Near Me (request now in-flight)
-      await tester.tap(find.byKey(const Key('near_me_gps_btn')));
+      // Trigger Near Me from location dropdown (request now in-flight)
+      await tester.tap(find.byKey(const Key('location_dropdown_btn')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('location_menu_near_me_item')));
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       // Immediately unmount FeedScreen by pumping an empty SizedBox
       await tester.pumpWidget(const MaterialApp(home: SizedBox()));
@@ -435,10 +445,12 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      // Trigger "Near Me" GPS sort on mobile
-      final nearMeButton = find.byKey(const Key('near_me_gps_btn'));
-      expect(nearMeButton, findsOneWidget);
-      await tester.tap(nearMeButton);
+      // Trigger "Current Location (Near Me)" GPS sort from dropdown on mobile
+      final locationDropdown = find.byKey(const Key('location_dropdown_btn'));
+      expect(locationDropdown, findsOneWidget);
+      await tester.tap(locationDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('location_menu_near_me_item')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       await tester.pumpAndSettle();

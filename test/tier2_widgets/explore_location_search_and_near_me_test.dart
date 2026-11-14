@@ -127,11 +127,19 @@ void main() {
     );
   }
 
+  Future<void> triggerNearMeFromDropdown(WidgetTester tester) async {
+    await tester.tap(find.byKey(const Key('location_dropdown_btn')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('location_menu_near_me_item')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+  }
+
   // =========================================================================
-  // SECTION 1: "📍 Near Me" Button Rendering
+  // SECTION 1: Unified Location Switcher ("Current Location (Near Me)") Rendering
   // =========================================================================
-  group('1. "📍 Near Me" Button Rendering', () {
-    testWidgets('1.1 Desktop Viewport: Renders "Near Me" GPS button in header controls', (tester) async {
+  group('1. Unified Location Switcher Rendering', () {
+    testWidgets('1.1 Desktop Viewport: Removes standalone Near Me button and provides Current Location in dropdown', (tester) async {
       tester.view.physicalSize = const Size(1200, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
@@ -143,16 +151,22 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      // Verify Near Me button is present in the desktop header controls
-      final nearMeButtonFinder = find.byKey(const Key('near_me_gps_btn'));
-      expect(nearMeButtonFinder, findsOneWidget, reason: 'Near Me button must be rendered on desktop');
+      // Standalone Near Me button is removed (Turo / Airbnb unified bar)
+      expect(find.byKey(const Key('near_me_gps_btn')), findsNothing);
+      final locationDropdown = find.byKey(const Key('location_dropdown_btn'));
+      expect(locationDropdown, findsOneWidget, reason: 'Location dropdown must be rendered on desktop');
 
-      // Proximity sorting must initially be inactive
+      // Proximity sorting must initially be inactive without GPS coordinates
       expect(repo.currentUserGpsLocation, isNull);
       expect(find.textContaining('mi away'), findsNothing, reason: 'Distance badges must not show prior to GPS action');
+
+      // Opening location dropdown exposes Current Location (Near Me) as #1 option
+      await tester.tap(locationDropdown);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('location_menu_near_me_item')), findsOneWidget);
     });
 
-    testWidgets('1.2 Mobile Viewport: Renders "Near Me" GPS button in mobile filter bar', (tester) async {
+    testWidgets('1.2 Mobile Viewport: Removes standalone Near Me button and provides Current Location in dropdown', (tester) async {
       tester.view.physicalSize = const Size(400, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
@@ -164,8 +178,13 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      final nearMeButtonFinder = find.byKey(const Key('near_me_gps_btn'));
-      expect(nearMeButtonFinder, findsOneWidget, reason: 'Near Me button must be rendered on mobile filter bar');
+      expect(find.byKey(const Key('near_me_gps_btn')), findsNothing);
+      final locationDropdown = find.byKey(const Key('location_dropdown_btn'));
+      expect(locationDropdown, findsOneWidget, reason: 'Location dropdown must be rendered on mobile filter bar');
+
+      await tester.tap(locationDropdown);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('location_menu_near_me_item')), findsOneWidget);
     });
   });
 
@@ -173,7 +192,7 @@ void main() {
   // SECTION 2: Near Me GPS Proximity Sorting & Distance Badges
   // =========================================================================
   group('2. Near Me GPS Proximity Sorting & Distance Badges', () {
-    testWidgets('2.1 Tapping "Near Me" sorts studios by distance and displays distance badges', (tester) async {
+    testWidgets('2.1 Selecting "Current Location (Near Me)" sorts studios by distance and displays distance badges', (tester) async {
       tester.view.physicalSize = const Size(1200, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
@@ -189,12 +208,8 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      // Tap "📍 Near Me"
-      final nearMeButton = find.byKey(const Key('near_me_gps_btn'));
-      expect(nearMeButton, findsOneWidget);
-      await tester.tap(nearMeButton);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      // Select "Current Location (Near Me)" from location dropdown
+      await triggerNearMeFromDropdown(tester);
 
       // 1. Verify repository state reflects GPS location
       expect(repo.currentUserGpsLocation, isNotNull);
@@ -246,9 +261,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       // Trigger Near Me
-      await tester.tap(find.byKey(const Key('near_me_gps_btn')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      await triggerNearMeFromDropdown(tester);
       expect(find.textContaining('mi away'), findsWidgets);
 
       // Tap Reset Filters button
@@ -263,7 +276,7 @@ void main() {
       expect(repo.currentUserGpsLocation, isNull);
     });
 
-    testWidgets('2.3 Tapping Near Me while active toggles it off and clears proximity sort', (tester) async {
+    testWidgets('2.3 Selecting Current Location (Near Me) while active toggles it off and clears proximity sort', (tester) async {
       tester.view.physicalSize = const Size(1200, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
@@ -278,16 +291,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       // Tap 1: Activate Near Me
-      await tester.tap(find.byKey(const Key('near_me_gps_btn')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      await triggerNearMeFromDropdown(tester);
       expect(repo.currentUserGpsLocation, isNotNull);
       expect(find.textContaining('mi away'), findsWidgets);
 
       // Tap 2: Toggle off
-      await tester.tap(find.byKey(const Key('near_me_gps_btn')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      await triggerNearMeFromDropdown(tester);
 
       expect(repo.currentUserGpsLocation, isNull);
       expect(find.textContaining('mi away'), findsNothing);
@@ -589,11 +598,8 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      // Tap "📍 Near Me"
-      final nearMeButton = find.byKey(const Key('near_me_gps_btn'));
-      await tester.tap(nearMeButton);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      // Select "Current Location (Near Me)" from location dropdown
+      await triggerNearMeFromDropdown(tester);
 
       // Verification: App did not crash, studio cards remain visible, no unhandled error
       expect(find.byKey(const Key('detailer_card_det_austin')), findsOneWidget);
@@ -619,11 +625,8 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      // Tap "📍 Near Me"
-      final nearMeButton = find.byKey(const Key('near_me_gps_btn'));
-      await tester.tap(nearMeButton);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      // Select "Current Location (Near Me)" from location dropdown
+      await triggerNearMeFromDropdown(tester);
 
       // Verification: App caught the error safely; no unhandled exception thrown to tester
       expect(find.byKey(const Key('detailer_card_det_austin')), findsOneWidget);

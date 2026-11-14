@@ -200,74 +200,6 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
-  Widget _buildNearMeButton(
-    BuildContext context, {
-    required bool isNearMeActive,
-    bool isCompact = false,
-  }) {
-    return Tooltip(
-      message: isNearMeActive
-          ? 'Clear proximity filter (showing nearest)'
-          : 'Sort studios nearest to your GPS location',
-      child: InkWell(
-        key: const Key('near_me_gps_btn'),
-        borderRadius: BorderRadius.circular(10),
-        onTap: _isLocating ? null : () => _onNearMeTapped(context),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          height: 38,
-          padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 12),
-          decoration: BoxDecoration(
-            color: isNearMeActive ? AppTheme.primary.withAlpha(30) : AppTheme.surface,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: isNearMeActive ? AppTheme.primary : AppTheme.border,
-              width: isNearMeActive ? 1.5 : 1,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_isLocating)
-                const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
-                )
-              else
-                Icon(
-                  isNearMeActive ? Icons.near_me_rounded : Icons.near_me_outlined,
-                  size: 16,
-                  color: isNearMeActive ? AppTheme.primary : AppTheme.textMuted,
-                ),
-              const SizedBox(width: 6),
-              Text(
-                'Near Me',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isNearMeActive ? FontWeight.bold : FontWeight.w500,
-                  color: isNearMeActive ? AppTheme.primary : AppTheme.textPrimary,
-                  letterSpacing: -0.2,
-                ),
-              ),
-              if (isNearMeActive) ...[
-                const SizedBox(width: 4),
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: const BoxDecoration(
-                    color: AppTheme.primary,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildLocationDropdown(
     BuildContext context,
     List<String> activeCities,
@@ -297,11 +229,11 @@ class _FeedScreenState extends State<FeedScreen> {
         initialValue: selectedCity,
         onSelected: (loc) {
           if (loc == '__NEAR_ME__') {
-            widget.repository.setLocationFilter('All Locations');
-            if (widget.repository.currentUserGpsLocation == null) {
-              _onNearMeTapped(context);
-            }
+            _onNearMeTapped(context);
           } else {
+            if (loc == 'All Locations' && widget.repository.currentUserGpsLocation != null) {
+              widget.repository.clearProximitySort();
+            }
             widget.repository.setLocationFilter(loc);
           }
         },
@@ -420,22 +352,39 @@ class _FeedScreenState extends State<FeedScreen> {
                 height: 38,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 decoration: BoxDecoration(
-                  color: isFiltered ? AppTheme.primary.withAlpha(20) : AppTheme.surface,
+                  color: (isFiltered || widget.repository.currentUserGpsLocation != null)
+                      ? AppTheme.primary.withAlpha(20)
+                      : AppTheme.surface,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: isFiltered ? AppTheme.primary : AppTheme.border,
-                    width: isFiltered ? 1.5 : 1,
+                    color: (isFiltered || widget.repository.currentUserGpsLocation != null)
+                        ? AppTheme.primary
+                        : AppTheme.border,
+                    width: (isFiltered || widget.repository.currentUserGpsLocation != null)
+                        ? 1.5
+                        : 1,
                   ),
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      selectedCity == 'All Locations'
-                          ? Icons.travel_explore_rounded
-                          : Icons.location_on_rounded,
-                      size: 14,
-                      color: isFiltered ? AppTheme.primary : AppTheme.textMuted,
-                    ),
+                    if (_isLocating)
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
+                      )
+                    else
+                      Icon(
+                        selectedCity == 'All Locations'
+                            ? (widget.repository.currentUserGpsLocation != null
+                                ? Icons.my_location_rounded
+                                : Icons.travel_explore_rounded)
+                            : Icons.location_on_rounded,
+                        size: 14,
+                        color: (isFiltered || widget.repository.currentUserGpsLocation != null)
+                            ? AppTheme.primary
+                            : AppTheme.textMuted,
+                      ),
                     const SizedBox(width: 5),
                     Expanded(
                       child: Text(
@@ -815,7 +764,6 @@ class _FeedScreenState extends State<FeedScreen> {
         final detailers = widget.repository.filteredDetailers;
         final activeCities = widget.repository.activeCitiesWithDetailers;
         final selectedCity = widget.repository.selectedLocationCity;
-        final isNearMeActive = widget.repository.isNearMeActive;
         final isFilterActive = selectedCity != 'All Locations' ||
             _searchCtrl.text.isNotEmpty ||
             widget.repository.currentUserGpsLocation != null;
@@ -944,11 +892,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                     ),
                                      const SizedBox(width: 8),
 
-                                    // 2. Near Me Action Button
-                                    _buildNearMeButton(context, isNearMeActive: isNearMeActive),
-                                    const SizedBox(width: 8),
-
-                                    // 3. All Locations Dropdown
+                                    // 2. All Locations Dropdown (with Current Location at top)
                                     ConstrainedBox(
                                       constraints: const BoxConstraints(minWidth: 150, maxWidth: 200),
                                       child: _buildLocationDropdown(
@@ -1013,10 +957,6 @@ class _FeedScreenState extends State<FeedScreen> {
                                         isEmbedded: false,
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-
-                                    // Near Me Button
-                                    _buildNearMeButton(context, isNearMeActive: isNearMeActive, isCompact: false),
 
                                     // Quick Reset button if filters active
                                     if (isFilterActive) ...[
