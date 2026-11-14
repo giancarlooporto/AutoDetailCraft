@@ -25,6 +25,34 @@ class _FeedScreenState extends State<FeedScreen> {
   bool _isLocating = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initDefaultNearMeGps();
+    });
+  }
+
+  Future<void> _initDefaultNearMeGps() async {
+    if (!mounted ||
+        LocationService.hasMockLocationProvider ||
+        !widget.repository.isNearMeActive ||
+        widget.repository.currentUserGpsLocation != null) {
+      return;
+    }
+    try {
+      final coords = await LocationService.getCurrentLocation();
+      if (!mounted ||
+          coords == null ||
+          widget.repository.selectedLocationCity != 'All Locations' ||
+          widget.repository.searchQuery.trim().isNotEmpty ||
+          !widget.repository.isNearMeActive) {
+        return;
+      }
+      await widget.repository.sortDetailersByProximity(coords.latitude, coords.longitude);
+    } catch (_) {}
+  }
+
+  @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
@@ -114,6 +142,10 @@ class _FeedScreenState extends State<FeedScreen> {
       if (!context.mounted) return;
 
       if (coords != null) {
+        if (_searchCtrl.text.isNotEmpty) {
+          _searchCtrl.clear();
+          widget.repository.setSearchQuery('');
+        }
         if (widget.repository.selectedLocationCity != 'All Locations') {
           widget.repository.setLocationFilter('All Locations');
         }
@@ -421,7 +453,7 @@ class _FeedScreenState extends State<FeedScreen> {
                       Expanded(
                         child: Text(
                           selectedCity == 'All Locations'
-                              ? (widget.repository.currentUserGpsLocation != null
+                              ? (widget.repository.isNearMeActive
                                   ? 'Studios Near You'
                                   : 'Featured Detailers & Studios')
                               : 'Verified Studios in $selectedCity',
@@ -728,10 +760,10 @@ class _FeedScreenState extends State<FeedScreen> {
         final detailers = widget.repository.filteredDetailers;
         final activeCities = widget.repository.activeCitiesWithDetailers;
         final selectedCity = widget.repository.selectedLocationCity;
-        final isNearMeActive = widget.repository.currentUserGpsLocation != null;
+        final isNearMeActive = widget.repository.isNearMeActive;
         final isFilterActive = selectedCity != 'All Locations' ||
             _searchCtrl.text.isNotEmpty ||
-            isNearMeActive;
+            widget.repository.currentUserGpsLocation != null;
 
         return LayoutBuilder(
           builder: (context, constraints) {

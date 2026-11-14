@@ -46,22 +46,55 @@ class JobRepository extends ChangeNotifier {
   final Map<String, DetailerCalendarPreferences> _detailerPreferencesMap = {};
   final Map<String, double> _detailerDistanceCache = {};
   LocationCoordinates? _currentUserGpsLocation;
+  bool _isNearMeDefaultActive = true;
 
   LocationCoordinates? get currentUserGpsLocation => _currentUserGpsLocation;
-  double? getDistanceToDetailer(String detailerId) {
+
+  bool get isNearMeActive {
+    if (_selectedLocationCity != 'All Locations' || _isPlaceSearchQuery(_searchQuery)) {
+      return false;
+    }
+    return _currentUserGpsLocation != null || _isNearMeDefaultActive;
+  }
+
+  LocationCoordinates? get effectiveNearMeLocation {
+    if (_selectedLocationCity != 'All Locations' || _isPlaceSearchQuery(_searchQuery)) {
+      return null;
+    }
+    if (_currentUserGpsLocation != null) return _currentUserGpsLocation;
+    if (_isNearMeDefaultActive) {
+      if (_currentUser.latitude != null && _currentUser.longitude != null) {
+        return LocationCoordinates(
+          latitude: _currentUser.latitude!,
+          longitude: _currentUser.longitude!,
+        );
+      }
+      final sLat = _currentUser.effectiveStudioLatitude;
+      final sLon = _currentUser.effectiveStudioLongitude;
+      if (sLat != null && sLon != null) {
+        return LocationCoordinates(latitude: sLat, longitude: sLon);
+      }
+    }
+    return null;
+  }
+
+  double? getDistanceToDetailer(String detailerId, {UserProfile? fallbackAuthor}) {
     if (_detailerDistanceCache.containsKey(detailerId)) {
       return _detailerDistanceCache[detailerId];
     }
-    if (_currentUserGpsLocation != null) {
+    final origin = effectiveNearMeLocation;
+    if (origin != null) {
       final matches = publicDetailers.where((d) => d.id == detailerId);
-      if (matches.isNotEmpty) {
-        final detailer = matches.first;
+      final detailer = matches.isNotEmpty
+          ? matches.first
+          : (fallbackAuthor ?? _jobs.where((j) => j.author.id == detailerId).firstOrNull?.author);
+      if (detailer != null) {
         final sLat = detailer.effectiveStudioLatitude;
         final sLon = detailer.effectiveStudioLongitude;
         if (sLat != null && sLon != null) {
           final dist = LocationService.calculateDistanceMiles(
-            _currentUserGpsLocation!.latitude,
-            _currentUserGpsLocation!.longitude,
+            origin.latitude,
+            origin.longitude,
             sLat,
             sLon,
           );
@@ -1645,20 +1678,110 @@ class JobRepository extends ChangeNotifier {
     return cities.toList();
   }
 
+  int _compareDetailersByNearMe(UserProfile a, UserProfile b) {
+    final distA = getDistanceToDetailer(a.id, fallbackAuthor: a);
+    final distB = getDistanceToDetailer(b.id, fallbackAuthor: b);
+    if (distA != null || distB != null) {
+      if (distA == null) return 1;
+      if (distB == null) return -1;
+      if ((distA - distB).abs() > 0.01) {
+        return distA.compareTo(distB);
+      }
+    }
+
+    final userCity = (_currentUser.studioCity.isNotEmpty
+            ? _currentUser.studioCity
+            : _currentUser.city)
+        .trim()
+        .toLowerCase();
+    final userState = (_currentUser.studioState.isNotEmpty
+            ? _currentUser.studioState
+            : _currentUser.state)
+        .trim()
+        .toLowerCase();
+    final userLoc = _currentUser.location.trim().toLowerCase();
+
+    int locationMatchScore(UserProfile d) {
+      int score = 0;
+      final dCity = (d.studioCity.isNotEmpty ? d.studioCity : d.city).trim().toLowerCase();
+      final dState = (d.studioState.isNotEmpty ? d.studioState : d.state).trim().toLowerCase();
+      final dLoc = d.location.trim().toLowerCase();
+      if (userCity.isNotEmpty &&
+          (dCity == userCity || dLoc.contains(userCity))) {
+        score += 2;
+      }
+      if (userState.isNotEmpty &&
+          (dState == userState || dLoc.contains(userState))) {
+        score += 1;
+      }
+      if (score == 0 && userLoc.isNotEmpty && dLoc == userLoc) {
+        score += 2;
+      }
+      return score;
+    }
+
+    if (userCity.isNotEmpty || userState.isNotEmpty || userLoc.isNotEmpty) {
+      final matchA = locationMatchScore(a);
+      final matchB = locationMatchScore(b);
+      if (matchA != matchB) {
+        return matchB.compareTo(matchA);
+      }
+    }
+
+    return 0;
+  }
+
+  bool _matchesLocationSelection(UserProfile profile, String selectedLocation) {
+    final target = selectedLocation.trim().toLowerCase();
+    if (target.isEmpty || target == 'all locations') return true;
+    final studioCityState = [
+      profile.studioCity.trim(),
+      profile.studioState.trim(),
+    ].where((s) => s.isNotEmpty).join(', ').toLowerCase();
+    final userCityState = [
+      profile.city.trim(),
+      profile.state.trim(),
+    ].where((s) => s.isNotEmpty).join(', ').toLowerCase();
+
+    return profile.location.toLowerCase().contains(target) ||
+        profile.studioCity.toLowerCase().contains(target) ||
+        profile.city.toLowerCase().contains(target) ||
+        profile.studioState.toLowerCase().contains(target) ||
+        profile.state.toLowerCase().contains(target) ||
+        studioCityState.contains(target) ||
+        userCityState.contains(target);
+  }
+
+  bool _isPlaceSearchQuery(String rawQuery) {
+    final q = rawQuery.trim().toLowerCase();
+    if (q.isEmpty) return false;
+    bool matchesPlace(UserProfile p) {
+      return p.location.toLowerCase().contains(q) ||
+          p.city.toLowerCase().contains(q) ||
+          p.studioCity.toLowerCase().contains(q) ||
+          p.state.toLowerCase().contains(q) ||
+          p.studioState.toLowerCase().contains(q) ||
+          p.postalCode.toLowerCase().contains(q) ||
+          p.studioPostalCode.toLowerCase().contains(q) ||
+          _matchesLocationSelection(p, q);
+    }
+
+    return publicDetailers.any(matchesPlace) ||
+        _jobs.any((j) => matchesPlace(j.author));
+  }
+
   List<DetailJob> get filteredJobs {
     final list = _jobs.where((job) {
       if (isDetailerStudioPaused(job.author)) {
         return false;
       }
       if (_selectedLocationCity != 'All Locations' &&
-          !job.author.location.toLowerCase().contains(_selectedLocationCity.toLowerCase()) &&
-          !job.author.studioCity.toLowerCase().contains(_selectedLocationCity.toLowerCase()) &&
-          !job.author.city.toLowerCase().contains(_selectedLocationCity.toLowerCase())) {
+          !_matchesLocationSelection(job.author, _selectedLocationCity)) {
         return false;
       }
 
-      if (_searchQuery.isNotEmpty) {
-        final q = _searchQuery.toLowerCase();
+      if (_searchQuery.trim().isNotEmpty) {
+        final q = _searchQuery.trim().toLowerCase();
         final matchVehicle = job.vehicleFullName.toLowerCase().contains(q);
         final matchColor = job.paintColorName.toLowerCase().contains(q);
         final matchTitle = job.title.toLowerCase().contains(q);
@@ -1671,6 +1794,7 @@ class JobRepository extends ChangeNotifier {
             job.author.studioPostalCode.toLowerCase().contains(q);
         final matchState = job.author.state.toLowerCase().contains(q) ||
             job.author.studioState.toLowerCase().contains(q);
+        final matchCombinedLoc = _matchesLocationSelection(job.author, q);
 
         if (!matchVehicle &&
             !matchColor &&
@@ -1680,7 +1804,8 @@ class JobRepository extends ChangeNotifier {
             !matchLocation &&
             !matchCity &&
             !matchPostal &&
-            !matchState) {
+            !matchState &&
+            !matchCombinedLoc) {
           return false;
         }
       }
@@ -1688,8 +1813,12 @@ class JobRepository extends ChangeNotifier {
       return true;
     }).toList();
 
-    // Sort jobs by recency combined with detailer composite rank weight
+    // When Near Me is active (default until place search), sort nearby studios' posts first
     list.sort((a, b) {
+      if (isNearMeActive) {
+        final nearCmp = _compareDetailersByNearMe(a.author, b.author);
+        if (nearCmp != 0) return nearCmp;
+      }
       final scoreA = a.createdAt.millisecondsSinceEpoch + (calculateDetailerCompositeScore(a.author) * 86400000);
       final scoreB = b.createdAt.millisecondsSinceEpoch + (calculateDetailerCompositeScore(b.author) * 86400000);
       return scoreB.compareTo(scoreA);
@@ -1737,9 +1866,7 @@ class JobRepository extends ChangeNotifier {
   List<UserProfile> get filteredDetailers {
     final list = publicDetailers.where((detailer) {
       if (_selectedLocationCity != 'All Locations' &&
-          !detailer.location.toLowerCase().contains(_selectedLocationCity.toLowerCase()) &&
-          !detailer.studioCity.toLowerCase().contains(_selectedLocationCity.toLowerCase()) &&
-          !detailer.city.toLowerCase().contains(_selectedLocationCity.toLowerCase())) {
+          !_matchesLocationSelection(detailer, _selectedLocationCity)) {
         return false;
       }
 
@@ -1755,6 +1882,7 @@ class JobRepository extends ChangeNotifier {
             detailer.studioPostalCode.toLowerCase().contains(q);
         final matchState = detailer.state.toLowerCase().contains(q) ||
             detailer.studioState.toLowerCase().contains(q);
+        final matchCombinedLoc = _matchesLocationSelection(detailer, q);
         final matchServices = detailer.servicePackages.any((p) =>
             p.title.toLowerCase().contains(q) ||
             p.description.toLowerCase().contains(q) ||
@@ -1767,7 +1895,8 @@ class JobRepository extends ChangeNotifier {
             !matchServices &&
             !matchCity &&
             !matchPostal &&
-            !matchState) {
+            !matchState &&
+            !matchCombinedLoc) {
           return false;
         }
       }
@@ -1784,6 +1913,16 @@ class JobRepository extends ChangeNotifier {
         if (distA == null) return 1;
         if (distB == null) return -1;
         return distA.compareTo(distB);
+      });
+      return list;
+    }
+
+    // If Near Me default is active (using saved profile location or city/state), sort nearby first
+    if (isNearMeActive) {
+      list.sort((a, b) {
+        final nearCmp = _compareDetailersByNearMe(a, b);
+        if (nearCmp != 0) return nearCmp;
+        return calculateDetailerCompositeScore(b).compareTo(calculateDetailerCompositeScore(a));
       });
       return list;
     }
@@ -1807,11 +1946,25 @@ class JobRepository extends ChangeNotifier {
 
   void setLocationFilter(String city) {
     _selectedLocationCity = city;
+    _detailerDistanceCache.clear();
+    if (city != 'All Locations') {
+      _isNearMeDefaultActive = false;
+      _currentUserGpsLocation = null;
+    } else if (_searchQuery.trim().isEmpty) {
+      _isNearMeDefaultActive = true;
+    }
     notifyListeners();
   }
 
   void setSearchQuery(String query) {
     _searchQuery = query;
+    if (_isPlaceSearchQuery(query)) {
+      _isNearMeDefaultActive = false;
+      _currentUserGpsLocation = null;
+      _detailerDistanceCache.clear();
+    } else if (query.trim().isEmpty && _selectedLocationCity == 'All Locations') {
+      _isNearMeDefaultActive = true;
+    }
     notifyListeners();
   }
 
@@ -1821,6 +1974,7 @@ class JobRepository extends ChangeNotifier {
     _selectedServiceType = 'All Services';
     _selectedLocationCity = 'All Locations';
     _searchQuery = '';
+    _isNearMeDefaultActive = true;
     _currentUserGpsLocation = null;
     _detailerDistanceCache.clear();
     notifyListeners();
@@ -2084,6 +2238,7 @@ class JobRepository extends ChangeNotifier {
 
   /// Calculates distances and sorts public detailers in ascending proximity from coordinates.
   Future<void> sortDetailersByProximity(double userLat, double userLon) async {
+    _isNearMeDefaultActive = true;
     _currentUserGpsLocation = LocationCoordinates(latitude: userLat, longitude: userLon);
     _detailerDistanceCache.clear();
 
@@ -2110,6 +2265,7 @@ class JobRepository extends ChangeNotifier {
 
   /// Clears GPS proximity sort and cached distances.
   void clearProximitySort() {
+    _isNearMeDefaultActive = false;
     _currentUserGpsLocation = null;
     _detailerDistanceCache.clear();
     notifyListeners();

@@ -51,6 +51,9 @@ class LocationService {
     _mockLocationProvider = null;
   }
 
+  /// Whether a deterministic mock location provider is active for tests.
+  static bool get hasMockLocationProvider => _mockLocationProvider != null;
+
   /// Retrieves current device GPS coordinates with safe permission checks and fallbacks.
   /// Returns null if location services are disabled, permissions are denied,
   /// or if an error / timeout occurs.

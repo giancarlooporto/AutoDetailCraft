@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:detail_craft/core/theme/app_theme.dart';
 import 'package:detail_craft/models/user_profile.dart';
 import 'package:detail_craft/models/booking_models.dart';
+import 'package:detail_craft/models/detail_job.dart';
 import 'package:detail_craft/services/job_repository.dart';
 import 'package:detail_craft/services/location_service.dart';
 import 'package:detail_craft/screens/feed_screen.dart';
@@ -365,6 +366,97 @@ void main() {
       expect(find.byKey(const Key('detailer_card_det_austin')), findsOneWidget);
       expect(find.byKey(const Key('detailer_card_det_round_rock')), findsNothing);
       expect(find.byKey(const Key('detailer_card_det_san_antonio')), findsNothing);
+    });
+
+    test('3.3 Near Me is active by default (sorting nearby detailers and their posts first) until user searches a place (city, province, state)', () async {
+      final austinClient = const UserProfile(
+        id: 'usr_austin_client',
+        role: UserRole.client,
+        username: 'austinclient',
+        displayName: 'Austin Client',
+        businessName: '',
+        city: 'Austin',
+        state: 'TX',
+        latitude: 30.2672,
+        longitude: -97.7431,
+      );
+
+      final repo = await TestHarness.createSession(isLoggedIn: false);
+      await repo.updateCurrentUser(austinClient);
+      repo.isLoggedIn = true;
+      // Seed San Antonio BEFORE Austin so default ordering proves Near Me sorting
+      repo.setPublicDetailersForTesting([studioSanAntonio, studioAustin]);
+
+      final saPost = DetailJob(
+        id: 'job_sa_post_01',
+        author: studioSanAntonio,
+        createdAt: DateTime.now(),
+        title: 'San Antonio Newer Post',
+        description: 'Latest post from farther city',
+        vehicleYear: 2025,
+        vehicleMake: 'BMW',
+        vehicleModel: 'M3',
+        paintColorName: 'Black Sapphire',
+        paintCode: '475',
+        paintHardness: PaintHardness.medium,
+        initialPaintThicknessMicrons: 130,
+        finalPaintThicknessMicrons: 126,
+        defectSeverity: 2,
+        serviceType: 'Paint Correction',
+        recipeStages: const [],
+        beforeImageUrl: 'https://example.com/sa_b.jpg',
+        afterImageUrl: 'https://example.com/sa_a.jpg',
+      );
+      final austinPost = DetailJob(
+        id: 'job_austin_post_01',
+        author: studioAustin,
+        createdAt: DateTime.now().subtract(const Duration(days: 5)),
+        title: 'Austin Nearby Post',
+        description: 'Older post from nearby studio',
+        vehicleYear: 2024,
+        vehicleMake: 'Porsche',
+        vehicleModel: '911',
+        paintColorName: 'Guards Red',
+        paintCode: '84A',
+        paintHardness: PaintHardness.medium,
+        initialPaintThicknessMicrons: 132,
+        finalPaintThicknessMicrons: 128,
+        defectSeverity: 2,
+        serviceType: 'Ceramic Coating',
+        recipeStages: const [],
+        beforeImageUrl: 'https://example.com/atx_b.jpg',
+        afterImageUrl: 'https://example.com/atx_a.jpg',
+      );
+
+      repo.addJob(saPost);
+      repo.addJob(austinPost);
+
+      // 1. Default Explore state has Near Me active, showing Austin studio & Austin post first
+      expect(repo.isNearMeActive, isTrue);
+      expect(repo.filteredDetailers.first.id, equals(studioAustin.id));
+      expect(repo.filteredJobs.first.id, equals(austinPost.id));
+
+      // 2. Searching a place by city or state/province switches off default Near Me and shows that place
+      repo.setSearchQuery('San Antonio');
+      expect(repo.isNearMeActive, isFalse);
+      expect(repo.filteredDetailers.map((d) => d.id), equals([studioSanAntonio.id]));
+      expect(repo.filteredJobs.map((j) => j.id), equals([saPost.id]));
+
+      repo.setSearchQuery('');
+      expect(repo.isNearMeActive, isTrue);
+      expect(repo.filteredDetailers.first.id, equals(studioAustin.id));
+      expect(repo.filteredJobs.first.id, equals(austinPost.id));
+
+      // 3. Selecting a city from the location dropdown also deactivates Near Me until reset to All Locations
+      repo.setLocationFilter('San Antonio, TX');
+      expect(repo.isNearMeActive, isFalse);
+      expect(repo.filteredDetailers.map((d) => d.id), equals([studioSanAntonio.id]));
+      expect(repo.filteredJobs.map((j) => j.id), equals([saPost.id]));
+
+      repo.setLocationFilter('All Locations');
+      expect(repo.isNearMeActive, isTrue);
+      expect(repo.filteredDetailers.first.id, equals(studioAustin.id));
+      expect(repo.filteredJobs.first.id, equals(austinPost.id));
     });
   });
 
