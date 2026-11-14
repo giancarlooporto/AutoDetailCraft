@@ -458,6 +458,116 @@ void main() {
       expect(repo.filteredDetailers.first.id, equals(studioAustin.id));
       expect(repo.filteredJobs.first.id, equals(austinPost.id));
     });
+
+    test('3.4 Searching "near me" or "<service> near me" in search bar strips "near me" phrase, activates proximity sorting, and filters by service keyword', () async {
+      // 1. Phrase detection and stripping
+      expect(JobRepository.containsNearMePhrase('near me'), isTrue);
+      expect(JobRepository.containsNearMePhrase('Near Me'), isTrue);
+      expect(JobRepository.containsNearMePhrase('ceramic coating near me'), isTrue);
+      expect(JobRepository.containsNearMePhrase('near me paint correction'), isTrue);
+      expect(JobRepository.containsNearMePhrase('tint nearby'), isTrue);
+      expect(JobRepository.containsNearMePhrase('mobile detailing around me'), isTrue);
+      expect(JobRepository.containsNearMePhrase('Austin, TX'), isFalse);
+
+      expect(JobRepository.stripNearMePhrase('near me'), equals(''));
+      expect(JobRepository.stripNearMePhrase('Near Me'), equals(''));
+      expect(JobRepository.stripNearMePhrase('ceramic coating near me'), equals('ceramic coating'));
+      expect(JobRepository.stripNearMePhrase('near me paint correction'), equals('paint correction'));
+      expect(JobRepository.stripNearMePhrase('tint nearby'), equals('tint'));
+      expect(JobRepository.stripNearMePhrase('mobile detailing around me'), equals('mobile detailing'));
+
+      final austinClient = const UserProfile(
+        id: 'usr_austin_client',
+        role: UserRole.client,
+        username: 'austinclient',
+        displayName: 'Austin Client',
+        businessName: '',
+        city: 'Austin',
+        state: 'TX',
+        latitude: 30.2672,
+        longitude: -97.7431,
+      );
+
+      final studioSanAntonioCeramic = studioSanAntonio.copyWith(
+        id: 'det_sa_ceramic',
+        servicePackages: studioAustin.servicePackages,
+      );
+
+      final repo = await TestHarness.createSession(isLoggedIn: false);
+      await repo.updateCurrentUser(austinClient);
+      repo.isLoggedIn = true;
+      repo.setPublicDetailersForTesting([studioSanAntonio, studioSanAntonioCeramic, studioAustin]);
+
+      final saPost = DetailJob(
+        id: 'job_sa_post_02',
+        author: studioSanAntonio,
+        createdAt: DateTime.now(),
+        title: 'San Antonio Newer Post',
+        description: 'Multi-step paint correction in SA',
+        vehicleYear: 2025,
+        vehicleMake: 'BMW',
+        vehicleModel: 'M3',
+        paintColorName: 'Black Sapphire',
+        paintCode: '475',
+        paintHardness: PaintHardness.medium,
+        initialPaintThicknessMicrons: 130,
+        finalPaintThicknessMicrons: 126,
+        defectSeverity: 2,
+        serviceType: 'Paint Correction',
+        recipeStages: const [],
+        beforeImageUrl: 'https://example.com/sa_b.jpg',
+        afterImageUrl: 'https://example.com/sa_a.jpg',
+      );
+      final austinPost = DetailJob(
+        id: 'job_austin_post_02',
+        author: studioAustin,
+        createdAt: DateTime.now().subtract(const Duration(days: 5)),
+        title: 'Austin Nearby Gloss',
+        description: '9H gloss protection package',
+        vehicleYear: 2024,
+        vehicleMake: 'Porsche',
+        vehicleModel: '911',
+        paintColorName: 'Guards Red',
+        paintCode: '84A',
+        paintHardness: PaintHardness.medium,
+        initialPaintThicknessMicrons: 132,
+        finalPaintThicknessMicrons: 128,
+        defectSeverity: 2,
+        serviceType: 'Ceramic Coating',
+        recipeStages: const [],
+        beforeImageUrl: 'https://example.com/atx_b.jpg',
+        afterImageUrl: 'https://example.com/atx_a.jpg',
+      );
+
+      repo.addJob(saPost);
+      repo.addJob(austinPost);
+
+      // First select San Antonio in dropdown (deactivating Near Me)
+      repo.setLocationFilter('San Antonio, TX');
+      expect(repo.isNearMeActive, isFalse);
+      expect(repo.selectedLocationCity, equals('San Antonio, TX'));
+
+      // 2. Typing standalone 'near me' resets city filter and restores Near Me sorting
+      repo.setSearchQuery('near me');
+      expect(repo.isNearMeActive, isTrue);
+      expect(repo.selectedLocationCity, equals('All Locations'));
+      expect(repo.effectiveSearchQuery, isEmpty);
+      expect(repo.filteredDetailers.length, equals(3));
+      expect(repo.filteredDetailers.first.id, equals(studioAustin.id));
+      expect(repo.filteredJobs.first.id, equals(austinPost.id));
+
+      // 3. Typing '<service> near me' strips 'near me', filters by service, and sorts nearest first
+      repo.setSearchQuery('Ceramic Coating near me');
+      expect(repo.isNearMeActive, isTrue);
+      expect(repo.effectiveSearchQuery, equals('Ceramic Coating'));
+      expect(repo.filteredDetailers.map((d) => d.id), equals([studioAustin.id, studioSanAntonioCeramic.id]));
+      expect(repo.filteredJobs.map((j) => j.id), equals([austinPost.id]));
+
+      repo.setSearchQuery('Paint Correction near me');
+      expect(repo.isNearMeActive, isTrue);
+      expect(repo.effectiveSearchQuery, equals('Paint Correction'));
+      expect(repo.filteredJobs.map((j) => j.id), equals([saPost.id]));
+    });
   });
 
   // =========================================================================

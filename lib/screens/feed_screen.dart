@@ -44,12 +44,22 @@ class _FeedScreenState extends State<FeedScreen> {
       if (!mounted ||
           coords == null ||
           widget.repository.selectedLocationCity != 'All Locations' ||
-          widget.repository.searchQuery.trim().isNotEmpty ||
+          !(widget.repository.effectiveSearchQuery.isEmpty ||
+              JobRepository.containsNearMePhrase(widget.repository.searchQuery)) ||
           !widget.repository.isNearMeActive) {
         return;
       }
       await widget.repository.sortDetailersByProximity(coords.latitude, coords.longitude);
     } catch (_) {}
+  }
+
+  void _onSearchQueryChanged(String v) {
+    widget.repository.setSearchQuery(v);
+    if (JobRepository.containsNearMePhrase(v) &&
+        widget.repository.currentUserGpsLocation == null &&
+        !LocationService.hasMockLocationProvider) {
+      _initDefaultNearMeGps();
+    }
   }
 
   @override
@@ -285,39 +295,84 @@ class _FeedScreenState extends State<FeedScreen> {
           ),
         ),
         initialValue: selectedCity,
-        onSelected: (loc) => widget.repository.setLocationFilter(loc),
-        itemBuilder: (context) => activeCities.map((loc) {
-          final isSelected = selectedCity == loc;
-          return PopupMenuItem<String>(
-            value: loc,
-            height: 40,
-            child: Row(
-              children: [
-                Icon(
-                  loc == 'All Locations'
-                      ? Icons.travel_explore_rounded
-                      : Icons.location_on_rounded,
-                  size: 15,
-                  color: isSelected ? AppTheme.primary : AppTheme.textMuted,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    loc,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                      color: isSelected ? AppTheme.primary : AppTheme.textPrimary,
-                    ),
-                    overflow: TextOverflow.ellipsis,
+        onSelected: (loc) {
+          if (loc == '__NEAR_ME__') {
+            widget.repository.setLocationFilter('All Locations');
+            if (widget.repository.currentUserGpsLocation == null) {
+              _onNearMeTapped(context);
+            }
+          } else {
+            widget.repository.setLocationFilter(loc);
+          }
+        },
+        itemBuilder: (context) {
+          final isNearMeSelected =
+              widget.repository.isNearMeActive && selectedCity == 'All Locations';
+          return [
+            PopupMenuItem<String>(
+              key: const Key('location_menu_near_me_item'),
+              value: '__NEAR_ME__',
+              height: 40,
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.my_location_rounded,
+                    size: 15,
+                    color: isNearMeSelected ? AppTheme.primary : AppTheme.textMuted,
                   ),
-                ),
-                if (isSelected)
-                  const Icon(Icons.check_rounded, size: 16, color: AppTheme.primary),
-              ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Current Location (Near Me)',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: isNearMeSelected ? FontWeight.bold : FontWeight.w500,
+                        color: isNearMeSelected ? AppTheme.primary : AppTheme.textPrimary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (isNearMeSelected)
+                    const Icon(Icons.check_rounded, size: 16, color: AppTheme.primary),
+                ],
+              ),
             ),
-          );
-        }).toList(),
+            const PopupMenuDivider(height: 1),
+            ...activeCities.map((loc) {
+              final isSelected =
+                  selectedCity == loc && !(loc == 'All Locations' && isNearMeSelected);
+              return PopupMenuItem<String>(
+                value: loc,
+                height: 40,
+                child: Row(
+                  children: [
+                    Icon(
+                      loc == 'All Locations'
+                          ? Icons.travel_explore_rounded
+                          : Icons.location_on_rounded,
+                      size: 15,
+                      color: isSelected ? AppTheme.primary : AppTheme.textMuted,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        loc,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          color: isSelected ? AppTheme.primary : AppTheme.textPrimary,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (isSelected)
+                      const Icon(Icons.check_rounded, size: 16, color: AppTheme.primary),
+                  ],
+                ),
+              );
+            }),
+          ];
+        },
         child: isEmbedded
             ? Container(
                 height: 48,
@@ -782,7 +837,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                 hintText: 'Search city, detailer name, ceramic...',
                                 border: InputBorder.none,
                               ),
-                              onChanged: (v) => widget.repository.setSearchQuery(v),
+                              onChanged: _onSearchQueryChanged,
                             )
                           : Row(
                               mainAxisSize: MainAxisSize.min,
@@ -869,7 +924,7 @@ class _FeedScreenState extends State<FeedScreen> {
                                                   isDense: true,
                                                   contentPadding: EdgeInsets.symmetric(vertical: 8),
                                                 ),
-                                                onChanged: (v) => widget.repository.setSearchQuery(v),
+                                                onChanged: _onSearchQueryChanged,
                                               ),
                                             ),
                                             if (_searchCtrl.text.isNotEmpty)

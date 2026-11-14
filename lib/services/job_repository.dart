@@ -48,21 +48,49 @@ class JobRepository extends ChangeNotifier {
   LocationCoordinates? _currentUserGpsLocation;
   bool _isNearMeDefaultActive = true;
 
+  static final RegExp _nearMePhraseRegex = RegExp(
+    r'\b(near\s+me|nearby|around\s+me|close\s+to\s+me)\b',
+    caseSensitive: false,
+  );
+  static final RegExp _danglingPrepositionRegex = RegExp(
+    r'(^\s*(in|at|for)\b|\b(in|at|for)\s*$)',
+    caseSensitive: false,
+  );
+
+  static bool containsNearMePhrase(String rawQuery) {
+    if (rawQuery.isEmpty || rawQuery.length > 200) return false;
+    return _nearMePhraseRegex.hasMatch(rawQuery);
+  }
+
+  static String stripNearMePhrase(String rawQuery) {
+    if (rawQuery.isEmpty || rawQuery.length > 200) return rawQuery.trim();
+    if (!_nearMePhraseRegex.hasMatch(rawQuery)) return rawQuery.trim();
+    var cleaned = rawQuery.replaceAll(_nearMePhraseRegex, ' ');
+    cleaned = cleaned.replaceAll(_danglingPrepositionRegex, ' ');
+    cleaned = cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return cleaned;
+  }
+
+  String get effectiveSearchQuery => stripNearMePhrase(_searchQuery);
+
   LocationCoordinates? get currentUserGpsLocation => _currentUserGpsLocation;
 
   bool get isNearMeActive {
-    if (_selectedLocationCity != 'All Locations' || _isPlaceSearchQuery(_searchQuery)) {
+    if (containsNearMePhrase(_searchQuery)) {
+      return true;
+    }
+    if (_selectedLocationCity != 'All Locations' || _isPlaceSearchQuery(effectiveSearchQuery)) {
       return false;
     }
     return _currentUserGpsLocation != null || _isNearMeDefaultActive;
   }
 
   LocationCoordinates? get effectiveNearMeLocation {
-    if (_selectedLocationCity != 'All Locations' || _isPlaceSearchQuery(_searchQuery)) {
+    if (!isNearMeActive) {
       return null;
     }
     if (_currentUserGpsLocation != null) return _currentUserGpsLocation;
-    if (_isNearMeDefaultActive) {
+    if (_isNearMeDefaultActive || containsNearMePhrase(_searchQuery)) {
       if (_currentUser.latitude != null && _currentUser.longitude != null) {
         return LocationCoordinates(
           latitude: _currentUser.latitude!,
@@ -1780,11 +1808,14 @@ class JobRepository extends ChangeNotifier {
         return false;
       }
 
-      if (_searchQuery.trim().isNotEmpty) {
-        final q = _searchQuery.trim().toLowerCase();
+      final effectiveQuery = effectiveSearchQuery;
+      if (effectiveQuery.isNotEmpty) {
+        final q = effectiveQuery.toLowerCase();
         final matchVehicle = job.vehicleFullName.toLowerCase().contains(q);
         final matchColor = job.paintColorName.toLowerCase().contains(q);
         final matchTitle = job.title.toLowerCase().contains(q);
+        final matchServiceType = job.serviceType.toLowerCase().contains(q);
+        final matchDescription = job.description.toLowerCase().contains(q);
         final matchAuthor = job.author.displayName.toLowerCase().contains(q);
         final matchBusiness = job.author.businessName.toLowerCase().contains(q);
         final matchLocation = job.author.location.toLowerCase().contains(q);
@@ -1799,6 +1830,8 @@ class JobRepository extends ChangeNotifier {
         if (!matchVehicle &&
             !matchColor &&
             !matchTitle &&
+            !matchServiceType &&
+            !matchDescription &&
             !matchAuthor &&
             !matchBusiness &&
             !matchLocation &&
@@ -1870,8 +1903,9 @@ class JobRepository extends ChangeNotifier {
         return false;
       }
 
-      if (_searchQuery.trim().isNotEmpty) {
-        final q = _searchQuery.trim().toLowerCase();
+      final effectiveQuery = effectiveSearchQuery;
+      if (effectiveQuery.isNotEmpty) {
+        final q = effectiveQuery.toLowerCase();
         final matchName = detailer.displayName.toLowerCase().contains(q);
         final matchBusiness = detailer.businessName.toLowerCase().contains(q);
         final matchLocation = detailer.location.toLowerCase().contains(q);
@@ -1950,7 +1984,7 @@ class JobRepository extends ChangeNotifier {
     if (city != 'All Locations') {
       _isNearMeDefaultActive = false;
       _currentUserGpsLocation = null;
-    } else if (_searchQuery.trim().isEmpty) {
+    } else if (effectiveSearchQuery.isEmpty) {
       _isNearMeDefaultActive = true;
     }
     notifyListeners();
@@ -1958,11 +1992,19 @@ class JobRepository extends ChangeNotifier {
 
   void setSearchQuery(String query) {
     _searchQuery = query;
-    if (_isPlaceSearchQuery(query)) {
+    final hasNearMe = containsNearMePhrase(query);
+    final cleaned = stripNearMePhrase(query);
+    if (hasNearMe) {
+      _isNearMeDefaultActive = true;
+      if (_selectedLocationCity != 'All Locations') {
+        _selectedLocationCity = 'All Locations';
+      }
+      _detailerDistanceCache.clear();
+    } else if (_isPlaceSearchQuery(cleaned)) {
       _isNearMeDefaultActive = false;
       _currentUserGpsLocation = null;
       _detailerDistanceCache.clear();
-    } else if (query.trim().isEmpty && _selectedLocationCity == 'All Locations') {
+    } else if (cleaned.isEmpty && _selectedLocationCity == 'All Locations') {
       _isNearMeDefaultActive = true;
     }
     notifyListeners();
